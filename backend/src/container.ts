@@ -1,0 +1,116 @@
+import { env } from './shared/config/env.js';
+
+// Adapters
+import { GeminiAdapter } from './modules/assistente/gemini.adapter.js';
+import { GroqAdapter } from './modules/assistente/groq.adapter.js';
+import { AiFallbackAdapter } from './modules/assistente/ai-fallback.adapter.js';
+import { EvolutionApiAdapter } from './modules/evolution/evolution-api.adapter.js';
+import { EvolutionGoAdapter } from './modules/evolution/evolution-go.adapter.js';
+import { SupabaseActivationRepository, SupabaseUserRepository } from './modules/activation/activation.repository.js';
+import { SupabaseLeadRepository } from './modules/leads/leads.repository.js';
+import { SupabaseMessageRepository } from './modules/messages/messages.repository.js';
+import { SupabaseFollowUpRepository } from './modules/follow-up/follow-up.repository.js';
+import { SupabaseRuleRepository } from './modules/rules/rules.repository.js';
+import { SupabaseOnboardingRepository } from './modules/onboarding/onboarding.repository.js';
+import { SupabaseExclusionRepository } from './modules/exclusion/exclusion.repository.js';
+import { SupabaseSessionRepository } from './modules/webhooks/webhooks.repository.js';
+
+// Services
+import { ActivationService } from './modules/activation/activation.service.js';
+import { LeadService } from './modules/leads/leads.service.js';
+import { OnboardingService } from './modules/onboarding/onboarding.service.js';
+import { RuleEngine } from './modules/rules/rules.service.js';
+import { AssistenteService } from './modules/assistente/assistente.service.js';
+
+// Logger
+import { createLogger } from './shared/logger/logger.js';
+
+// Queue
+import { QueueService } from './modules/queue/queue.service.js';
+import { MessageWorker } from './modules/queue/queue.worker.js';
+import { createMessageProcessor } from './modules/queue/message.processor.js';
+import type { QueuePort, WorkerPort, MessageProcessorPort } from './modules/queue/queue.port.js';
+
+// --- Adapters ---
+
+const logger = createLogger();
+const gemini = new GeminiAdapter();
+const providers: { name: string; adapter: any }[] = [{ name: 'Gemini', adapter: gemini }];
+
+if (env.GROQ_API_KEY) {
+  providers.push({ name: 'Groq', adapter: new GroqAdapter() });
+}
+
+const ai = new AiFallbackAdapter(providers, logger);
+
+const messaging = env.MESSAGING_PROVIDER === 'evolution-go'
+  ? new EvolutionGoAdapter(env.EVOLUTION_API_URL, env.EVOLUTION_API_KEY)
+  : new EvolutionApiAdapter(env.EVOLUTION_API_URL, env.EVOLUTION_API_KEY);
+
+// --- Repositories ---
+
+const activationRepo = new SupabaseActivationRepository();
+const userRepo = new SupabaseUserRepository();
+const leadRepo = new SupabaseLeadRepository();
+const messageRepo = new SupabaseMessageRepository();
+const followUpRepo = new SupabaseFollowUpRepository();
+const ruleRepo = new SupabaseRuleRepository();
+const onboardingRepo = new SupabaseOnboardingRepository();
+const exclusionRepo = new SupabaseExclusionRepository();
+const sessionRepo = new SupabaseSessionRepository();
+
+// --- Services ---
+
+const activationService = new ActivationService(activationRepo, userRepo, onboardingRepo, ai);
+const leadService = new LeadService(leadRepo);
+const onboardingService = new OnboardingService(onboardingRepo, ruleRepo);
+const ruleEngine = new RuleEngine(ruleRepo);
+const assistenteService = new AssistenteService(ai);
+
+// --- Queue ---
+
+const queueConfig = {
+  redisHost: env.REDIS_HOST,
+  redisPort: env.REDIS_PORT,
+  maxRetries: env.QUEUE_MAX_RETRIES,
+  backoffDelays: env.QUEUE_BACKOFF_DELAYS.split(',').map(Number),
+};
+
+const queueService: QueuePort = new QueueService(queueConfig, logger);
+
+// Container parcial para o processor (será completado abaixo)
+const containerRef: any = {};
+
+const messageProcessor: MessageProcessorPort = createMessageProcessor(containerRef, logger);
+const messageWorker: WorkerPort = new MessageWorker(queueConfig, messageProcessor, logger);
+
+// --- Export ---
+
+export const container = {
+  logger,
+  ai,
+  messaging,
+
+  activationRepo,
+  userRepo,
+  leadRepo,
+  messageRepo,
+  followUpRepo,
+  ruleRepo,
+  onboardingRepo,
+  exclusionRepo,
+  sessionRepo,
+
+  activationService,
+  leadService,
+  onboardingService,
+  ruleEngine,
+  assistenteService,
+
+  queueService,
+  messageProcessor,
+  messageWorker,
+};
+
+// Preencher referência circular para o processor
+Object.assign(containerRef, container);
