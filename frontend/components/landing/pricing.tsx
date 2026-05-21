@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
 const plans = [
   {
     name: "Solo",
-    description: "1 número",
+    description: "1 usuário",
     monthlyPrice: 49,
     yearlyInstallment: 40.83,
     yearlyTotal: 490,
@@ -23,13 +23,13 @@ const plans = [
   },
   {
     name: "Equipe",
-    description: "Até 3 números",
+    description: "Até 3 usuários",
     monthlyPrice: 119,
     yearlyInstallment: 99.17,
     yearlyTotal: 1190,
     features: [
       "Tudo do Solo",
-      "Até 3 números conectados",
+      "Até 3 usuários conectados",
       "Contatos ilimitados",
       "Suporte prioritário",
     ],
@@ -37,13 +37,13 @@ const plans = [
   },
   {
     name: "Empresa",
-    description: "Até 8 números",
+    description: "Até 8 usuários",
     monthlyPrice: 249,
     yearlyInstallment: 207.50,
     yearlyTotal: 2490,
     features: [
       "Tudo do Equipe",
-      "Até 8 números conectados",
+      "Até 8 usuários conectados",
       "Contatos ilimitados",
       "Suporte dedicado",
     ],
@@ -233,7 +233,7 @@ export function Pricing() {
             Todos os planos incluem: contatos ilimitados, áudios, acompanhamento automático, respostas inteligentes
           </p>
           <p className="text-sm text-muted-foreground">
-            Precisa de mais números?{" "}
+            Precisa de mais usuários?{" "}
             <a
               href="https://wa.me/5585991870847"
               target="_blank"

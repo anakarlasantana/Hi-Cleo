@@ -38,3 +38,90 @@ activationRouter.get('/validate/:code', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Erro ao validar código' });
   }
 });
+
+// GET /activation/qrcode/:code - Gera QR Code para conexão WhatsApp
+// Requirements: 6.1, 6.3
+activationRouter.get('/qrcode/:code', async (req: Request, res: Response) => {
+  try {
+    const code = req.params.code as string;
+
+    const validCode = await container.activationService.validateCode(code);
+    if (!validCode) {
+      res.status(404).json({ error: 'Código inválido ou expirado' });
+      return;
+    }
+
+    const instanceName = `activation-${code}`;
+    const qr = await container.messaging.getQrCode(instanceName);
+
+    if (!qr) {
+      res.status(502).json({ error: 'Falha ao gerar QR Code. Tente novamente.' });
+      return;
+    }
+
+    res.json({
+      qr,
+      expiresIn: 45, // QR Code expira em ~45 segundos
+    });
+  } catch (error) {
+    console.error('[Activation] Erro ao gerar QR Code:', error);
+    res.status(500).json({ error: 'Erro ao gerar QR Code' });
+  }
+});
+
+// GET /activation/qrcode/:code/status - SSE para status de conexão em tempo real
+// Requirements: 6.3, 6.4
+activationRouter.get('/qrcode/:code/status', async (req: Request, res: Response) => {
+  try {
+    const code = req.params.code as string;
+
+    const validCode = await container.activationService.validateCode(code);
+    if (!validCode) {
+      res.status(404).json({ error: 'Código inválido ou expirado' });
+      return;
+    }
+
+    // Configurar SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    const instanceName = `activation-${code}`;
+    let closed = false;
+
+    const sendEvent = (event: string, data: Record<string, unknown>) => {
+      if (!closed) {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      }
+    };
+
+    // Polling do status de conexão
+    const interval = setInterval(async () => {
+      try {
+        const status = await container.messaging.getStatus(instanceName);
+
+        sendEvent('status', { status });
+
+        if (status === 'open') {
+          sendEvent('connected', { message: 'Conexão estabelecida com sucesso' });
+          clearInterval(interval);
+          res.end();
+          closed = true;
+        }
+      } catch (error) {
+        sendEvent('error', { message: 'Erro ao verificar status' });
+      }
+    }, 3000);
+
+    // Cleanup quando o cliente desconecta
+    req.on('close', () => {
+      closed = true;
+      clearInterval(interval);
+    });
+  } catch (error) {
+    console.error('[Activation] Erro SSE:', error);
+    res.status(500).json({ error: 'Erro ao iniciar stream de status' });
+  }
+});

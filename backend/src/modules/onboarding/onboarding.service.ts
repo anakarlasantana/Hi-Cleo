@@ -58,7 +58,7 @@ export class OnboardingService {
     await this.onboardingRepo.updateStep(userId, 'concluido', { ...state.data, fora_horario: foraHorario });
     await this.saveRules(userId, state.data, foraHorario);
 
-    return `Pronto! Tudo configurado! 🎉\n\nVou organizar todos os contatos que te mandarem mensagem a partir de agora.\n\n💡 *Dica:* Se alguém que te manda mensagem é pessoal (família, amigos), é só me dizer "ignora o número tal" que eu paro de acompanhar.\n\nMe manda "conectar" quando estiver pronto!`;
+    return `Pronto! Tudo configurado! 🎉\n\nVou organizar todos os contatos que te mandarem mensagem a partir de agora.\n\n💡 *Dica:* Se alguém que te manda mensagem é pessoal (família, amigos), é só me dizer "ignora o número tal" que eu paro de acompanhar.\n\nMe manda "conectar" quando estiver pronto!\n\n📌 Fixe a Cleo no topo do seu WhatsApp para nunca perder uma mensagem! Segure a conversa e toque em 'Fixar'. Assim ela fica sempre acessível.`;
   }
 
   private async saveRules(userId: string, data: Record<string, string>, foraHorario: string): Promise<void> {

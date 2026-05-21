@@ -2,6 +2,7 @@ import type { AiPort } from '../../shared/ports/ai.port.js';
 import type { ActivationRepository, UserRepository } from './activation.port.js';
 import type { OnboardingRepository } from '../onboarding/onboarding.port.js';
 import type { ActivationCode, User } from '../../shared/types/index.js';
+import type { TermsConsentService } from '../terms/terms.service.js';
 
 function generateCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -18,6 +19,7 @@ export class ActivationService {
     private userRepo: UserRepository,
     private onboardingRepo: OnboardingRepository,
     private ai: AiPort,
+    private termsConsentService?: TermsConsentService,
   ) {}
 
   async generateCode(paymentId: string, plano: string): Promise<ActivationCode> {
@@ -30,7 +32,12 @@ export class ActivationService {
     return this.activationRepo.findValidCode(code);
   }
 
-  async activateUser(code: string, phone: string, rawMessage: string): Promise<User> {
+  async activateUser(code: string, phone: string, rawMessage: string, termsAccepted?: boolean): Promise<User> {
+    // Requirement 3.1, 3.2: Exigir aceite explícito dos termos antes de ativar
+    if (this.termsConsentService && !termsAccepted) {
+      throw new Error('TERMS_CONSENT_REQUIRED');
+    }
+
     const parsed = await this.parseActivationMessage(rawMessage);
     const validCode = await this.activationRepo.findValidCode(code);
 
@@ -44,6 +51,12 @@ export class ActivationService {
 
     await this.activationRepo.markUsed(code, user.id);
     await this.onboardingRepo.create(user.id, 'confirmar_nome', parsed);
+
+    // Registrar consentimento após criação do usuário
+    if (this.termsConsentService && termsAccepted) {
+      const { CURRENT_TERMS_VERSION } = await import('../terms/terms.service.js');
+      await this.termsConsentService.recordConsent(user.id, CURRENT_TERMS_VERSION);
+    }
 
     return user;
   }
