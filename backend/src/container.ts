@@ -14,6 +14,10 @@ import { SupabaseRuleRepository } from './modules/rules/rules.repository.js';
 import { SupabaseOnboardingRepository } from './modules/onboarding/onboarding.repository.js';
 import { SupabaseExclusionRepository } from './modules/exclusion/exclusion.repository.js';
 import { SupabaseSessionRepository } from './modules/webhooks/webhooks.repository.js';
+import { SupabasePlanRepository } from './modules/plans/plans.repository.js';
+import { SupabaseTermsConsentRepository } from './modules/terms/terms.repository.js';
+import { SupabaseCancellationRepository } from './modules/cancellation/cancellation.repository.js';
+import { SupabaseContactMonitorRepository } from './modules/contact-monitor/contact-monitor.repository.js';
 
 // Services
 import { ActivationService } from './modules/activation/activation.service.js';
@@ -21,6 +25,10 @@ import { LeadService } from './modules/leads/leads.service.js';
 import { OnboardingService } from './modules/onboarding/onboarding.service.js';
 import { RuleEngine } from './modules/rules/rules.service.js';
 import { AssistenteService } from './modules/assistente/assistente.service.js';
+import { PlanService } from './modules/plans/plans.service.js';
+import { TermsConsentService } from './modules/terms/terms.service.js';
+import { CancellationService } from './modules/cancellation/cancellation.service.js';
+import { ContactMonitorService } from './modules/contact-monitor/contact-monitor.service.js';
 
 // Logger
 import { createLogger } from './shared/logger/logger.js';
@@ -58,6 +66,10 @@ const ruleRepo = new SupabaseRuleRepository();
 const onboardingRepo = new SupabaseOnboardingRepository();
 const exclusionRepo = new SupabaseExclusionRepository();
 const sessionRepo = new SupabaseSessionRepository();
+const planRepo = new SupabasePlanRepository();
+const termsConsentRepo = new SupabaseTermsConsentRepository();
+const cancellationRepo = new SupabaseCancellationRepository();
+const contactMonitorRepo = new SupabaseContactMonitorRepository();
 
 // --- Services ---
 
@@ -66,6 +78,10 @@ const leadService = new LeadService(leadRepo);
 const onboardingService = new OnboardingService(onboardingRepo, ruleRepo);
 const ruleEngine = new RuleEngine(ruleRepo);
 const assistenteService = new AssistenteService(ai);
+const planService = new PlanService(planRepo);
+const termsConsentService = new TermsConsentService(termsConsentRepo);
+const cancellationService = new CancellationService(cancellationRepo);
+const contactMonitorService = new ContactMonitorService(contactMonitorRepo);
 
 // --- Queue ---
 
@@ -100,12 +116,20 @@ export const container = {
   onboardingRepo,
   exclusionRepo,
   sessionRepo,
+  planRepo,
+  termsConsentRepo,
+  cancellationRepo,
+  contactMonitorRepo,
 
   activationService,
   leadService,
   onboardingService,
   ruleEngine,
   assistenteService,
+  planService,
+  termsConsentService,
+  cancellationService,
+  contactMonitorService,
 
   queueService,
   messageProcessor,

@@ -1,0 +1,1 @@
+export const DEFAULT_ALERT_THRESHOLD = 100_000;

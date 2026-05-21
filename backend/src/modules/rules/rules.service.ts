@@ -9,6 +9,29 @@ export interface MessageContext {
   timestamp: Date;
 }
 
+export interface ReminderContext {
+  description: string;
+  time: string;
+  contacts: Array<{ nome: string; telefone?: string }>;
+}
+
+export function formatReminder(context: ReminderContext): string {
+  let msg = `🔔 Lembrete: ${context.description} às ${context.time}.`;
+
+  const contactsWithPhone = context.contacts.filter(
+    (c) => c.telefone && c.telefone.trim() !== '',
+  );
+
+  if (contactsWithPhone.length > 0) {
+    const contactLines = contactsWithPhone
+      .map((c) => `${c.nome} - ${c.telefone}`)
+      .join('\n');
+    msg += `\nContato: ${contactLines}`;
+  }
+
+  return msg;
+}
+
 export class RuleEngine {
   constructor(private ruleRepo: RuleRepository) {}
 
@@ -26,6 +49,9 @@ export class RuleEngine {
             return rule.response;
           }
           break;
+
+        case 'lembrete':
+          return rule.response;
       }
     }
 
