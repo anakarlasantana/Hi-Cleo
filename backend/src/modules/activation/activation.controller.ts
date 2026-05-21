@@ -39,6 +39,24 @@ activationRouter.get('/validate/:code', async (req: Request, res: Response) => {
   }
 });
 
+// GET /activation/status/:code - Verifica se o código já foi ativado (usado)
+activationRouter.get('/status/:code', async (req: Request, res: Response) => {
+  try {
+    const code = req.params.code as string;
+    const activationCode = await container.activationService.validateCode(code);
+
+    if (activationCode) {
+      // Code exists and is valid (not used yet)
+      res.json({ status: 'pending', used: false });
+    } else {
+      // Code was used or expired — assume activated if not found as valid
+      res.json({ status: 'activated', used: true });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao verificar status' });
+  }
+});
+
 // GET /activation/qrcode/:code - Gera QR Code para conexão WhatsApp
 // Requirements: 6.1, 6.3
 activationRouter.get('/qrcode/:code', async (req: Request, res: Response) => {

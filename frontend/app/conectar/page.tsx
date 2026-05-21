@@ -216,10 +216,10 @@ function ConectarContent() {
         <>
           <div className="text-center mb-8">
             <h1 className="text-3xl sm:text-4xl font-bold text-foreground mb-4 text-balance">
-              Conecte seu WhatsApp
+              Vincule seu WhatsApp à Cleo
             </h1>
-            <p className="text-lg text-muted-foreground">
-              Escaneie o QR Code abaixo para vincular seu WhatsApp à Cleo.
+            <p className="text-lg text-muted-foreground max-w-lg mx-auto">
+              Para que a Cleo possa organizar seus clientes e responder por você, ela precisa acessar seu WhatsApp — igual ao WhatsApp Web.
             </p>
           </div>
 
@@ -277,10 +277,13 @@ function ConectarContent() {
 
           {/* Instructions */}
           <div className="bg-card border border-border rounded-xl p-6 mb-8 max-w-lg mx-auto">
-            <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-foreground mb-2 flex items-center gap-2">
               <Smartphone className="w-5 h-5 text-primary" />
-              Como escanear
+              Como vincular
             </h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Use o mesmo celular onde está seu WhatsApp pessoal/profissional:
+            </p>
             <ol className="space-y-3 text-sm text-muted-foreground">
               <li className="flex items-start gap-3">
                 <span className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center flex-shrink-0 text-xs font-bold">
@@ -344,23 +347,23 @@ function ConnectedState() {
         <CheckCircle2 className="w-12 h-12 text-primary" />
       </div>
       <h1 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
-        WhatsApp conectado!
+        WhatsApp vinculado! 🎉
       </h1>
-      <p className="text-lg text-muted-foreground mb-8">
-        A Cleo está pronta para trabalhar. Agora vamos configurar como ela vai atender seus clientes.
+      <p className="text-lg text-muted-foreground mb-8 max-w-md mx-auto">
+        A Cleo agora tem acesso ao seu WhatsApp e vai organizar seus clientes automaticamente.
       </p>
       <div className="bg-card border border-border rounded-xl p-6 max-w-md mx-auto">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-            <QrCode className="w-5 h-5 text-primary" />
+            <CheckCircle2 className="w-5 h-5 text-primary" />
           </div>
           <div className="text-left">
-            <p className="font-medium text-foreground">Conexão estabelecida</p>
+            <p className="font-medium text-foreground">Tudo pronto!</p>
             <p className="text-sm text-muted-foreground">Seu WhatsApp está vinculado à Cleo</p>
           </div>
         </div>
         <p className="text-sm text-muted-foreground">
-          A Cleo vai te enviar uma mensagem no WhatsApp para iniciar a configuração. Fique de olho nas suas mensagens!
+          A partir de agora, quando seus clientes te mandarem mensagem, a Cleo vai registrar, organizar e te lembrar de responder. Pode usar o WhatsApp normalmente!
         </p>
       </div>
     </div>
@@ -369,17 +372,24 @@ function ConnectedState() {
 
 function PageLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background relative overflow-hidden">
+      {/* Background decorations */}
+      <div className="absolute top-1/3 -left-32 w-64 h-64 bg-primary/5 rounded-full blur-[100px]" />
+      <div className="absolute bottom-1/3 -right-32 w-64 h-64 bg-primary/5 rounded-full blur-[100px]" />
+
       {/* Header */}
-      <header className="border-b border-border bg-card">
+      <header className="border-b border-border bg-card/80 backdrop-blur-sm relative z-10">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <Link href="/" className="flex items-center gap-2">
-            <span className="text-2xl font-bold text-primary">Hi Cleo</span>
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+              <MessageCircle className="w-5 h-5 text-white" />
+            </div>
+            <span className="text-xl font-bold text-foreground">Hi Cleo</span>
           </Link>
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12 relative z-10">
         {children}
       </main>
 

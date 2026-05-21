@@ -1,18 +1,26 @@
 import Link from "next/link"
+import { MessageCircle } from "lucide-react"
 
 export default function TermosPage() {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background relative overflow-hidden">
+      {/* Background decorations */}
+      <div className="absolute top-1/4 -left-32 w-64 h-64 bg-primary/5 rounded-full blur-[100px]" />
+      <div className="absolute bottom-1/4 -right-32 w-64 h-64 bg-primary/5 rounded-full blur-[100px]" />
+
       {/* Header */}
-      <header className="border-b border-border bg-card">
+      <header className="border-b border-border bg-card/80 backdrop-blur-sm relative z-10">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <Link href="/" className="flex items-center gap-2">
-            <span className="text-2xl font-bold text-primary">Hi Cleo</span>
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+              <MessageCircle className="w-5 h-5 text-white" />
+            </div>
+            <span className="text-xl font-bold text-foreground">Hi Cleo</span>
           </Link>
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12 relative z-10">
         <h1 className="text-3xl sm:text-4xl font-bold text-foreground mb-2">
           Termos de Uso e Política de Privacidade
         </h1>

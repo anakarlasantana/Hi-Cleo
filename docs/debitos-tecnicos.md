@@ -75,3 +75,37 @@ Registro de itens que precisam ser revisitados e completados no futuro.
 **Quando revisitar:** Próximo sprint de refatoração, antes de onboarding de novos devs.
 
 ---
+
+## 4. Fluxo de ativação — Código dinâmico
+
+**Status:** Página de ativação usa código hardcoded (`ATIVAR-7X3K`).
+
+**O que falta:**
+- Receber o código real via query param da página de checkout (após pagamento gerar o código via API)
+- Integrar com o endpoint `POST /activation/generate` para gerar código real
+- Passar o código gerado para a página de ativação via redirect
+
+**Prioridade:** Alta (necessário para funcionar em produção)
+
+**Quando revisitar:** Ao integrar gateway de pagamento real.
+
+---
+
+## 5. Arquitetura de código — Padronizar inglês
+
+**Status:** Decisão tomada, execução pendente.
+
+**Regras definidas:**
+- Código (funções, variáveis, interfaces, nomes de arquivo): inglês
+- Banco de dados (tabelas, colunas): inglês (débito #3)
+- Comentários: português permitido
+- Documentação: português
+- UI (textos visíveis ao usuário): português
+- URLs do frontend (pastas /app): português (são rotas visíveis ao usuário)
+- Constantes de cada módulo: em arquivo `constants.ts` separado dentro do módulo
+
+**Prioridade:** Média
+
+**Quando revisitar:** Próximo sprint de refatoração.
+
+---

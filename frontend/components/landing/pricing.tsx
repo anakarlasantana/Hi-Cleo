@@ -161,7 +161,7 @@ function PlanCard({ plan, isYearly, index }: { plan: typeof plans[0]; isYearly: 
           )}
           variant={plan.highlighted ? "secondary" : "default"}
         >
-          <Link href={`/checkout?plano=${plan.name.toLowerCase()}&periodo=${isYearly ? "anual" : "mensal"}`}>
+          <Link href={`/checkout?plan=${plan.name.toLowerCase()}&billing=${isYearly ? "yearly" : "monthly"}`}>
             Assinar agora
             <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </Link>
