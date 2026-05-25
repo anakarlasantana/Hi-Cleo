@@ -16,7 +16,7 @@ const faqs = [
   },
   {
     question: "Como conecto meu WhatsApp?",
-    answer: "Após o pagamento, você recebe um código de ativação. Manda esse código pra Cleo no WhatsApp e ela te guia na conexão — é só escanear um QR Code e pronto.",
+    answer: "Após o pagamento, você recebe um código de ativação. Manda esse código pra Cleo no WhatsApp e ela te guia na conexão. É só escanear um QR Code e pronto.",
   },
   {
     question: "Meus clientes vão saber que é automático?",

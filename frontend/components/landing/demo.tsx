@@ -93,7 +93,7 @@ export function Demo() {
           <div className="hidden lg:flex flex-col gap-6 items-end">
             <div className={cn("bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl px-5 py-4 max-w-[240px] transition-all duration-700", sectionVisible ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-8")}>
               <p className="text-white font-semibold text-sm mb-1">💬 Linguagem natural</p>
-              <p className="text-white/60 text-xs">Fale como quiser — texto ou áudio</p>
+              <p className="text-white/60 text-xs">Fale como quiser, texto ou áudio</p>
             </div>
             <div className={cn("bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl px-5 py-4 max-w-[240px] transition-all duration-700 delay-300", sectionVisible ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-8")}>
               <p className="text-white font-semibold text-sm mb-1">⚡ Resposta instantânea</p>

@@ -35,7 +35,7 @@ export function FinalCTA() {
             Comece a organizar seus clientes hoje
           </h2>
           <p className="text-white/70 text-lg mb-10 max-w-xl mx-auto">
-            A Cleo cuida do acompanhamento pra você. Sem sistema complicado, sem computador — tudo no WhatsApp.
+            A Cleo cuida do acompanhamento pra você. Sem sistema complicado, sem computador. Tudo no WhatsApp.
           </p>
 
           <Button

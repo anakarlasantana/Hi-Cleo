@@ -10,7 +10,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: 'Hi Cleo - Sua Secretária Virtual no WhatsApp',
-  description: 'A Cleo organiza seus clientes, faz acompanhamento personalizado e te manda lembretes automáticos — tudo direto no seu celular, sem sistema complicado.',
+  description: 'A Cleo organiza seus clientes, faz acompanhamento personalizado e te manda lembretes automáticos. Tudo direto no seu celular, sem sistema complicado.',
   keywords: ['secretária virtual', 'WhatsApp', 'atendimento automático', 'organização de clientes', 'lembretes', 'acompanhamento'],
   authors: [{ name: 'Hi Cleo' }],
   openGraph: {

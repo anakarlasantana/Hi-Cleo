@@ -32,7 +32,7 @@ export function Hero() {
             </h1>
 
             <p className="text-lg text-muted-foreground max-w-lg">
-              Organiza seus clientes, faz acompanhamento e te manda lembretes — tudo no celular, sem sistema complicado.
+              Organiza seus clientes, faz acompanhamento e te manda lembretes. Tudo no celular, sem sistema complicado.
             </p>
 
             {/* Bullets */}

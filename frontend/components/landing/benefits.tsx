@@ -13,7 +13,7 @@ const benefits = [
   {
     icon: Mic,
     title: "Entende áudio e texto",
-    description: "Mande áudio ou digite — a Cleo entende os dois.",
+    description: "Mande áudio ou digite. A Cleo entende os dois.",
   },
   {
     icon: Clock,
