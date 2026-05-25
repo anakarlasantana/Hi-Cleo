@@ -4,11 +4,6 @@ import type { OnboardingRepository } from './onboarding.port.js';
 import type { RuleRepository } from '../rules/rules.port.js';
 import type { OnboardingState, OnboardingStep, Rule } from '../../shared/types/index.js';
 
-const PIN_MESSAGE = "💡 Dica: Fixe a Cleo no topo do seu WhatsApp para nunca perder uma mensagem! Segure a conversa e toque em 'Fixar'. Assim ela fica sempre acessível.";
-
-/**
- * In-memory implementation of OnboardingRepository for testing.
- */
 class InMemoryOnboardingRepository implements OnboardingRepository {
   private states: Map<string, OnboardingState> = new Map();
 
@@ -33,15 +28,11 @@ class InMemoryOnboardingRepository implements OnboardingRepository {
     });
   }
 
-  // Helper for tests
   seed(userId: string, state: OnboardingState): void {
     this.states.set(userId, state);
   }
 }
 
-/**
- * In-memory implementation of RuleRepository for testing.
- */
 class InMemoryRuleRepository implements RuleRepository {
   private rules: Rule[] = [];
 
@@ -50,31 +41,19 @@ class InMemoryRuleRepository implements RuleRepository {
   }
 
   async create(userId: string, condition: string, response: string): Promise<Rule> {
-    const rule: Rule = {
-      id: crypto.randomUUID(),
-      user_id: userId,
-      condition,
-      response,
-      active: true,
-    };
+    const rule: Rule = { id: crypto.randomUUID(), user_id: userId, condition, response, active: true };
     this.rules.push(rule);
     return rule;
   }
 
   async insertMany(rules: Array<{ user_id: string; condition: string; response: string; active: boolean }>): Promise<void> {
     for (const r of rules) {
-      this.rules.push({
-        id: crypto.randomUUID(),
-        user_id: r.user_id,
-        condition: r.condition,
-        response: r.response,
-        active: r.active,
-      });
+      this.rules.push({ id: crypto.randomUUID(), ...r });
     }
   }
 }
 
-describe('OnboardingService - Pin Message', () => {
+describe('OnboardingService', () => {
   let onboardingRepo: InMemoryOnboardingRepository;
   let ruleRepo: InMemoryRuleRepository;
   let service: OnboardingService;
@@ -85,8 +64,8 @@ describe('OnboardingService - Pin Message', () => {
     service = new OnboardingService(onboardingRepo, ruleRepo);
   });
 
-  describe('handleForaHorario - pin message on completion', () => {
-    it('includes pin message when onboarding completes for the first time', async () => {
+  describe('handleForaHorario - completion message', () => {
+    it('includes pin message when onboarding completes', async () => {
       onboardingRepo.seed('user-1', {
         id: 'state-1',
         user_id: 'user-1',
@@ -97,39 +76,24 @@ describe('OnboardingService - Pin Message', () => {
 
       const response = await service.processMessage('user-1', '1');
 
-      expect(response).toContain(PIN_MESSAGE);
+      expect(response).toContain('Fixe a Cleo no topo do seu WhatsApp');
     });
 
-    it('does not include pin message if already sent (pin_message_sent flag is true)', async () => {
+    it('includes orientation to go back to computer for QR Code', async () => {
       onboardingRepo.seed('user-1', {
         id: 'state-1',
         user_id: 'user-1',
         step: 'configurar_fora_horario',
-        data: { nome_confirmado: 'João', boas_vindas: 'ativa', pin_message_sent: 'true' },
+        data: { nome_confirmado: 'João', boas_vindas: 'ativa' },
         updated_at: '2025-01-01T00:00:00Z',
       });
 
       const response = await service.processMessage('user-1', '1');
 
-      expect(response).not.toContain(PIN_MESSAGE);
+      expect(response).toContain('Volte para a tela no seu computador');
     });
 
-    it('stores pin_message_sent flag in state data after sending', async () => {
-      onboardingRepo.seed('user-1', {
-        id: 'state-1',
-        user_id: 'user-1',
-        step: 'configurar_fora_horario',
-        data: { nome_confirmado: 'João', boas_vindas: 'desativada' },
-        updated_at: '2025-01-01T00:00:00Z',
-      });
-
-      await service.processMessage('user-1', '2');
-
-      const state = await onboardingRepo.getState('user-1');
-      expect(state?.data.pin_message_sent).toBe('true');
-    });
-
-    it('transitions to concluido step after handling fora_horario', async () => {
+    it('transitions to concluido step', async () => {
       onboardingRepo.seed('user-1', {
         id: 'state-1',
         user_id: 'user-1',
@@ -144,7 +108,7 @@ describe('OnboardingService - Pin Message', () => {
       expect(state?.step).toBe('concluido');
     });
 
-    it('pin message uses the exact required text from requirements', async () => {
+    it('mentions WhatsApp Web comparison', async () => {
       onboardingRepo.seed('user-1', {
         id: 'state-1',
         user_id: 'user-1',
@@ -155,7 +119,7 @@ describe('OnboardingService - Pin Message', () => {
 
       const response = await service.processMessage('user-1', '2');
 
-      expect(response).toContain("💡 Dica: Fixe a Cleo no topo do seu WhatsApp para nunca perder uma mensagem! Segure a conversa e toque em 'Fixar'. Assim ela fica sempre acessível.");
+      expect(response).toContain('WhatsApp Web');
     });
   });
 });

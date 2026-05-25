@@ -75,7 +75,9 @@ Landing Page → Checkout → Ativação → Onboarding (WhatsApp) → Conexão 
 - Reembolso integral nos primeiros 7 dias (CDC - Código de Defesa do Consumidor)
 - Após cancelamento: 30 dias para reativar sem perda de dados
 - Após 30 dias: dados removidos permanentemente
-- Confirmação enviada por e-mail e WhatsApp
+- Confirmação enviada pelo WhatsApp (Cleo manda mensagem com data de encerramento)
+- Recibo de pagamento: enviado automaticamente pelo gateway (Mercado Pago/Stripe)
+- E-mail: não utilizado no MVP (canal futuro se necessário)
 
 ---
 

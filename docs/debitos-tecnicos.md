@@ -1,111 +1,168 @@
 # Débitos Técnicos
 
-Registro de itens que precisam ser revisitados e completados no futuro.
+Registro de itens que precisam ser revisitados e completados para entrega da aplicação.
 
 ---
 
-## 1. Contact Monitor — Completar fluxo de monitoramento
+## 🔴 BLOQUEANTES (necessários antes do lançamento)
 
-**Módulo:** `backend/src/modules/contact-monitor/`
+### 1. Integração com Gateway de Pagamento
 
-**Status:** Implementação base criada, fluxo incompleto.
-
-**O que existe:**
-- Service com `getContactCount`, `getSystemMetrics`, `checkAlertThreshold`
-- Repository com queries no Supabase
-- Threshold configurável via env `CONTACT_ALERT_THRESHOLD` (default: 100k)
+**Status:** Checkout é apenas UI, sem processamento real.
 
 **O que falta:**
-- Definir como/onde o alerta é disparado (e-mail? Slack? log?)
-- Criar um cron job que roda `checkAlertThreshold` periodicamente
-- Dashboard admin para visualizar métricas de contatos
-- Definir orçamento real do Supabase para calibrar o threshold
-- Avaliar se `getContactCountPerUser` precisa de otimização (hoje carrega todos os leads em memória para agrupar)
-- Considerar paginação no repository quando o volume crescer
+- Integrar Mercado Pago ou Stripe (sandbox → produção)
+- Webhook do gateway para confirmar pagamento
+- Após confirmação: chamar `POST /activation/generate` para criar código real
+- Passar código gerado para a página de ativação via redirect
+- Página de ativação usa código hardcoded (`ATIVAR-7X3K`)
 
-**Prioridade:** Baixa (monitorar manualmente até ter volume relevante)
-
-**Quando revisitar:** Quando ultrapassar 50 usuários ativos ou 50k contatos totais.
+**Estimativa:** 3-4 dias
 
 ---
 
-## 2. Consentimento LGPD — Conectar frontend ao backend
-
-**Módulo:** `backend/src/modules/terms/` + `frontend/app/conectar/`
-
-**Status:** Backend pronto, frontend parcial.
-
-**O que existe:**
-- `TermsConsentService` com `requiresConsent`, `recordConsent`, `getConsentHistory`
-- Página `/termos` com conteúdo completo dos termos
-- `ActivationService` bloqueia ativação sem `termsAccepted = true`
+### 2. Consentimento LGPD — Conectar frontend ao backend
 
 **O que falta:**
-- Adicionar checkbox "Li e aceito os Termos de Uso e Política de Privacidade" na página `/conectar` antes de exibir o QR Code
-- Chamar endpoint de consentimento no backend ao aceitar
-- Implementar fluxo de re-aceite via WhatsApp quando a versão dos termos é atualizada (Cleo envia link + aguarda resposta "aceito")
-- Definir como a Cleo detecta que o usuário precisa aceitar nova versão (verificar no início de cada interação?)
+- Checkbox na página `/conectar` antes do QR Code
+- Endpoint `POST /activation/consent` para registrar aceite
+- Fluxo de re-aceite via WhatsApp quando versão muda
 
-**Prioridade:** Média (necessário antes do lançamento)
-
-**Quando revisitar:** Antes de ir para produção com usuários reais.
+**Estimativa:** 1 dia
 
 ---
 
-## 3. Padronizar banco de dados para inglês
+### 3. Serviço de E-mail (futuro)
 
-**Status:** Schema existente usa nomes em português nas colunas.
+**Status:** Não necessário para MVP. Gateway de pagamento envia recibos automaticamente.
+
+**Decisão:** Todas as notificações (cancelamento, alertas, lembretes) vão pelo WhatsApp. E-mail fica como canal futuro.
+
+**O que preparar no código:**
+- Interface `NotificationPort` com métodos `sendWhatsApp` e `sendEmail`
+- Implementar apenas `sendWhatsApp` agora
+- Quando precisar de e-mail: criar adapter (SendGrid/SES) sem mudar lógica
+
+**Prioridade:** Baixa (pós-lançamento, se necessário)
+
+**Estimativa:** 1 dia quando for implementar
+
+---
+
+## 🟡 ALTA PRIORIDADE (antes de escalar)
+
+### 4. Follow-up Cron — Completar implementação
+
+**O que falta:**
+- Verificar se `checkStaleLeads` está implementado no repository
+- Definir critérios de "cliente esfriando" (horas sem resposta)
+- Testar fluxo end-to-end
+- Configurar intervalo do cron via env (hoje hardcoded: a cada hora)
+
+**Estimativa:** 1 dia
+
+---
+
+### 5. Contact Monitor — Completar fluxo de alertas
+
+**O que falta:**
+- Cron job que roda `checkAlertThreshold` periodicamente
+- Definir destino do alerta (e-mail? WhatsApp? log?)
+- Otimizar `getContactCountPerUser` (carrega tudo em memória)
+
+**Estimativa:** 0.5 dia
+
+---
+
+### 6. Cancellation Service — Integrar com pagamento
+
+**O que falta:**
+- Endpoint HTTP para solicitar cancelamento
+- Integrar com gateway para cancelar cobranças futuras
+- Integrar com e-mail para confirmação
+- Cron para desconectar sessões após `access_until` expirar
+- Cron para deletar dados após 30 dias de graça
+
+**Estimativa:** 2 dias
+
+---
+
+### 7. Padronizar banco de dados para inglês
 
 **Colunas a renomear:**
-- `users`: `nome` → `name`, `telefone` → `phone`, `plano` → `plan`, `horario_comercial_inicio` → `business_hours_start`, `horario_comercial_fim` → `business_hours_end`
-- `leads`: `nome` → `name`, `telefone` → `phone`
-- `rules`: `condition` já está ok, mas valores como `'primeira_mensagem'`, `'fora_horario'` → `'first_message'`, `'outside_hours'`
-- `onboarding_states`: `step` valores como `'confirmar_nome'`, `'configurar_boas_vindas'` → `'confirm_name'`, `'configure_welcome'`, etc.
-- `plan_limits`: `plan_name` valores `'solo'`, `'equipe'`, `'empresa'` → manter (são nomes de produto)
+- `users`: `nome`→`name`, `telefone`→`phone`, `plano`→`plan`
+- `leads`: `nome`→`name`, `telefone`→`phone`
+- `rules`: valores `'primeira_mensagem'`→`'first_message'`
+- `onboarding_states`: valores `'confirmar_nome'`→`'confirm_name'`
 
-**Impacto:**
-- Migration de ALTER TABLE RENAME COLUMN
-- Atualizar todos os repositories (queries)
-- Atualizar interfaces/types no código
-- Atualizar o message.processor.ts e demais referências
-- Atualizar seeds e valores de enum
-
-**Prioridade:** Média (fazer antes de escalar o time de desenvolvimento)
-
-**Quando revisitar:** Próximo sprint de refatoração, antes de onboarding de novos devs.
+**Estimativa:** 2-3 dias
 
 ---
 
-## 4. Fluxo de ativação — Código dinâmico
+## 🟢 MÉDIA PRIORIDADE (pós-lançamento)
 
-**Status:** Página de ativação usa código hardcoded (`ATIVAR-7X3K`).
+### 8. Dashboard Admin
 
 **O que falta:**
-- Receber o código real via query param da página de checkout (após pagamento gerar o código via API)
-- Integrar com o endpoint `POST /activation/generate` para gerar código real
-- Passar o código gerado para a página de ativação via redirect
+- Métricas: usuários ativos, contatos totais, uso por plano
+- Gerenciar usuários (cancelar, reativar, mudar plano)
+- Ver logs e status das conexões WhatsApp
 
-**Prioridade:** Alta (necessário para funcionar em produção)
-
-**Quando revisitar:** Ao integrar gateway de pagamento real.
+**Estimativa:** 3-5 dias
 
 ---
 
-## 5. Arquitetura de código — Padronizar inglês
-
-**Status:** Decisão tomada, execução pendente.
+### 9. Padronizar código para inglês
 
 **Regras definidas:**
-- Código (funções, variáveis, interfaces, nomes de arquivo): inglês
-- Banco de dados (tabelas, colunas): inglês (débito #3)
-- Comentários: português permitido
-- Documentação: português
-- UI (textos visíveis ao usuário): português
-- URLs do frontend (pastas /app): português (são rotas visíveis ao usuário)
-- Constantes de cada módulo: em arquivo `constants.ts` separado dentro do módulo
+- Código: inglês | Comentários: português | Documentação: português
+- UI: português | URLs frontend: português
+- Constantes: `constants.ts` por módulo
 
-**Prioridade:** Média
-
-**Quando revisitar:** Próximo sprint de refatoração.
+**Estimativa:** 1-2 dias
 
 ---
+
+### 10. Testes de integração e carga
+
+**O que falta:**
+- Testes end-to-end (webhook → queue → processor → resposta)
+- Testes de carga para Redis/queue
+- Error tracking (Sentry)
+- Uptime monitoring
+
+**Estimativa:** 2-3 dias
+
+---
+
+### 11. Fluxo de reconexão WhatsApp
+
+**O que falta:**
+- Tratar desconexão do WhatsApp do usuário
+- Notificar usuário e orientar a reconectar
+- Definir: Cleo manda mensagem? Ou só quando tenta usar?
+
+**Estimativa:** 1 dia
+
+---
+
+### 12. Segurança e Rate Limiting
+
+**O que falta:**
+- Rate limiting nos endpoints públicos
+- Validação de assinatura nos webhooks Evolution API
+- CORS para domínio de produção
+- Helmet.js para headers de segurança
+
+**Estimativa:** 1 dia
+
+---
+
+## Resumo
+
+| Prioridade | Estimativa |
+|------------|-----------|
+| 🔴 Bloqueantes | ~4-5 dias |
+| 🟡 Alta | ~6 dias |
+| 🟢 Média | ~8-10 dias |
+| **Total** | **~2-3 semanas** |
