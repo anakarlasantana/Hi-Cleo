@@ -1,8 +1,12 @@
 import { CronJob } from 'cron';
 import { container } from '../../container.js';
+import { env } from '../../shared/config/env.js';
 
 export function startFollowUpCron(): void {
-  const job = new CronJob('0 * * * *', async () => {
+  const schedule = env.FOLLOWUP_CRON_SCHEDULE;
+  const staleHours = env.FOLLOWUP_STALE_HOURS;
+
+  const job = new CronJob(schedule, async () => {
     console.log('[Cron] Verificando follow-ups e leads sem resposta...');
 
     const { messaging, followUpRepo, messageRepo, userRepo } = container;
@@ -28,7 +32,7 @@ export function startFollowUpCron(): void {
       const users = await userRepo.listAll();
 
       for (const user of users) {
-        const staleLeads = await followUpRepo.checkStaleLeads(user.id);
+        const staleLeads = await followUpRepo.checkStaleLeads(user.id, staleHours);
         if (staleLeads.length === 0) continue;
 
         if (staleLeads.length === 1) {
@@ -52,5 +56,5 @@ export function startFollowUpCron(): void {
   });
 
   job.start();
-  console.log('[Cron] Follow-up cron iniciado (a cada hora)');
+  console.log(`[Cron] Follow-up cron iniciado (schedule: ${schedule}, staleHours: ${staleHours})`);
 }

@@ -42,6 +42,16 @@ const envSchema = z.object({
   REDIS_PORT: z.coerce.number().default(6379),
   QUEUE_MAX_RETRIES: z.coerce.number().default(3),
   QUEUE_BACKOFF_DELAYS: z.string().default('5000,15000,45000'),
+
+  // Follow-up Cron
+  FOLLOWUP_STALE_HOURS: z.coerce.number().default(48),
+  FOLLOWUP_CRON_SCHEDULE: z.string().default('0 * * * *'),
+
+  // Contact Monitor Cron
+  CONTACT_MONITOR_CRON_SCHEDULE: z.string().default('0 0 * * *'),
+
+  // Cancellation Cron
+  CANCELLATION_CRON_SCHEDULE: z.string().default('0 0 * * *'),
 });
 
 const parsed = envSchema.safeParse(process.env);

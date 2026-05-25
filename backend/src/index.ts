@@ -4,8 +4,11 @@ import { env } from './shared/config/env.js';
 import { container } from './container.js';
 import { webhookRouter } from './modules/webhooks/webhooks.controller.js';
 import { activationRouter } from './modules/activation/activation.controller.js';
+import { cancellationRouter } from './modules/cancellation/cancellation.controller.js';
 import { startFollowUpCron } from './modules/follow-up/follow-up.cron.js';
 import { startConnectionMonitor } from './modules/connection-monitor/connection-monitor.cron.js';
+import { startContactMonitorCron } from './modules/contact-monitor/contact-monitor.cron.js';
+import { startCancellationCron } from './modules/cancellation/cancellation.cron.js';
 
 const app = express();
 const { logger } = container;
@@ -19,8 +22,11 @@ app.get('/health', (_req, res) => {
 
 app.use('/webhooks', webhookRouter);
 app.use('/api/activation', activationRouter);
+app.use('/api/cancellation', cancellationRouter);
 
 startFollowUpCron();
+startContactMonitorCron();
+startCancellationCron();
 startConnectionMonitor({
   messaging: container.messaging,
   logger: container.logger,

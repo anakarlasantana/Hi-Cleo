@@ -2,6 +2,7 @@ import type { MessageJobData } from './queue.types.js';
 import type { MessageProcessorPort } from './queue.port.js';
 import type { Logger } from '../../shared/logger/logger.js';
 import { truncate } from '../../shared/logger/logger.js';
+import { CURRENT_TERMS_VERSION } from '../terms/constants.js';
 
 export type MessageProcessor = MessageProcessorPort;
 
@@ -44,7 +45,7 @@ export function createMessageProcessor(container: any, logger: Logger): MessageP
 }
 
 async function handleSecretaryMessage(container: any, phone: string, text: string): Promise<void> {
-  const { messaging, activationService, onboardingService, assistenteService, userRepo } = container;
+  const { messaging, activationService, onboardingService, assistenteService, userRepo, termsConsentService } = container;
 
   const activationMatch = text.match(/ATIVAR-[A-Z0-9]{4}/i);
   if (activationMatch) {
@@ -71,6 +72,24 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
   if (!onboardingComplete) {
     const response = await onboardingService.processMessage(user.id, text);
     await messaging.sendText({ instance: 'secretary', to: phone, text: response });
+    return;
+  }
+
+  // Check if user needs to re-accept terms
+  const needsConsent = await termsConsentService.requiresConsent(user.id);
+  if (needsConsent) {
+    const normalized = text.trim().toLowerCase();
+    if (normalized === 'aceito' || normalized === 'aceitar' || normalized === 'concordo') {
+      await termsConsentService.recordConsent(user.id, CURRENT_TERMS_VERSION);
+      await messaging.sendText({ instance: 'secretary', to: phone, text: '✅ Termos aceitos! Pode continuar usando normalmente.' });
+      return;
+    }
+
+    await messaging.sendText({
+      instance: 'secretary',
+      to: phone,
+      text: 'Atualizamos nossos Termos de Uso. Para continuar usando a Cleo, acesse e aceite os novos termos: https://hicleo.com.br/termos\n\nApós aceitar, me mande qualquer mensagem para continuar.',
+    });
     return;
   }
 

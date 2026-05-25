@@ -1,105 +1,113 @@
 # Débitos Técnicos
 
-Organizado por prioridade: primeiro fluxos quase prontos (falta integração), depois os que precisam de implementação maior.
+Organizado por prioridade. Itens rápidos e médios já foram concluídos.
 
 ---
 
-## 🟢 RÁPIDOS (fluxos quase completos, falta integração)
+## ✅ CONCLUÍDOS
 
-### 1. Código de ativação dinâmico
-**Fluxo:** Checkout → Ativação
-**O que falta:** Checkout chama `POST /api/activation/generate`, redirect com código real, página lê da URL.
-**Estimativa:** 0.5 dia
+### 🟢 Rápidos (integração front↔back)
+- ~~#1 Código de ativação dinâmico~~ ✅
+- ~~#2 Checkbox LGPD na página de conexão~~ ✅
+- ~~#3 Planos e preços via API (banco)~~ ✅
+- ~~#4 Features dos planos via API~~ ✅
+- ~~#5 Número da Cleo via env~~ ✅
 
-### 2. Checkbox LGPD na página de conexão
-**Fluxo:** Conexão → Aceite → QR Code
-**O que falta:** Checkbox + bloquear QR até aceite + chamar endpoint de consentimento.
-**Estimativa:** 0.5 dia
+### 🟡 Médios (completar fluxos)
+- ~~#6 Follow-up cron configurável~~ ✅
+- ~~#7 Contact monitor cron (alerta admin)~~ ✅
+- ~~#8 Cancellation endpoint + crons~~ ✅
+- ~~#9 Re-aceite de termos via WhatsApp~~ ✅
 
-### 3. Planos e preços via API
-**Fluxo:** Landing + Checkout
-**O que falta:** Endpoint `GET /api/plans`, frontend consome, adicionar preço/features no banco.
-**Estimativa:** 1 dia
-
-### 4. Features dos planos via API
-**O que falta:** Incluir na resposta de `GET /api/plans`, frontend renderiza.
-**Estimativa:** 0.5 dia (junto com #3)
-
-### 5. Número da Cleo via API
-**O que falta:** Endpoint `GET /api/config`, frontend consome.
-**Estimativa:** 0.5 dia
+### Outros concluídos
+- ~~#11 Padronizar banco para inglês~~ ✅ (migration consolidada)
 
 ---
 
-## 🟡 MÉDIOS (módulos existem, falta completar fluxo)
+## 🔴 PENDENTES (implementação nova)
 
-### 6. Follow-up Cron
-**O que falta:** Verificar `checkStaleLeads`, definir critérios, testar end-to-end.
-**Estimativa:** 1 dia
+### 10. Gateway de Pagamento (BLOQUEANTE)
 
-### 7. Contact Monitor — Cron de alertas
-**O que falta:** Cron que roda `checkAlertThreshold`, alerta via WhatsApp do admin.
-**Estimativa:** 0.5 dia
+**O que falta:**
+- Escolher gateway (Mercado Pago ou Stripe)
+- Integrar SDK no checkout (transparente ou redirect)
+- Webhook no backend para confirmar pagamento
+- Após confirmação: gerar código de ativação + preencher subscription fields
+- Gerenciar assinaturas recorrentes (mensal/anual)
+- Tratar falhas de pagamento e renovação
+- Preencher `payment_provider_id`, `subscription_started_at`, `subscription_expires_at`, `billing_period`
 
-### 8. Cancellation — Endpoint + crons
-**O que falta:** Endpoint HTTP, cron desconexão, cron limpeza 30 dias, confirmação WhatsApp.
-**Estimativa:** 1.5 dia
-
-### 9. Re-aceite de termos via WhatsApp
-**O que falta:** Verificar consentimento no processor, Cleo manda link se desatualizado.
-**Estimativa:** 1 dia
-
----
-
-## 🔴 GRANDES (implementação nova)
-
-### 10. Gateway de Pagamento
-**O que falta:** Integrar Mercado Pago/Stripe, webhook, gerar código após pagamento, assinaturas recorrentes.
 **Estimativa:** 3-4 dias
 
-### 11. Padronizar banco para inglês
-**O que falta:** Migration rename columns + atualizar repositories + types + processor.
-**Estimativa:** 2-3 dias
+---
 
 ### 12. Fluxo de reconexão WhatsApp
-**O que falta:** Detectar desconexão, notificar usuário, orientar reconexão.
+
+**O que falta:**
+- Connection monitor já detecta desconexão e alerta admin
+- Falta: notificar o usuário via WhatsApp da Cleo
+- Orientar a reconectar (mandar link da página `/conectar`)
+- Definir: reconectar automaticamente ou esperar ação do usuário?
+
 **Estimativa:** 1 dia
+
+---
 
 ### 13. Segurança e Rate Limiting
-**O que falta:** Rate limiting, validação webhook, CORS produção, Helmet.js.
+
+**O que falta:**
+- Rate limiting nos endpoints públicos (express-rate-limit)
+- Validação de assinatura nos webhooks da Evolution API
+- CORS configurado para domínio de produção
+- Helmet.js para headers de segurança
+- Sanitização de inputs
+
 **Estimativa:** 1 dia
 
+---
+
 ### 14. Testes e monitoramento
-**O que falta:** Testes end-to-end, Sentry, uptime monitoring, testes de carga.
+
+**O que falta:**
+- Testes de integração end-to-end (webhook → queue → processor → resposta)
+- Error tracking (Sentry)
+- Uptime monitoring
+- Testes de carga para Redis/queue
+
 **Estimativa:** 2-3 dias
 
+---
+
 ### 15. Serviço de E-mail (futuro)
+
 **Decisão:** WhatsApp para notificações. E-mail só se necessário depois.
+**Preparação:** Interface `NotificationPort` com `sendWhatsApp` e `sendEmail`.
+
 **Estimativa:** 1 dia quando implementar
 
 ---
 
 ## ⚪ DECISÕES (não são débitos)
 
-- **FAQ/testimonials:** Manter hardcoded. Landing muda só em redesigns.
+- **FAQ/testimonials:** Manter hardcoded.
 - **URLs em português:** Rotas visíveis ao usuário, produto pt-BR.
 - **Constantes por módulo:** Cada módulo tem seu `constants.ts`.
+- **E-mail:** Recibos pelo gateway, notificações pelo WhatsApp.
 
 ---
 
 ## Resumo
 
-| Grupo | Estimativa |
-|-------|-----------|
-| 🟢 Rápidos (integração) | ~3 dias |
-| 🟡 Médios (completar fluxo) | ~4 dias |
-| 🔴 Grandes (implementação nova) | ~10-12 dias |
-| **Total para produção** | **~2.5-3 semanas** |
+| Status | Itens |
+|--------|-------|
+| ✅ Concluídos | #1-9, #11 |
+| 🔴 Pendentes | #10, #12-15 |
+| **Estimativa restante** | **~8-10 dias** |
 
-## Ordem sugerida de execução
+## Ordem de execução
 
-1. 🟢 #1-5 (integração front↔back, desbloqueia testes reais)
-2. 🔴 #10 (gateway de pagamento, bloqueante para produção)
-3. 🟡 #6-9 (completar fluxos existentes)
-4. 🔴 #11-14 (refatoração e infraestrutura)
-5. 🔴 #15 (futuro, só se necessário)
+1. 🔴 #10 Gateway de pagamento (bloqueante para produção)
+2. 🔴 #13 Segurança (necessário antes de expor publicamente)
+3. 🔴 #12 Reconexão WhatsApp
+4. 🔴 #14 Testes e monitoramento
+5. 🔴 #15 E-mail (futuro)

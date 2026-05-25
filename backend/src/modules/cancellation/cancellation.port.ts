@@ -25,4 +25,7 @@ export interface CancellationRepository {
   getUserSubscription(userId: string): Promise<UserSubscription | null>;
   updateSubscriptionStatus(userId: string, status: string): Promise<void>;
   disconnectAllSessions(userId: string): Promise<void>;
+  findExpiredSubscriptions(): Promise<Cancellation[]>;
+  findPastGracePeriod(graceDays: number): Promise<Cancellation[]>;
+  purgeUserData(userId: string): Promise<void>;
 }

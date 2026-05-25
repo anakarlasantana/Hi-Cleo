@@ -83,4 +83,63 @@ export class SupabaseCancellationRepository implements CancellationRepository {
 
     if (error) throw new Error(`Erro ao desconectar sessões: ${error.message}`);
   }
+
+  async findExpiredSubscriptions(): Promise<Cancellation[]> {
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('cancellations')
+      .select('*')
+      .is('reactivated_at', null)
+      .lte('access_until', now);
+
+    if (error) throw new Error(`Erro ao buscar assinaturas expiradas: ${error.message}`);
+
+    // Filter to only users still in 'cancelled' status (not yet 'expired')
+    const results: Cancellation[] = [];
+    for (const record of data || []) {
+      const sub = await this.getUserSubscription(record.user_id);
+      if (sub && sub.subscription_status === 'cancelled') {
+        results.push(record as Cancellation);
+      }
+    }
+    return results;
+  }
+
+  async findPastGracePeriod(graceDays: number): Promise<Cancellation[]> {
+    const graceDate = new Date(Date.now() - graceDays * 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+      .from('cancellations')
+      .select('*')
+      .is('reactivated_at', null)
+      .lte('access_until', graceDate);
+
+    if (error) throw new Error(`Erro ao buscar usuários pós grace period: ${error.message}`);
+
+    // Filter to only users in 'expired' status (not yet purged)
+    const results: Cancellation[] = [];
+    for (const record of data || []) {
+      const sub = await this.getUserSubscription(record.user_id);
+      if (sub && sub.subscription_status === 'expired') {
+        results.push(record as Cancellation);
+      }
+    }
+    return results;
+  }
+
+  async purgeUserData(userId: string): Promise<void> {
+    // Delete user data in order: messages, leads, follow_ups, rules, sessions
+    await supabase.from('messages').delete().eq('lead_id', userId);
+    const { data: leads } = await supabase.from('leads').select('id').eq('user_id', userId);
+    if (leads && leads.length > 0) {
+      const leadIds = leads.map((l) => l.id);
+      await supabase.from('messages').delete().in('lead_id', leadIds);
+    }
+    await supabase.from('leads').delete().eq('user_id', userId);
+    await supabase.from('follow_ups').delete().eq('user_id', userId);
+    await supabase.from('rules').delete().eq('user_id', userId);
+    await supabase.from('whatsapp_sessions').delete().eq('user_id', userId);
+    await supabase.from('cancellations').delete().eq('user_id', userId);
+
+    await this.updateSubscriptionStatus(userId, 'purged');
+  }
 }
