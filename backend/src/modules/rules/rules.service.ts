@@ -7,6 +7,8 @@ export interface MessageContext {
   isNewLead: boolean;
   messageText: string;
   timestamp: Date;
+  businessHoursStart?: string;
+  businessHoursEnd?: string;
 }
 
 export interface ReminderContext {
@@ -45,7 +47,7 @@ export class RuleEngine {
           break;
 
         case 'outside_hours':
-          if (this.isOutsideBusinessHours(context.user, context.timestamp)) {
+          if (this.isOutsideBusinessHours(context.user, context.timestamp, { businessHoursStart: context.businessHoursStart, businessHoursEnd: context.businessHoursEnd })) {
             return rule.response;
           }
           break;
@@ -58,14 +60,14 @@ export class RuleEngine {
     return null;
   }
 
-  isOutsideBusinessHours(user: User, timestamp: Date): boolean {
-    const inicio = user.business_hours_start || '08:00';
-    const fim = user.business_hours_end || '18:00';
+  isOutsideBusinessHours(user: User, timestamp: Date, context?: { businessHoursStart?: string; businessHoursEnd?: string }): boolean {
+    const start = context?.businessHoursStart || '08:00';
+    const end = context?.businessHoursEnd || '18:00';
 
     const hours = timestamp.getHours();
     const minutes = timestamp.getMinutes();
     const current = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 
-    return current < inicio || current > fim;
+    return current < start || current > end;
   }
 }

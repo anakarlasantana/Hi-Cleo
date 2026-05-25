@@ -17,6 +17,7 @@ function createMockUserRepo() {
       phone: '5511999999999',
       plan: 'solo',
     }),
+    createBusiness: vi.fn().mockResolvedValue(undefined),
     findByPhone: vi.fn(),
     findById: vi.fn(),
   };

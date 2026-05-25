@@ -31,14 +31,24 @@ export interface User {
   name: string;
   plan: string;
   phone: string;
-  business_hours_start?: string;
-  business_hours_end?: string;
   email?: string;
   subscription_status?: string;
   subscription_started_at?: string;
   subscription_expires_at?: string;
   billing_period?: string;
   payment_provider_id?: string;
+  created_at: string;
+}
+
+export interface Business {
+  id: string;
+  user_id: string;
+  name?: string;
+  type?: string;
+  services?: string;
+  description?: string;
+  business_hours_start?: string;
+  business_hours_end?: string;
   created_at: string;
 }
 

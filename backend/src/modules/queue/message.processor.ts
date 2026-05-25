@@ -119,9 +119,14 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
   await messageRepo.save(lead.id, text, 'inbound');
   await leadService.updateLastInteraction(lead.id);
 
+  // Fetch business hours for rule evaluation
+  const business = await userRepo.getBusiness(user.id);
+
   const isNewLead = !lead.last_interaction;
   const autoResponse = await ruleEngine.evaluate({
     user, lead, isNewLead, messageText: text, timestamp: new Date(),
+    businessHoursStart: business?.business_hours_start,
+    businessHoursEnd: business?.business_hours_end,
   });
 
   if (autoResponse) {

@@ -7,13 +7,24 @@ CREATE TABLE IF NOT EXISTS users (
   plan TEXT NOT NULL DEFAULT 'solo',
   phone TEXT UNIQUE NOT NULL,
   email TEXT,
-  business_hours_start TEXT DEFAULT '08:00',
-  business_hours_end TEXT DEFAULT '18:00',
   subscription_status TEXT DEFAULT 'active',
   subscription_started_at TIMESTAMPTZ,
   subscription_expires_at TIMESTAMPTZ,
   billing_period TEXT DEFAULT 'monthly',
   payment_provider_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Business Profile (dados do negócio do usuário)
+CREATE TABLE IF NOT EXISTS businesses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) UNIQUE,
+  name TEXT,
+  type TEXT,
+  services TEXT,
+  description TEXT,
+  business_hours_start TEXT DEFAULT '08:00',
+  business_hours_end TEXT DEFAULT '18:00',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

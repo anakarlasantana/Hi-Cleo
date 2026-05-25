@@ -45,11 +45,18 @@ export class ActivationService {
       name: parsed.nome,
       phone: phone,
       plan: validCode?.plan || 'solo',
+    });
+
+    await this.activationRepo.markUsed(code, user.id);
+
+    // Save business profile
+    await this.userRepo.createBusiness(user.id, {
+      name: parsed.negocio || undefined,
+      services: parsed.servicos || undefined,
       business_hours_start: parsed.horario_inicio || '08:00',
       business_hours_end: parsed.horario_fim || '18:00',
     });
 
-    await this.activationRepo.markUsed(code, user.id);
     await this.onboardingRepo.create(user.id, 'confirm_name', parsed);
 
     // Registrar consentimento após criação do usuário
