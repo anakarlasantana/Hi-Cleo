@@ -3,10 +3,10 @@ import type { MessageRepository } from './messages.port.js';
 import type { Message, MessageDirection } from '../../shared/types/index.js';
 
 export class SupabaseMessageRepository implements MessageRepository {
-  async save(leadId: string, texto: string, direcao: MessageDirection): Promise<Message> {
+  async save(leadId: string, text: string, direction: MessageDirection): Promise<Message> {
     const { data, error } = await supabase
       .from('messages')
-      .insert({ lead_id: leadId, texto, direcao })
+      .insert({ lead_id: leadId, text, direction })
       .select()
       .single();
 

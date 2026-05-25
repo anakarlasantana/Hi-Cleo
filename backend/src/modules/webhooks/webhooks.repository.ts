@@ -7,7 +7,7 @@ export class SupabaseSessionRepository implements SessionRepository {
       .from('whatsapp_sessions')
       .select('user_id')
       .eq('instance_name', instanceName)
-      .eq('status', 'ativa')
+      .eq('status', 'active')
       .single();
 
     return data || null;

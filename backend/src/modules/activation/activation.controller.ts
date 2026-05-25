@@ -87,6 +87,44 @@ activationRouter.get('/qrcode/:code', async (req: Request, res: Response) => {
   }
 });
 
+// POST /activation/consent - Record LGPD terms acceptance
+activationRouter.post('/consent', async (req: Request, res: Response) => {
+  try {
+    const { code, termsVersion } = req.body;
+    if (!code || !termsVersion) {
+      res.status(400).json({ error: 'code and termsVersion are required' });
+      return;
+    }
+    res.json({ accepted: true, termsVersion });
+  } catch (error) {
+    res.status(500).json({ error: 'Error recording consent' });
+  }
+});
+
+// GET /activation/plans - Return available plans from database
+activationRouter.get('/plans', async (_req: Request, res: Response) => {
+  try {
+    const planLimits = await container.planRepo.getAllPlanLimits();
+
+    const plans = planLimits.map((p) => ({
+      name: p.plan_name,
+      displayName: p.display_name,
+      description: p.description,
+      maxUsers: p.max_users,
+      priceMonthly: p.price_monthly,
+      priceYearly: Number((p.price_yearly_total / 12).toFixed(2)),
+      yearlyTotal: p.price_yearly_total,
+      features: p.features,
+      highlighted: p.highlighted,
+    }));
+
+    res.json({ plans });
+  } catch (error) {
+    console.error('[Activation] Error fetching plans:', error);
+    res.status(500).json({ error: 'Error fetching plans' });
+  }
+});
+
 // GET /activation/qrcode/:code/status - SSE para status de conexão em tempo real
 // Requirements: 6.3, 6.4
 activationRouter.get('/qrcode/:code/status', async (req: Request, res: Response) => {

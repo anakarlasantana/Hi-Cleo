@@ -40,17 +40,17 @@ export class RuleEngine {
 
     for (const rule of rules) {
       switch (rule.condition) {
-        case 'primeira_mensagem':
+        case 'first_message':
           if (context.isNewLead) return rule.response;
           break;
 
-        case 'fora_horario':
+        case 'outside_hours':
           if (this.isOutsideBusinessHours(context.user, context.timestamp)) {
             return rule.response;
           }
           break;
 
-        case 'lembrete':
+        case 'reminder':
           return rule.response;
       }
     }
@@ -59,8 +59,8 @@ export class RuleEngine {
   }
 
   isOutsideBusinessHours(user: User, timestamp: Date): boolean {
-    const inicio = user.horario_comercial_inicio || '08:00';
-    const fim = user.horario_comercial_fim || '18:00';
+    const inicio = user.business_hours_start || '08:00';
+    const fim = user.business_hours_end || '18:00';
 
     const hours = timestamp.getHours();
     const minutes = timestamp.getMinutes();

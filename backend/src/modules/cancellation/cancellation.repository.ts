@@ -77,9 +77,9 @@ export class SupabaseCancellationRepository implements CancellationRepository {
   async disconnectAllSessions(userId: string): Promise<void> {
     const { error } = await supabase
       .from('whatsapp_sessions')
-      .update({ status: 'desconectada' })
+      .update({ status: 'disconnected' })
       .eq('user_id', userId)
-      .eq('status', 'ativa');
+      .eq('status', 'active');
 
     if (error) throw new Error(`Erro ao desconectar sessões: ${error.message}`);
   }

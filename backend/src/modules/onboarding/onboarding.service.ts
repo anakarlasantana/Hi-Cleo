@@ -10,7 +10,7 @@ export class OnboardingService {
 
   async isComplete(userId: string): Promise<boolean> {
     const state = await this.onboardingRepo.getState(userId);
-    return state?.step === "concluido";
+    return state?.step === "completed";
   }
 
   async processMessage(userId: string, message: string): Promise<string> {
@@ -18,13 +18,13 @@ export class OnboardingService {
     if (!state) return "Erro interno. Tente novamente.";
 
     switch (state.step) {
-      case "confirmar_nome":
+      case "confirm_name":
         return this.handleConfirmarNome(userId, state, message);
-      case "configurar_boas_vindas":
+      case "configure_welcome":
         return this.handleBoasVindas(userId, state, message);
-      case "configurar_fora_horario":
+      case "configure_outside_hours":
         return this.handleForaHorario(userId, state, message);
-      case "concluido":
+      case "completed":
         return "Seu onboarding já foi concluído! Me pergunte qualquer coisa sobre seus clientes. 😊";
       default:
         return "Não entendi. Pode repetir?";
@@ -37,7 +37,7 @@ export class OnboardingService {
     message: string,
   ): Promise<string> {
     const nome = message.trim();
-    await this.onboardingRepo.updateStep(userId, "configurar_boas_vindas", {
+    await this.onboardingRepo.updateStep(userId, "configure_welcome", {
       ...state.data,
       nome_confirmado: nome,
     });
@@ -56,7 +56,7 @@ export class OnboardingService {
         ? "ativa"
         : "desativada";
 
-    await this.onboardingRepo.updateStep(userId, "configurar_fora_horario", {
+    await this.onboardingRepo.updateStep(userId, "configure_outside_hours", {
       ...state.data,
       boas_vindas: boasVindas,
     });
@@ -80,7 +80,7 @@ export class OnboardingService {
         ? "ativa"
         : "desativada";
 
-    await this.onboardingRepo.updateStep(userId, "concluido", {
+    await this.onboardingRepo.updateStep(userId, "completed", {
       ...state.data,
       fora_horario: foraHorario,
     });
@@ -104,7 +104,7 @@ export class OnboardingService {
     if (data.boas_vindas === "ativa") {
       rules.push({
         user_id: userId,
-        condition: "primeira_mensagem",
+        condition: "first_message",
         response: `Olá! Sou a assistente do(a) ${data.nome_confirmado}. Ele(a) já vai te atender! 😊`,
         active: true,
       });
@@ -113,7 +113,7 @@ export class OnboardingService {
     if (foraHorario === "ativa") {
       rules.push({
         user_id: userId,
-        condition: "fora_horario",
+        condition: "outside_hours",
         response: `Olá! O(a) ${data.nome_confirmado} não está disponível agora, mas retorna no próximo dia útil. Sua mensagem foi registrada! 📝`,
         active: true,
       });

@@ -8,7 +8,7 @@ export class SupabaseLeadRepository implements LeadRepository {
       .from('leads')
       .select('*')
       .eq('user_id', userId)
-      .eq('telefone', phone)
+      .eq('phone', phone)
       .single();
 
     return (data as Lead) || null;
@@ -19,9 +19,9 @@ export class SupabaseLeadRepository implements LeadRepository {
       .from('leads')
       .insert({
         user_id: userId,
-        telefone: phone,
-        nome: name || phone,
-        status: 'novo',
+        phone: phone,
+        name: name || phone,
+        status: 'new',
       })
       .select()
       .single();
@@ -70,8 +70,8 @@ export class SupabaseLeadRepository implements LeadRepository {
         .select('*')
         .eq('user_id', userId)
         .lt('last_interaction', threshold)
-        .neq('status', 'fechado')
-        .neq('status', 'perdido');
+        .neq('status', 'closed')
+        .neq('status', 'lost');
 
       return (fallback || []) as Lead[];
     }

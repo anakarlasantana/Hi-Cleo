@@ -69,7 +69,7 @@ describe('OnboardingService', () => {
       onboardingRepo.seed('user-1', {
         id: 'state-1',
         user_id: 'user-1',
-        step: 'configurar_fora_horario',
+        step: 'configure_outside_hours',
         data: { nome_confirmado: 'João', boas_vindas: 'ativa' },
         updated_at: '2025-01-01T00:00:00Z',
       });
@@ -83,7 +83,7 @@ describe('OnboardingService', () => {
       onboardingRepo.seed('user-1', {
         id: 'state-1',
         user_id: 'user-1',
-        step: 'configurar_fora_horario',
+        step: 'configure_outside_hours',
         data: { nome_confirmado: 'João', boas_vindas: 'ativa' },
         updated_at: '2025-01-01T00:00:00Z',
       });
@@ -93,11 +93,11 @@ describe('OnboardingService', () => {
       expect(response).toContain('Volte para a tela no seu computador');
     });
 
-    it('transitions to concluido step', async () => {
+    it('transitions to completed step', async () => {
       onboardingRepo.seed('user-1', {
         id: 'state-1',
         user_id: 'user-1',
-        step: 'configurar_fora_horario',
+        step: 'configure_outside_hours',
         data: { nome_confirmado: 'Maria', boas_vindas: 'ativa' },
         updated_at: '2025-01-01T00:00:00Z',
       });
@@ -105,14 +105,14 @@ describe('OnboardingService', () => {
       await service.processMessage('user-1', '1');
 
       const state = await onboardingRepo.getState('user-1');
-      expect(state?.step).toBe('concluido');
+      expect(state?.step).toBe('completed');
     });
 
     it('mentions WhatsApp Web comparison', async () => {
       onboardingRepo.seed('user-1', {
         id: 'state-1',
         user_id: 'user-1',
-        step: 'configurar_fora_horario',
+        step: 'configure_outside_hours',
         data: { nome_confirmado: 'Ana', boas_vindas: 'desativada' },
         updated_at: '2025-01-01T00:00:00Z',
       });

@@ -4,7 +4,7 @@ import { ActivationService } from './activation.service.js';
 function createMockActivationRepo() {
   return {
     createCode: vi.fn(),
-    findValidCode: vi.fn().mockResolvedValue({ code: 'ATIVAR-TEST', plano: 'solo', used: false }),
+    findValidCode: vi.fn().mockResolvedValue({ code: 'ATIVAR-TEST', plan: 'solo', used: false }),
     markUsed: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -13,9 +13,9 @@ function createMockUserRepo() {
   return {
     create: vi.fn().mockResolvedValue({
       id: 'user-123',
-      nome: 'Maria',
-      telefone: '5511999999999',
-      plano: 'solo',
+      name: 'Maria',
+      phone: '5511999999999',
+      plan: 'solo',
     }),
     findByPhone: vi.fn(),
     findById: vi.fn(),

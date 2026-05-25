@@ -15,11 +15,11 @@ export function startFollowUpCron(): void {
         if (!user) continue;
 
         const lastMsg = await messageRepo.getLastMessage(followUp.lead_id);
-        const contexto = lastMsg ? ` Última conversa: "${lastMsg.texto.slice(0, 50)}..."` : '';
+        const contexto = lastMsg ? ` Última conversa: "${lastMsg.text.slice(0, 50)}..."` : '';
 
         await messaging.sendText({
           instance: 'secretary',
-          to: user.telefone,
+          to: user.phone,
           text: `🔔 *Lembrete:* Você pediu pra falar com alguém hoje.${contexto}`,
         });
         await followUpRepo.markSent(followUp.id);
@@ -34,14 +34,14 @@ export function startFollowUpCron(): void {
         if (staleLeads.length === 1) {
           await messaging.sendText({
             instance: 'secretary',
-            to: user.telefone,
-            text: `👋 O(a) *${staleLeads[0].nome}* tá esperando retorno. Quer que eu te lembre mais tarde?`,
+            to: user.phone,
+            text: `👋 O(a) *${staleLeads[0].name}* tá esperando retorno. Quer que eu te lembre mais tarde?`,
           });
         } else {
-          const list = staleLeads.slice(0, 5).map((l) => `• *${l.nome}*`).join('\n');
+          const list = staleLeads.slice(0, 5).map((l) => `• *${l.name}*`).join('\n');
           await messaging.sendText({
             instance: 'secretary',
-            to: user.telefone,
+            to: user.phone,
             text: `👋 Você tem ${staleLeads.length} clientes esperando retorno:\n\n${list}\n\nQuer ver detalhes?`,
           });
         }

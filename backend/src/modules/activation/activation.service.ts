@@ -22,10 +22,10 @@ export class ActivationService {
     private termsConsentService?: TermsConsentService,
   ) {}
 
-  async generateCode(paymentId: string, plano: string): Promise<ActivationCode> {
+  async generateCode(paymentId: string, plan: string): Promise<ActivationCode> {
     const code = generateCode();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    return this.activationRepo.createCode(code, plano, paymentId, expiresAt);
+    return this.activationRepo.createCode(code, plan, paymentId, expiresAt);
   }
 
   async validateCode(code: string): Promise<ActivationCode | null> {
@@ -42,15 +42,15 @@ export class ActivationService {
     const validCode = await this.activationRepo.findValidCode(code);
 
     const user = await this.userRepo.create({
-      nome: parsed.nome,
-      telefone: phone,
-      plano: validCode?.plano || 'solo',
-      horario_comercial_inicio: parsed.horario_inicio || '08:00',
-      horario_comercial_fim: parsed.horario_fim || '18:00',
+      name: parsed.nome,
+      phone: phone,
+      plan: validCode?.plan || 'solo',
+      business_hours_start: parsed.horario_inicio || '08:00',
+      business_hours_end: parsed.horario_fim || '18:00',
     });
 
     await this.activationRepo.markUsed(code, user.id);
-    await this.onboardingRepo.create(user.id, 'confirmar_nome', parsed);
+    await this.onboardingRepo.create(user.id, 'confirm_name', parsed);
 
     // Registrar consentimento após criação do usuário
     if (this.termsConsentService && termsAccepted) {

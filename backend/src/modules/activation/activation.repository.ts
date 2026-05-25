@@ -3,12 +3,12 @@ import type { ActivationRepository, UserRepository } from './activation.port.js'
 import type { ActivationCode, User } from '../../shared/types/index.js';
 
 export class SupabaseActivationRepository implements ActivationRepository {
-  async createCode(code: string, plano: string, paymentId: string, expiresAt: Date): Promise<ActivationCode> {
+  async createCode(code: string, plan: string, paymentId: string, expiresAt: Date): Promise<ActivationCode> {
     const { data, error } = await supabase
       .from('activation_codes')
       .insert({
         code,
-        plano,
+        plan,
         payment_id: paymentId,
         used: false,
         expires_at: expiresAt.toISOString(),
@@ -47,7 +47,7 @@ export class SupabaseUserRepository implements UserRepository {
     const { data } = await supabase
       .from('users')
       .select('*')
-      .eq('telefone', phone)
+      .eq('phone', phone)
       .single();
 
     return (data as User) || null;

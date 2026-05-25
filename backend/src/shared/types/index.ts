@@ -1,38 +1,44 @@
 // === Enums ===
-export type LeadStatus = 'novo' | 'quente' | 'frio' | 'perdido' | 'fechado';
-export type SessionStatus = 'ativa' | 'desconectada' | 'pendente';
-export type MessageDirection = 'entrada' | 'saida';
-export type FollowUpStatus = 'pendente' | 'enviado' | 'cancelado';
+export type LeadStatus = 'new' | 'hot' | 'cold' | 'lost' | 'closed';
+export type SessionStatus = 'active' | 'disconnected' | 'pending';
+export type MessageDirection = 'inbound' | 'outbound';
+export type FollowUpStatus = 'pending' | 'sent' | 'cancelled';
 
 export type OnboardingStep =
-  | 'aguardando_ativacao'
-  | 'confirmar_nome'
-  | 'configurar_boas_vindas'
-  | 'configurar_fora_horario'
-  | 'concluido';
+  | 'awaiting_activation'
+  | 'confirm_name'
+  | 'configure_welcome'
+  | 'configure_outside_hours'
+  | 'completed';
 
 export type IntentType =
-  | 'listar_leads'
-  | 'leads_hoje'
-  | 'sem_resposta'
-  | 'clientes_quentes'
-  | 'agendar_followup'
-  | 'status_lead'
-  | 'enviar_material'
-  | 'configurar_regra'
-  | 'ignorar_contato'
-  | 'listar_ignorados'
-  | 'parar_ignorar'
-  | 'desconhecido';
+  | 'list_leads'
+  | 'leads_today'
+  | 'no_reply'
+  | 'hot_leads'
+  | 'schedule_followup'
+  | 'lead_status'
+  | 'send_material'
+  | 'configure_rule'
+  | 'ignore_contact'
+  | 'list_ignored'
+  | 'stop_ignoring'
+  | 'unknown';
 
-// === Entidades ===
+// === Entities ===
 export interface User {
   id: string;
-  nome: string;
-  plano: string;
-  telefone: string;
-  horario_comercial_inicio?: string;
-  horario_comercial_fim?: string;
+  name: string;
+  plan: string;
+  phone: string;
+  business_hours_start?: string;
+  business_hours_end?: string;
+  email?: string;
+  subscription_status?: string;
+  subscription_started_at?: string;
+  subscription_expires_at?: string;
+  billing_period?: string;
+  payment_provider_id?: string;
   created_at: string;
 }
 
@@ -48,8 +54,8 @@ export interface WhatsAppSession {
 export interface Lead {
   id: string;
   user_id: string;
-  nome: string;
-  telefone: string;
+  name: string;
+  phone: string;
   status: LeadStatus;
   last_interaction?: string;
   created_at: string;
@@ -58,8 +64,8 @@ export interface Lead {
 export interface Message {
   id: string;
   lead_id: string;
-  texto: string;
-  direcao: MessageDirection;
+  text: string;
+  direction: MessageDirection;
   timestamp: string;
 }
 
@@ -67,7 +73,7 @@ export interface FollowUp {
   id: string;
   lead_id: string;
   user_id: string;
-  data_agendada: string;
+  scheduled_at: string;
   status: FollowUpStatus;
   created_at: string;
 }
@@ -80,20 +86,10 @@ export interface Rule {
   active: boolean;
 }
 
-export interface Material {
-  id: string;
-  user_id: string;
-  keyword: string;
-  tipo: 'texto' | 'imagem' | 'documento';
-  conteudo: string;
-  nome: string;
-  created_at: string;
-}
-
 export interface ActivationCode {
   id: string;
   code: string;
-  plano: string;
+  plan: string;
   payment_id: string;
   used: boolean;
   used_by?: string;

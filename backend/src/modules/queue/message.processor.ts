@@ -57,7 +57,7 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     }
 
     const user = await activationService.activateUser(code, phone, text);
-    await messaging.sendText({ instance: 'secretary', to: phone, text: `Bem-vindo(a)! 🎉\n\nSeu código foi ativado com sucesso!\n\nMe confirma: posso te chamar de *${user.nome}*?` });
+    await messaging.sendText({ instance: 'secretary', to: phone, text: `Bem-vindo(a)! 🎉\n\nSeu código foi ativado com sucesso!\n\nMe confirma: posso te chamar de *${user.name}*?` });
     return;
   }
 
@@ -97,7 +97,7 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
   if (isExcluded) return;
 
   const lead = await leadService.findOrCreate(user.id, phone, pushName);
-  await messageRepo.save(lead.id, text, 'entrada');
+  await messageRepo.save(lead.id, text, 'inbound');
   await leadService.updateLastInteraction(lead.id);
 
   const isNewLead = !lead.last_interaction;
@@ -107,7 +107,7 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
 
   if (autoResponse) {
     await messaging.sendText({ instance, to: phone, text: autoResponse });
-    await messageRepo.save(lead.id, autoResponse, 'saida');
+    await messageRepo.save(lead.id, autoResponse, 'outbound');
   }
 }
 
@@ -115,49 +115,49 @@ async function executeIntent(container: any, user: any, intent: { type: string; 
   const { leadService, exclusionRepo } = container;
 
   switch (intent.type) {
-    case 'listar_leads': {
-      const leads = await leadService.listByStatus(user.id, 'novo');
+    case 'list_leads': {
+      const leads = await leadService.listByStatus(user.id, 'new');
       if (leads.length === 0) return 'Você não tem clientes novos no momento. 📭';
-      const list = leads.slice(0, 10).map((l: any, i: number) => `${i + 1}. *${l.nome}* (${l.telefone})`).join('\n');
+      const list = leads.slice(0, 10).map((l: any, i: number) => `${i + 1}. *${l.name}* (${l.phone})`).join('\n');
       return `📋 Seus clientes:\n\n${list}`;
     }
-    case 'leads_hoje': {
+    case 'leads_today': {
       const leads = await leadService.listToday(user.id);
       if (leads.length === 0) return 'Nenhum cliente novo hoje. 📭';
-      const list = leads.map((l: any, i: number) => `${i + 1}. *${l.nome}*`).join('\n');
+      const list = leads.map((l: any, i: number) => `${i + 1}. *${l.name}*`).join('\n');
       return `📋 Clientes novos de hoje:\n\n${list}`;
     }
-    case 'sem_resposta': {
+    case 'no_reply': {
       const leads = await leadService.listNoReply(user.id);
       if (leads.length === 0) return 'Todos os clientes estão com retorno em dia! ✅';
-      const list = leads.slice(0, 10).map((l: any, i: number) => `${i + 1}. *${l.nome}* (${l.telefone})`).join('\n');
+      const list = leads.slice(0, 10).map((l: any, i: number) => `${i + 1}. *${l.name}* (${l.phone})`).join('\n');
       return `⚠️ Clientes esperando retorno:\n\n${list}`;
     }
-    case 'clientes_quentes': {
-      const leads = await leadService.listByStatus(user.id, 'quente');
+    case 'hot_leads': {
+      const leads = await leadService.listByStatus(user.id, 'hot');
       if (leads.length === 0) return 'Nenhum cliente quente no momento.';
-      const list = leads.slice(0, 10).map((l: any, i: number) => `${i + 1}. 🔥 *${l.nome}*`).join('\n');
+      const list = leads.slice(0, 10).map((l: any, i: number) => `${i + 1}. 🔥 *${l.name}*`).join('\n');
       return `🔥 Clientes quentes:\n\n${list}`;
     }
-    case 'ignorar_contato': {
-      const nome = intent.entities.nome || '';
-      const telefone = intent.entities.telefone || '';
-      if (!nome && !telefone) return 'Qual contato você quer ignorar? Me diz o nome ou número.';
-      await exclusionRepo.add(user.id, telefone || nome, nome);
-      return `✅ Pronto! O contato *${nome || telefone}* foi marcado como pessoal.`;
+    case 'ignore_contact': {
+      const name = intent.entities.name || '';
+      const phone = intent.entities.phone || '';
+      if (!name && !phone) return 'Qual contato você quer ignorar? Me diz o nome ou número.';
+      await exclusionRepo.add(user.id, phone || name, name);
+      return `✅ Pronto! O contato *${name || phone}* foi marcado como pessoal.`;
     }
-    case 'listar_ignorados': {
+    case 'list_ignored': {
       const ignored = await exclusionRepo.list(user.id);
       if (ignored.length === 0) return 'Você não tem nenhum contato na lista de ignorados.';
-      const list = ignored.map((c: any, i: number) => `${i + 1}. ${c.nome} (${c.telefone})`).join('\n');
+      const list = ignored.map((c: any, i: number) => `${i + 1}. ${c.name} (${c.phone})`).join('\n');
       return `🚫 Contatos ignorados:\n\n${list}`;
     }
-    case 'parar_ignorar': {
-      const nome = intent.entities.nome || '';
-      const telefone = intent.entities.telefone || '';
-      if (!nome && !telefone) return 'Qual contato você quer voltar a acompanhar?';
-      await exclusionRepo.remove(user.id, telefone || nome);
-      return `✅ Voltei a acompanhar *${nome || telefone}*.`;
+    case 'stop_ignoring': {
+      const name = intent.entities.name || '';
+      const phone = intent.entities.phone || '';
+      if (!name && !phone) return 'Qual contato você quer voltar a acompanhar?';
+      await exclusionRepo.remove(user.id, phone || name);
+      return `✅ Voltei a acompanhar *${name || phone}*.`;
     }
     default:
       return 'Entendi o que você quer, mas essa função ainda está sendo preparada. Em breve! 🚧';

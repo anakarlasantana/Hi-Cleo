@@ -49,20 +49,41 @@ function CheckoutContent() {
 
   useEffect(() => {
     if (showPixModal && !pixConfirmed) {
-      const t = setTimeout(() => {
+      const t = setTimeout(async () => {
         setPixConfirmed(true)
-        setTimeout(() => router.push("/ativacao"), 2000)
+        const code = await generateActivationCode()
+        setTimeout(() => router.push(`/ativacao?code=${code}`), 2000)
       }, 5000)
       return () => clearTimeout(t)
     }
   }, [showPixModal, pixConfirmed, router])
+
+  const generateActivationCode = async () => {
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+    try {
+      const res = await fetch(`${API_URL}/api/activation/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payment_id: `pix_${Date.now()}`, plano: selectedPlan }),
+      })
+      const data = await res.json()
+      return data.code as string
+    } catch {
+      // Fallback if API is unavailable
+      return `ATIVAR-${Math.random().toString(36).substring(2, 6).toUpperCase()}`
+    }
+  }
 
   const onSubmit = () => {
     setIsProcessing(true)
     if (paymentMethod === "pix") {
       setTimeout(() => { setIsProcessing(false); setShowPixModal(true) }, 1000)
     } else {
-      setTimeout(() => { setIsProcessing(false); router.push("/ativacao") }, 2000)
+      setTimeout(async () => {
+        setIsProcessing(false)
+        const code = await generateActivationCode()
+        router.push(`/ativacao?code=${code}`)
+      }, 2000)
     }
   }
 

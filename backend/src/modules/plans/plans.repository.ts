@@ -26,7 +26,7 @@ export class SupabasePlanRepository implements PlanRepository {
       .from('whatsapp_sessions')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId)
-      .eq('status', 'ativa');
+      .eq('status', 'active');
 
     if (error) throw new Error(`Erro ao contar usuários ativos: ${error.message}`);
     return count || 0;
@@ -35,11 +35,11 @@ export class SupabasePlanRepository implements PlanRepository {
   async getUserPlan(userId: string): Promise<string | null> {
     const { data } = await supabase
       .from('users')
-      .select('plano')
+      .select('plan')
       .eq('id', userId)
       .single();
 
-    return data?.plano || null;
+    return data?.plan || null;
   }
 
   async disconnectExcessUsers(userId: string, maxUsers: number): Promise<number> {
@@ -48,7 +48,7 @@ export class SupabasePlanRepository implements PlanRepository {
       .from('whatsapp_sessions')
       .select('id')
       .eq('user_id', userId)
-      .eq('status', 'ativa')
+      .eq('status', 'active')
       .order('connected_at', { ascending: false });
 
     if (!sessions || sessions.length <= maxUsers) return 0;
@@ -59,7 +59,7 @@ export class SupabasePlanRepository implements PlanRepository {
 
     const { error } = await supabase
       .from('whatsapp_sessions')
-      .update({ status: 'desconectada' })
+      .update({ status: 'disconnected' })
       .in('id', idsToDisconnect);
 
     if (error) throw new Error(`Erro ao desconectar usuários: ${error.message}`);

@@ -8,24 +8,24 @@ Analise a mensagem e retorne APENAS um JSON válido (sem markdown, sem backticks
 {
   "type": "tipo_da_intencao",
   "confidence": 0.0 a 1.0,
-  "entities": { "nome": "...", "data": "...", "horario": "..." }
+  "entities": { "name": "...", "date": "...", "time": "..." }
 }
 
 Intenções possíveis:
-- listar_leads: quer ver todos os clientes/contatos
-- leads_hoje: quer ver clientes novos de hoje
-- sem_resposta: quer saber quem está sem retorno
-- clientes_quentes: quer ver clientes engajados/quentes
-- agendar_followup: quer agendar lembrete/retorno para alguém
-- status_lead: quer saber sobre um cliente específico
-- enviar_material: quer enviar documento/orçamento para alguém
-- configurar_regra: quer mudar configuração (horário, mensagem automática)
-- ignorar_contato: quer que o sistema ignore um número (contato pessoal)
-- listar_ignorados: quer ver quais contatos estão sendo ignorados
-- parar_ignorar: quer voltar a acompanhar um contato que estava ignorado
-- desconhecido: não conseguiu identificar
+- list_leads: quer ver todos os clientes/contatos
+- leads_today: quer ver clientes novos de hoje
+- no_reply: quer saber quem está sem retorno
+- hot_leads: quer ver clientes engajados/quentes
+- schedule_followup: quer agendar lembrete/retorno para alguém
+- lead_status: quer saber sobre um cliente específico
+- send_material: quer enviar documento/orçamento para alguém
+- configure_rule: quer mudar configuração (horário, mensagem automática)
+- ignore_contact: quer que o sistema ignore um número (contato pessoal)
+- list_ignored: quer ver quais contatos estão sendo ignorados
+- stop_ignoring: quer voltar a acompanhar um contato que estava ignorado
+- unknown: não conseguiu identificar
 
-Extraia entidades quando possível (nome do cliente, data, horário).
+Extraia entidades quando possível (name do cliente, date, time).
 Se a data for relativa ("amanhã", "segunda"), converta para formato ISO.`;
 
 export class AssistenteService {
@@ -55,17 +55,17 @@ export class AssistenteService {
     const lower = text.toLowerCase();
 
     const patterns: Array<{ keywords: string[]; type: IntentType }> = [
-      { keywords: ['leads', 'clientes', 'contatos', 'lista', 'mostra'], type: 'listar_leads' },
-      { keywords: ['hoje', 'novos', 'novo', 'chegou'], type: 'leads_hoje' },
-      { keywords: ['sem resposta', 'pendente', 'devendo', 'não respondeu'], type: 'sem_resposta' },
-      { keywords: ['quente', 'quentes', 'engajado', 'oportunidade'], type: 'clientes_quentes' },
-      { keywords: ['agenda', 'lembrete', 'retorno', 'lembra'], type: 'agendar_followup' },
-      { keywords: ['como tá', 'status', 'novidade', 'e o'], type: 'status_lead' },
-      { keywords: ['manda', 'envia', 'material', 'orçamento', 'catálogo', 'apresentação'], type: 'enviar_material' },
-      { keywords: ['configura', 'muda', 'horário', 'automática'], type: 'configurar_regra' },
-      { keywords: ['ignora', 'pessoal', 'não é cliente', 'exclui'], type: 'ignorar_contato' },
-      { keywords: ['ignorados', 'excluídos', 'quem tá ignorado'], type: 'listar_ignorados' },
-      { keywords: ['volta a acompanhar', 'para de ignorar', 'desbloqueia'], type: 'parar_ignorar' },
+      { keywords: ['leads', 'clientes', 'contatos', 'lista', 'mostra'], type: 'list_leads' },
+      { keywords: ['hoje', 'novos', 'novo', 'chegou'], type: 'leads_today' },
+      { keywords: ['sem resposta', 'pendente', 'devendo', 'não respondeu'], type: 'no_reply' },
+      { keywords: ['quente', 'quentes', 'engajado', 'oportunidade'], type: 'hot_leads' },
+      { keywords: ['agenda', 'lembrete', 'retorno', 'lembra'], type: 'schedule_followup' },
+      { keywords: ['como tá', 'status', 'novidade', 'e o'], type: 'lead_status' },
+      { keywords: ['manda', 'envia', 'material', 'orçamento', 'catálogo', 'apresentação'], type: 'send_material' },
+      { keywords: ['configura', 'muda', 'horário', 'automática'], type: 'configure_rule' },
+      { keywords: ['ignora', 'pessoal', 'não é cliente', 'exclui'], type: 'ignore_contact' },
+      { keywords: ['ignorados', 'excluídos', 'quem tá ignorado'], type: 'list_ignored' },
+      { keywords: ['volta a acompanhar', 'para de ignorar', 'desbloqueia'], type: 'stop_ignoring' },
     ];
 
     for (const pattern of patterns) {
@@ -74,6 +74,6 @@ export class AssistenteService {
       }
     }
 
-    return { type: 'desconhecido', confidence: 0, entities: {}, originalText: text };
+    return { type: 'unknown', confidence: 0, entities: {}, originalText: text };
   }
 }
