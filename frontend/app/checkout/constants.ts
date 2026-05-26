@@ -1,7 +1,13 @@
-export const plans = {
-  solo: { name: "Solo", priceMonthly: 49, priceYearly: 40.83, yearlyTotal: 490, users: "1 usuário" },
-  equipe: { name: "Equipe", priceMonthly: 119, priceYearly: 99.17, yearlyTotal: 1190, users: "Até 3 usuários" },
-  empresa: { name: "Empresa", priceMonthly: 249, priceYearly: 207.50, yearlyTotal: 2490, users: "Até 8 usuários" },
-} as const
+export interface Plan {
+  name: string
+  displayName: string
+  priceMonthly: number
+  priceYearly: number
+  yearlyTotal: number
+  users: string
+  maxUsers: number
+  features: string[]
+  highlighted: boolean
+}
 
-export type PlanKey = keyof typeof plans
+export type PlanKey = string

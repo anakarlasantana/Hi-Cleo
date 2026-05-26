@@ -7,9 +7,6 @@ export const baseSchema = z.object({
 })
 
 export const cardSchema = baseSchema.extend({
-  cardNumber: z.string().min(19, "Número do cartão inválido"),
-  expiry: z.string().min(5, "Validade inválida"),
-  cvv: z.string().min(3, "CVV inválido"),
   cardName: z.string().min(3, "Nome no cartão é obrigatório"),
 })
 
