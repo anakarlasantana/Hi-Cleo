@@ -26,6 +26,25 @@ Todos incluem: transferência ilimitada, servidor no Brasil, 1 IP dedicado, migr
 
 ---
 
+## Taxas do Gateway de Pagamento (Mercado Pago)
+
+| Método | Taxa MP | Impacto no recebimento | Quem paga |
+|--------|---------|------------------------|-----------|
+| PIX | 0% | Recebe 100% na hora | Ninguém |
+| Cartão à vista | ~4.99% | Recebe ~95% | Sistema absorve |
+| Cartão 2x-3x | ~4.99% | Recebe ~95% | Sistema absorve |
+| Cartão 4x-12x | ~4.99% + juros | Recebe 100% (juros repassados) | Cliente paga juros |
+
+**Exemplo prático (Plano Solo R$49/mês):**
+- PIX: recebe R$49,00
+- Cartão 1x: recebe ~R$46,55 (absorve R$2,45)
+- Cartão 3x: recebe ~R$46,55 (cliente paga 3x R$16,33)
+- Cartão 6x: cliente paga ~R$57,00 total (juros), você recebe ~R$54,16 (menos taxa MP)
+
+**Impacto na margem:** com 95%+ de margem operacional, absorver a taxa de cartão até 3x é trivial.
+
+---
+
 ## Custos Variáveis (por uso)
 
 ### IA — Gemini API

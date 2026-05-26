@@ -87,6 +87,26 @@ Organizado por prioridade. Itens rápidos e médios já foram concluídos.
 
 ---
 
+### 16. Testes unitários e de propriedade — Payment Gateway
+
+**O que falta:**
+- Testes unitários para Price Calculator (tabela de preços, edge cases, parcelamento)
+- Testes de propriedade (fast-check) para validar corretude universal:
+  - Sem acréscimo para PIX e cartão até 3x
+  - Juros compostos corretos para parcelamento > 3x
+  - Preço anual = 10x mensal
+  - Webhook idempotente (processar 2x = mesmo efeito que 1x)
+  - Expiração de assinatura calculada corretamente (30d mensal, 365d anual)
+  - Renovação com retry limitado (máx 5 tentativas)
+  - Formatação monetária no padrão brasileiro
+- Testes unitários para Payment Service, Webhook Service e Subscription Manager
+
+**Decisão:** Implementação inicial validada com sandbox do MP (cartões de teste). Testes automatizados adicionados depois.
+
+**Estimativa:** 2 dias
+
+---
+
 ## ⚪ DECISÕES (não são débitos)
 
 - **FAQ/testimonials:** Manter hardcoded.
@@ -101,8 +121,8 @@ Organizado por prioridade. Itens rápidos e médios já foram concluídos.
 | Status | Itens |
 |--------|-------|
 | ✅ Concluídos | #1-9, #11 |
-| 🔴 Pendentes | #10, #12-15 |
-| **Estimativa restante** | **~8-10 dias** |
+| 🔴 Pendentes | #10, #12-16 |
+| **Estimativa restante** | **~10-12 dias** |
 
 ## Ordem de execução
 
@@ -111,3 +131,4 @@ Organizado por prioridade. Itens rápidos e médios já foram concluídos.
 3. 🔴 #12 Reconexão WhatsApp
 4. 🔴 #14 Testes e monitoramento
 5. 🔴 #15 E-mail (futuro)
+6. 🔴 #16 Testes Payment Gateway (após validação com sandbox)

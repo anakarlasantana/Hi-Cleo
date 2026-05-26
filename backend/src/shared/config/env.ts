@@ -52,6 +52,13 @@ const envSchema = z.object({
 
   // Cancellation Cron
   CANCELLATION_CRON_SCHEDULE: z.string().default('0 0 * * *'),
+
+  // Mercado Pago
+  MERCADO_PAGO_ACCESS_TOKEN: z.string().min(1),
+  MERCADO_PAGO_WEBHOOK_SECRET: z.string().min(1),
+
+  // URLs públicas
+  CHECKOUT_URL: z.string().url().default('https://hicleo.com.br/checkout'),
 });
 
 const parsed = envSchema.safeParse(process.env);

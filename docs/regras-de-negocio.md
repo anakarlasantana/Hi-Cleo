@@ -68,6 +68,51 @@ Landing Page → Checkout → Ativação → Onboarding (WhatsApp) → Conexão 
 
 ---
 
+## 3.1 Métodos de Pagamento e Taxas
+
+**Gateway:** Mercado Pago (API Orders v2)
+
+| Método | Taxa | Quem paga | Preço exibido |
+|--------|------|-----------|---------------|
+| PIX | 0% | Ninguém | Preço cheio (com label "10% off") |
+| Cartão à vista (1x) | ~4.99% | Sistema absorve | Preço cheio |
+| Cartão 2x-3x | ~4.99% + parcelamento | Sistema absorve | Preço cheio dividido |
+| Cartão 4x-12x | ~4.99% + juros compostos | Cliente paga juros | Preço ajustado visível |
+
+**Regras de parcelamento:**
+- Juros compostos: ~1.99% ao mês para parcelas acima de 3x
+- Parcelamento NÃO estende o período da assinatura (30 dias mensal, 365 anual)
+- O Mercado Pago cobra as parcelas do cliente e repassa o valor integral ao sistema
+- Valores internos em centavos para evitar erros de arredondamento
+
+**Fluxo de pagamento:**
+1. Cliente escolhe plano + método no checkout
+2. Frontend tokeniza cartão via MercadoPago.js (dados não passam pelo backend)
+3. Backend cria Order no MP → recebe QR code (PIX) ou status (cartão)
+4. MP confirma via webhook → sistema gera código de ativação + ativa assinatura
+
+---
+
+## 3.2 Renovação e Expiração
+
+**Sem cobrança automática** — o cliente renova manualmente via novo pagamento.
+
+| Evento | Ação |
+|--------|------|
+| 3 dias antes de expirar | Cleo envia lembrete via WhatsApp com link de renovação |
+| 1 dia antes de expirar | Cleo envia segundo lembrete (urgência) |
+| Dia da expiração | Status "expired" — Cleo fica 100% inoperante |
+| Dentro de 30 dias após expirar | Cliente pode renovar e reativar sem perda de dados |
+| Após 30 dias expirado | Dados removidos permanentemente |
+
+**Renovação antecipada:** se o cliente paga antes de expirar, o novo período é somado a partir da data de expiração atual (não penaliza quem paga adiantado).
+
+**Mensagens de lembrete incluem:**
+- Link direto para o checkout
+- Aviso sobre o prazo de 30 dias para reativação antes da remoção dos dados
+
+---
+
 ## 4. Regras de Cancelamento
 
 - Cancelamento a qualquer momento, sem multa

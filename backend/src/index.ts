@@ -5,10 +5,13 @@ import { container } from './container.js';
 import { webhookRouter } from './modules/webhooks/webhooks.controller.js';
 import { activationRouter } from './modules/activation/activation.controller.js';
 import { cancellationRouter } from './modules/cancellation/cancellation.controller.js';
+import { paymentRouter } from './modules/payment/payment.controller.js';
+import { paymentWebhookRouter } from './modules/payment/payment-webhook.controller.js';
 import { startFollowUpCron } from './modules/follow-up/follow-up.cron.js';
 import { startConnectionMonitor } from './modules/connection-monitor/connection-monitor.cron.js';
 import { startContactMonitorCron } from './modules/contact-monitor/contact-monitor.cron.js';
 import { startCancellationCron } from './modules/cancellation/cancellation.cron.js';
+import { startSubscriptionCron } from './modules/subscription/subscription.cron.js';
 
 const app = express();
 const { logger } = container;
@@ -21,12 +24,15 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/webhooks', webhookRouter);
+app.use('/webhooks', paymentWebhookRouter);
 app.use('/api/activation', activationRouter);
 app.use('/api/cancellation', cancellationRouter);
+app.use('/api/payments', paymentRouter);
 
 startFollowUpCron();
 startContactMonitorCron();
 startCancellationCron();
+startSubscriptionCron();
 startConnectionMonitor({
   messaging: container.messaging,
   logger: container.logger,

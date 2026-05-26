@@ -18,6 +18,8 @@ import { SupabasePlanRepository } from './modules/plans/plans.repository.js';
 import { SupabaseTermsConsentRepository } from './modules/terms/terms.repository.js';
 import { SupabaseCancellationRepository } from './modules/cancellation/cancellation.repository.js';
 import { SupabaseContactMonitorRepository } from './modules/contact-monitor/contact-monitor.repository.js';
+import { SupabasePaymentRepository } from './modules/payment/payment.repository.js';
+import { SupabaseSubscriptionRepository } from './modules/subscription/subscription.repository.js';
 
 // Services
 import { ActivationService } from './modules/activation/activation.service.js';
@@ -29,6 +31,11 @@ import { PlanService } from './modules/plans/plans.service.js';
 import { TermsConsentService } from './modules/terms/terms.service.js';
 import { CancellationService } from './modules/cancellation/cancellation.service.js';
 import { ContactMonitorService } from './modules/contact-monitor/contact-monitor.service.js';
+import { PaymentService } from './modules/payment/payment.service.js';
+import { SubscriptionService } from './modules/subscription/subscription.service.js';
+
+// Adapters (Payment)
+import { MercadoPagoAdapter } from './modules/payment/mercadopago.adapter.js';
 
 // Logger
 import { createLogger } from './shared/logger/logger.js';
@@ -70,6 +77,8 @@ const planRepo = new SupabasePlanRepository();
 const termsConsentRepo = new SupabaseTermsConsentRepository();
 const cancellationRepo = new SupabaseCancellationRepository();
 const contactMonitorRepo = new SupabaseContactMonitorRepository();
+const paymentRepo = new SupabasePaymentRepository();
+const subscriptionRepo = new SupabaseSubscriptionRepository();
 
 // --- Services ---
 
@@ -82,6 +91,14 @@ const planService = new PlanService(planRepo);
 const termsConsentService = new TermsConsentService(termsConsentRepo);
 const cancellationService = new CancellationService(cancellationRepo);
 const contactMonitorService = new ContactMonitorService(contactMonitorRepo);
+
+// Payment & Subscription
+const mercadoPagoAdapter = new MercadoPagoAdapter(env.MERCADO_PAGO_ACCESS_TOKEN);
+const paymentService = new PaymentService(mercadoPagoAdapter, paymentRepo);
+const subscriptionService = new SubscriptionService(subscriptionRepo);
+
+// Configurar dependências do webhook (referência circular resolvida aqui)
+paymentService.setWebhookDeps({ subscriptionService, activationService });
 
 // --- Queue ---
 
@@ -120,6 +137,8 @@ export const container = {
   termsConsentRepo,
   cancellationRepo,
   contactMonitorRepo,
+  paymentRepo,
+  subscriptionRepo,
 
   activationService,
   leadService,
@@ -130,6 +149,9 @@ export const container = {
   termsConsentService,
   cancellationService,
   contactMonitorService,
+  paymentService,
+  subscriptionService,
+  mercadoPagoAdapter,
 
   queueService,
   messageProcessor,
