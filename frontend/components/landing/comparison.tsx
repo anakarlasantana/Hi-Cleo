@@ -141,6 +141,22 @@ export function Comparison() {
 
           {/* Mobile: cards empilhados */}
           <div className="md:hidden space-y-3">
+            {/* Header mobile */}
+            <div className="flex items-center justify-end gap-3 px-4 py-3 bg-background border border-border rounded-xl mb-4">
+              <span className="text-xs text-muted-foreground mr-auto font-medium">Funcionalidade</span>
+              <div className="flex flex-col items-center gap-0.5">
+                <Smartphone className="w-4 h-4 text-muted-foreground" />
+                <span className="text-[10px] text-muted-foreground">WhatsApp</span>
+              </div>
+              <div className="flex flex-col items-center gap-0.5">
+                <Monitor className="w-4 h-4 text-muted-foreground" />
+                <span className="text-[10px] text-muted-foreground">CRMs</span>
+              </div>
+              <div className="flex flex-col items-center gap-0.5 bg-primary rounded-lg px-2 py-1">
+                <MessageCircle className="w-3.5 h-3.5 text-white" />
+                <span className="text-[10px] text-white font-bold">Cleo</span>
+              </div>
+            </div>
             {features.map((row, index) => (
               <div key={index} className="bg-background border border-border/60 rounded-xl p-4 flex items-center justify-between">
                 <span className="text-sm text-foreground flex-1">{row.feature}</span>

@@ -45,7 +45,7 @@ export function HowItWorks() {
   }, [])
 
   return (
-    <section id="como-funciona" className="py-20 bg-background">
+    <section id="como-funciona" className="py-20 bg-muted/60 border-y border-border/40">
       <div ref={ref} className="container mx-auto px-4">
         <h2 className={cn(
           "text-3xl md:text-4xl font-bold text-foreground text-center mb-14 transition-all duration-700",

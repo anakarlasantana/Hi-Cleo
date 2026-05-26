@@ -104,7 +104,7 @@ function FloatingBadgeItem({ badge }: { badge: FloatingBadge }) {
 function PhoneFrame({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative z-10 [transform:perspective(1200px)_rotateY(-6deg)_rotateX(3deg)] hover:[transform:perspective(1200px)_rotateY(-1deg)_rotateX(1deg)] transition-transform duration-700">
-      <div className="bg-slate-900 rounded-[2.5rem] md:rounded-[3rem] p-2 md:p-3 shadow-[0_20px_50px_-20px_rgba(37,211,102,0.3)] w-[260px] md:w-[300px] lg:w-[320px]">
+      <div className="bg-slate-900 rounded-[2.5rem] md:rounded-[3rem] p-2 md:p-3 shadow-[0_20px_50px_-20px_rgba(37,211,102,0.3)] w-[240px] sm:w-[260px] md:w-[300px] lg:w-[320px]">
         {/* Notch */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[100px] md:w-[120px] h-[24px] md:h-[28px] bg-slate-900 rounded-b-2xl z-20" />
         <div className="bg-white rounded-[2rem] md:rounded-[2.5rem] overflow-hidden">
@@ -175,7 +175,7 @@ export function PhoneMockup() {
   }, [])
 
   return (
-    <div className="relative h-[420px] md:h-[500px] lg:h-[580px] flex items-center justify-center overflow-hidden">
+    <div className="relative h-[380px] sm:h-[420px] md:h-[500px] lg:h-[580px] flex items-center justify-center">
       {/* Glow */}
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="w-[350px] h-[350px] bg-primary/15 rounded-full blur-[80px]" />
@@ -186,7 +186,7 @@ export function PhoneMockup() {
         <WhatsAppHeader />
 
         {/* Chat area */}
-        <div className="bg-[#e5ddd5] p-2 md:p-3 space-y-2 md:space-y-2.5 h-[300px] md:h-[350px] lg:h-[380px] overflow-hidden relative">
+        <div className="bg-[#e5ddd5] p-2 md:p-3 space-y-2 md:space-y-2.5 h-[240px] sm:h-[280px] md:h-[350px] lg:h-[380px] overflow-hidden relative">
           <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")" }} />
 
           <div className="relative z-10 space-y-2.5">

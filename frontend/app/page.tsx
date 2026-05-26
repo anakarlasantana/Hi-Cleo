@@ -7,6 +7,7 @@ import { Pricing } from "@/components/landing/pricing"
 import { FAQ } from "@/components/landing/faq"
 import { Footer } from "@/components/landing/footer"
 import { HowItWorks } from "@/components/landing/how-it-works"
+import { UseCases } from "@/components/landing/use-cases"
 
 export default function Home() {
   return (
@@ -15,6 +16,7 @@ export default function Home() {
       <Hero />
       <Comparison />
       <PainPoints />
+      <UseCases />
       <HowItWorks />
       <Benefits />
       <Pricing />

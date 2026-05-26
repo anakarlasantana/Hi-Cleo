@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Menu, X, MessageCircle } from "lucide-react"
 
 const navLinks = [
-  { href: "#beneficios", label: "Benefícios" },
+  { href: "#para-quem", label: "Para quem" },
   { href: "#como-funciona", label: "Como funciona" },
+  { href: "#beneficios", label: "Benefícios" },
   { href: "#planos", label: "Planos" },
   { href: "#faq", label: "Dúvidas" },
 ]
@@ -81,11 +82,6 @@ export function Navbar() {
                   {link.label}
                 </a>
               ))}
-              <div className="px-4 pt-4 border-t border-border">
-                <Button asChild className="w-full">
-                  <Link href="#planos">Começar agora</Link>
-                </Button>
-              </div>
             </div>
           </div>
         )}

@@ -15,12 +15,16 @@ const faqs = [
     answer: "Não! A Cleo funciona 100% dentro do WhatsApp que você já usa no celular. Sem painel web, sem aplicativo extra, sem computador.",
   },
   {
+    question: "A Cleo funciona pro meu tipo de negócio?",
+    answer: "Sim! A Cleo se adapta a qualquer profissional que atende pelo WhatsApp: professores, corretores, consultores, personal trainers, clínicas, prestadores de serviço. Ela organiza seus contatos e faz acompanhamento independente do seu segmento.",
+  },
+  {
     question: "Como conecto meu WhatsApp?",
     answer: "Após o pagamento, você recebe um código de ativação. Manda esse código pra Cleo no WhatsApp e ela te guia na conexão. É só escanear um QR Code e pronto.",
   },
   {
     question: "Meus clientes vão saber que é automático?",
-    answer: "A Cleo não responde seus clientes diretamente. Ela organiza, lembra e avisa VOCÊ sobre o que fazer. Quem decide quando e como falar com o cliente é sempre você.",
+    answer: "A Cleo não responde seus clientes diretamente sem sua permissão. Ela organiza, lembra e avisa VOCÊ sobre o que fazer. Quem decide quando e como falar com o cliente é sempre você.",
   },
   {
     question: "E se eu quiser cancelar?",
@@ -37,6 +41,10 @@ const faqs = [
   {
     question: "Ela responde meus clientes sozinha?",
     answer: "A Cleo pode enviar respostas automáticas fora do horário comercial. Mas o atendimento personalizado é sempre feito por você.",
+  },
+  {
+    question: "Posso enviar materiais e arquivos pros meus contatos?",
+    answer: "Sim! Basta mandar o material para a Cleo e pedir: \"Manda o PDF pro João\" e a Cleo envia. Ideal pra professores que mandam aulas, corretores que enviam fotos de imóveis, consultores que compartilham propostas.",
   },
 ]
 
