@@ -1,0 +1,56 @@
+# ===========================================
+# Hi Cleo — Docker Compose Override (Produção)
+# ===========================================
+# Uso: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Aplica configurações de produção sobre a base local.
+
+services:
+  backend:
+    restart: always
+    environment:
+      - NODE_ENV=production
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  frontend:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  redis:
+    restart: always
+    ports: !reset []
+    volumes:
+      - redis_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+
+  evolution-api:
+    restart: always
+    ports: !reset []
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  evolution-db:
+    restart: always
+    ports: !reset []
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+volumes:
+  redis_data:

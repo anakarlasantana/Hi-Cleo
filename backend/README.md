@@ -115,15 +115,24 @@ WhatsApp → Evolution API → Webhook → Fila (BullMQ/Redis) → Worker
 
 ## Setup — Desenvolvimento
 
-### Pré-requisitos
+### Opção 1: Docker Compose (recomendado)
 
-- Node.js 20+
-- Docker e Docker Compose
-- Conta no [Supabase](https://supabase.com)
-- API Key do [Google AI Studio](https://aistudio.google.com/apikey) (Gemini)
-- [ngrok](https://ngrok.com) (para expor webhook localmente)
+A forma mais simples de rodar tudo. Na raiz do projeto:
 
-### Passo a passo
+```bash
+# 1. Configurar variáveis de ambiente
+cp .env.example .env
+# Preencha os valores no .env
+
+# 2. Subir tudo (backend, frontend, Redis, Evolution API, Postgres)
+docker compose up --build
+```
+
+O backend fica disponível em http://localhost:3001.
+
+> Ver [README raiz](../README.md) para detalhes completos do Docker setup.
+
+### Opção 2: Desenvolvimento direto (sem Docker para o backend)
 
 ```bash
 # 1. Instalar dependências
@@ -131,10 +140,10 @@ npm install
 
 # 2. Configurar variáveis de ambiente
 cp .env.example .env
-# Preencha os valores no .env (ver seção Variáveis de Ambiente)
+# Preencha os valores no .env
 
-# 3. Subir infraestrutura (Evolution API + Redis + Postgres)
-docker compose up -d
+# 3. Subir apenas infraestrutura (Redis + Evolution API)
+# Use o docker-compose.yml da raiz ou suba manualmente
 
 # 4. Criar tabelas no Supabase
 # Copie o conteúdo de src/shared/database/schema.sql
@@ -153,13 +162,6 @@ ngrok http 3001
 npm run dev
 ```
 
-### Docker Compose (infraestrutura local)
-
-O `docker-compose.yml` sobe:
-- **evolution-api** — WhatsApp via Baileys (porta 8082)
-- **evolution-db** — Postgres para Evolution API (porta 5433)
-- **evolution-redis** — Redis para cache e filas (porta 6379)
-
 ### Testando
 
 1. Peça para alguém mandar mensagem no número conectado
@@ -170,23 +172,36 @@ O `docker-compose.yml` sobe:
 
 ## Setup — Produção
 
+### Com Docker Compose (recomendado)
+
+```bash
+# Na raiz do projeto, com .env de produção configurado:
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+O override de produção (`docker-compose.prod.yml`):
+- Restart policy `always` para todos os serviços
+- Portas internas (Redis, Postgres, Evolution) não expostas ao host
+- Limites de CPU e memória por serviço
+- Volume persistente para Redis
+
 ### Infraestrutura necessária
 
 | Serviço | Opções |
 |---|---|
 | Servidor | VPS (Hetzner, DigitalOcean) ou container (Railway, Render) |
 | Banco | Supabase (já configurado) |
-| Redis | Redis Cloud, ou Redis no mesmo servidor |
-| WhatsApp | Evolution API no mesmo servidor (Docker) |
+| Redis | Incluso no Docker Compose |
+| WhatsApp | Evolution API inclusa no Docker Compose |
 | DNS/SSL | Cloudflare ou Let's Encrypt |
 
 ### Checklist de deploy
 
-1. Configurar variáveis de ambiente de produção (`NODE_ENV=production`)
+1. Configurar `.env` com valores de produção (`NODE_ENV=production`)
 2. Apontar `WEBHOOK_URL` para URL pública com HTTPS
-3. Configurar `MONITOR_ADMIN_PHONE` para receber alertas
-4. Garantir volume persistente para Evolution API (sessão WhatsApp)
-5. Configurar restart automático dos containers (`restart: unless-stopped`)
+3. Configurar `NEXT_PUBLIC_API_URL` para URL pública do backend
+4. Configurar `MONITOR_ADMIN_PHONE` para receber alertas
+5. Garantir volumes persistentes (Evolution API + Redis)
 6. Logs vão para arquivo com rotação (diária, 7 dias)
 
 ### Variáveis específicas de produção
@@ -196,6 +211,9 @@ NODE_ENV=production
 LOG_LEVEL=info
 LOG_DIR=./logs
 MONITOR_ADMIN_PHONE=5585999999999
+WEBHOOK_URL=https://api.seudominio.com.br/webhooks/evolution
+NEXT_PUBLIC_API_URL=https://api.seudominio.com.br
+NEXT_PUBLIC_SITE_URL=https://seudominio.com.br
 ```
 
 ---
