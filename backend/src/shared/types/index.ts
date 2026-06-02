@@ -1,5 +1,5 @@
 // === Enums ===
-export type LeadStatus = 'new' | 'hot' | 'cold' | 'lost' | 'closed';
+export type LeadStatus = 'new' | 'hot' | 'lost' | 'closed';
 export type SessionStatus = 'active' | 'disconnected' | 'pending';
 export type MessageDirection = 'inbound' | 'outbound';
 export type FollowUpStatus = 'pending' | 'sent' | 'cancelled';
