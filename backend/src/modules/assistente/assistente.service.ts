@@ -1,5 +1,6 @@
 import type { AiPort } from '../../shared/ports/ai.port.js';
 import type { IntentType, RecognizedIntent } from '../../shared/types/index.js';
+import { sanitizeForAiPrompt } from '../../shared/middleware/sanitize.js';
 
 const INTENT_PROMPT = `Você é o interpretador de intenções de um CRM via WhatsApp.
 O usuário é um pequeno empresário brasileiro que fala de forma informal.
@@ -33,9 +34,11 @@ export class AssistenteService {
 
   async recognize(text: string): Promise<RecognizedIntent> {
     try {
+      const sanitizedText = sanitizeForAiPrompt(text);
+
       const response = await this.ai.generateContent([
         INTENT_PROMPT,
-        `Mensagem do usuário: "${text}"`,
+        `Mensagem do usuário: "${sanitizedText}"`,
       ]);
 
       const parsed = JSON.parse(response);

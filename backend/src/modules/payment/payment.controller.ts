@@ -1,18 +1,30 @@
 import { Router, type Request, type Response } from 'express';
+import { z } from 'zod';
 import { container } from '../../container.js';
 import { calculatePrice, type PlanName, type BillingPeriod } from './price-calculator.js';
 
 export const paymentRouter = Router();
 
+const createPaymentSchema = z.object({
+  planName: z.enum(['solo', 'equipe', 'empresa']),
+  billingPeriod: z.enum(['monthly', 'yearly']),
+  email: z.string().email('E-mail inválido'),
+  method: z.enum(['pix', 'credit_card']),
+  cardToken: z.string().min(1).optional(),
+  cardBrand: z.string().min(1).optional(),
+  installments: z.number().int().min(1).max(12).optional(),
+});
+
 // POST /payments — cria pagamento (PIX ou cartão)
 paymentRouter.post('/', async (req: Request, res: Response) => {
   try {
-    const { planName, billingPeriod, email, method, cardToken, cardBrand, installments } = req.body;
-
-    if (!planName || !billingPeriod || !email || !method) {
-      res.status(400).json({ error: 'Campos obrigatórios: planName, billingPeriod, email, method' });
+    const parsed = createPaymentSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten().fieldErrors });
       return;
     }
+
+    const { planName, billingPeriod, email, method, cardToken, cardBrand, installments } = parsed.data;
 
     if (method === 'credit_card' && (!cardToken || !cardBrand)) {
       res.status(400).json({ error: 'Cartão requer: cardToken, cardBrand' });
@@ -20,12 +32,13 @@ paymentRouter.post('/', async (req: Request, res: Response) => {
     }
 
     const result = await container.paymentService.createPayment({
-      planName, billingPeriod, email, method, cardToken, cardBrand, installments,
+      planName: planName as PlanName, billingPeriod, email, method, cardToken, cardBrand, installments,
     });
 
     res.status(201).json(result);
   } catch (error: any) {
-    res.status(500).json({ error: error.message || 'Erro ao criar pagamento' });
+    container.logger.error({ err: error }, 'Erro ao criar pagamento');
+    res.status(500).json({ error: 'Erro ao processar pagamento. Tente novamente.' });
   }
 });
 
@@ -44,7 +57,8 @@ paymentRouter.get('/price', (req: Request, res: Response) => {
 
     res.json(calculatePrice(planName, billingPeriod, method, installments));
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    container.logger.error({ err: error }, 'Erro ao calcular preço');
+    res.status(500).json({ error: 'Erro ao calcular preço. Tente novamente.' });
   }
 });
 
@@ -55,6 +69,7 @@ paymentRouter.get('/:orderId/status', async (req: Request, res: Response) => {
     if (!result) { res.status(404).json({ error: 'Pagamento não encontrado' }); return; }
     res.json(result);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    container.logger.error({ err: error }, 'Erro ao consultar status');
+    res.status(500).json({ error: 'Erro ao consultar status. Tente novamente.' });
   }
 });

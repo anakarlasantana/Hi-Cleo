@@ -1,7 +1,6 @@
 import type { MessageJobData } from './queue.types.js';
 import type { MessageProcessorPort } from './queue.port.js';
 import type { Logger } from '../../shared/logger/logger.js';
-import { truncate } from '../../shared/logger/logger.js';
 import { CURRENT_TERMS_VERSION } from '../terms/constants.js';
 
 export type MessageProcessor = MessageProcessorPort;
@@ -21,10 +20,10 @@ export function createMessageProcessor(container: any, logger: Logger): MessageP
       }
 
       const durationMs = Date.now() - startTime;
-      log.info({ phone, instance, durationMs }, 'mensagem processada com sucesso');
+      log.info({ phone: phone.slice(0, 4) + '****', instance, durationMs }, 'mensagem processada com sucesso');
     } catch (error: any) {
       const durationMs = Date.now() - startTime;
-      log.error({ err: error, phone, instance, textIn: truncate(text), durationMs }, 'erro no processamento');
+      log.error({ err: error, phone: phone.slice(0, 4) + '****', instance, durationMs }, 'erro no processamento');
 
       // Se todos os providers de IA falharam, envia mensagem de fallback ao usuário
       if (error?.message === 'AI_ALL_PROVIDERS_FAILED') {

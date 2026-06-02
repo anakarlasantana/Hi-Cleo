@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { container } from '../../container.js';
-import { truncate } from '../../shared/logger/logger.js';
+import { env } from '../../shared/config/env.js';
+import { sanitizeMessageText, validatePhoneNumber, maskPhone } from '../../shared/middleware/sanitize.js';
 import type { WebhookPayload } from '../../shared/types/index.js';
 import type { MessageJobData } from '../queue/queue.types.js';
 
@@ -9,6 +10,16 @@ export const webhookRouter = Router();
 const log = container.logger.child({ module: 'webhook' });
 
 webhookRouter.post('/evolution', async (req: Request, res: Response) => {
+  // Validar secret se configurado (dupla camada: IP interno + secret)
+  if (env.EVOLUTION_WEBHOOK_SECRET) {
+    const receivedSecret = req.headers['x-webhook-secret'] as string;
+    if (receivedSecret !== env.EVOLUTION_WEBHOOK_SECRET) {
+      log.warn({ ip: req.ip }, 'webhook Evolution rejeitado: secret inválido');
+      res.status(401).json({ error: 'Não autorizado' });
+      return;
+    }
+  }
+
   res.status(200).json({ received: true });
 
   try {
@@ -20,16 +31,24 @@ webhookRouter.post('/evolution', async (req: Request, res: Response) => {
     // Ignorar mensagens de grupo (@g.us)
     if (data.key.remoteJid.endsWith('@g.us')) return;
 
-    // Extrair telefone
+    // Extrair e validar telefone
     const remoteJid = data.key.remoteJid;
     const phone = remoteJid.replace('@s.whatsapp.net', '').replace('@lid', '');
-    const text = data.message.conversation || '';
+
+    if (!validatePhoneNumber(phone)) {
+      log.warn({ jid: remoteJid }, 'telefone inválido recebido no webhook');
+      return;
+    }
+
+    // Sanitizar texto da mensagem
+    const rawText = data.message.conversation || '';
+    const text = sanitizeMessageText(rawText);
     const isFromMe = data.key.fromMe;
     const isSecretaryInstance = payload.instance === 'secretary';
 
     if (isFromMe) return;
 
-    log.info({ phone, instance: payload.instance, textIn: truncate(text) }, 'mensagem recebida');
+    log.info({ phone: maskPhone(phone), instance: payload.instance, textLength: text.length }, 'mensagem recebida');
 
     const jobData: MessageJobData = {
       phone,

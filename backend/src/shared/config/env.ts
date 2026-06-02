@@ -28,6 +28,7 @@ const envSchema = z.object({
 
   // Webhook
   WEBHOOK_URL: z.string().url().default('http://localhost:3001/webhooks/evolution'),
+  EVOLUTION_WEBHOOK_SECRET: z.string().optional(),
 
   // Logger
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
@@ -59,6 +60,11 @@ const envSchema = z.object({
 
   // URLs públicas
   CHECKOUT_URL: z.string().url().default('https://hicleo.com.br/checkout'),
+
+  // Segurança
+  CORS_ORIGIN: z.string().default('http://localhost:3000'),
+  RATE_LIMIT_GLOBAL: z.coerce.number().default(200),
+  RATE_LIMIT_PAYMENTS: z.coerce.number().default(5),
 });
 
 const parsed = envSchema.safeParse(process.env);

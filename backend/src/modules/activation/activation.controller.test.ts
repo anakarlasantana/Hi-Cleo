@@ -11,6 +11,11 @@ vi.mock('../../container.js', () => ({
       getQrCode: vi.fn(),
       getStatus: vi.fn(),
     },
+    logger: {
+      error: vi.fn(),
+      warn: vi.fn(),
+      info: vi.fn(),
+    },
   },
 }));
 

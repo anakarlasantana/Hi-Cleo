@@ -14,6 +14,7 @@ import { InfoBadges } from "./info-badges"
 import Link from "next/link"
 
 import { fetchActivationStatus } from "@/services/activation.service"
+import { validateActivationCode } from "@/lib/sanitize"
 
 const SECRETARY_WHATSAPP_NUMBER = process.env.NEXT_PUBLIC_SECRETARY_PHONE || "5548999999999"
 const FORMATTED_PHONE_NUMBER = "(48) 99999-9999"
@@ -22,7 +23,8 @@ const POLLING_INTERVAL_MS = 3000
 export function ActivationContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const activationCode = searchParams.get("code") || ""
+  const rawCode = searchParams.get("code") || ""
+  const activationCode = validateActivationCode(rawCode) ? rawCode.toUpperCase().trim() : ""
 
   const [isWaitingForActivation, setIsWaitingForActivation] = useState(false)
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)

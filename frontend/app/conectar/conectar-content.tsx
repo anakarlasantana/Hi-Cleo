@@ -15,12 +15,14 @@ import { ConnectedState } from "./connected-state"
 import { TermsAcceptance } from "./terms-acceptance"
 
 import { registerTermsConsent } from "@/services/activation.service"
+import { validateActivationCode } from "@/lib/sanitize"
 
 const TERMS_VERSION = "1.0.0"
 
 export function ConectarContent() {
   const searchParams = useSearchParams()
-  const activationCode = searchParams.get("code")
+  const rawCode = searchParams.get("code")
+  const activationCode = rawCode && validateActivationCode(rawCode) ? rawCode.toUpperCase().trim() : null
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false)
   const [isRegisteringConsent, setIsRegisteringConsent] = useState(false)
   const { state: connectionState, fetchQRCode } = useQRConnection(hasAcceptedTerms ? activationCode : null)

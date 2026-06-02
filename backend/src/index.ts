@@ -2,6 +2,13 @@ import express from 'express';
 import cors from 'cors';
 import { env } from './shared/config/env.js';
 import { container } from './container.js';
+import {
+  securityHeaders,
+  buildCorsOptions,
+  apiRateLimit,
+  paymentRateLimit,
+  validateInternalOrigin,
+} from './shared/middleware/security.js';
 import { webhookRouter } from './modules/webhooks/webhooks.controller.js';
 import { activationRouter } from './modules/activation/activation.controller.js';
 import { cancellationRouter } from './modules/cancellation/cancellation.controller.js';
@@ -16,18 +23,32 @@ import { startSubscriptionCron } from './modules/subscription/subscription.cron.
 const app = express();
 const { logger } = container;
 
-app.use(cors());
-app.use(express.json());
+// --- Segurança global ---
+app.set('trust proxy', 1); // Para X-Forwarded-For funcionar com Docker/nginx
+app.use(securityHeaders);
+app.use(cors(buildCorsOptions()));
 
+// --- Payload limits por contexto ---
+// Webhooks precisam de mais espaço (mensagens longas, mídia metadata)
+app.use('/webhooks', express.json({ limit: '5mb' }));
+// Rotas da API (browser) — payloads pequenos
+app.use('/api', express.json({ limit: '50kb' }));
+// Fallback para outras rotas
+app.use(express.json({ limit: '100kb' }));
+
+// --- Health check (sem rate limit) ---
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', env: env.NODE_ENV });
 });
 
-app.use('/webhooks', webhookRouter);
-app.use('/webhooks', paymentWebhookRouter);
-app.use('/api/activation', activationRouter);
-app.use('/api/cancellation', cancellationRouter);
-app.use('/api/payments', paymentRouter);
+// --- Webhooks (sem rate limit, validação por origem/assinatura) ---
+app.use('/webhooks/evolution', validateInternalOrigin, webhookRouter);
+app.use('/webhooks', paymentWebhookRouter); // MP já valida assinatura no controller
+
+// --- API pública (com rate limit) ---
+app.use('/api/payments', apiRateLimit, paymentRateLimit, paymentRouter);
+app.use('/api/activation', apiRateLimit, activationRouter);
+app.use('/api/cancellation', apiRateLimit, cancellationRouter);
 
 startFollowUpCron();
 startContactMonitorCron();

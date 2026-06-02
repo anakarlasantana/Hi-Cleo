@@ -3,6 +3,7 @@ import type { ActivationRepository, UserRepository } from './activation.port.js'
 import type { OnboardingRepository } from '../onboarding/onboarding.port.js';
 import type { ActivationCode, User } from '../../shared/types/index.js';
 import type { TermsConsentService } from '../terms/terms.service.js';
+import { sanitizeForAiPrompt } from '../../shared/middleware/sanitize.js';
 
 function generateCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -70,6 +71,8 @@ export class ActivationService {
 
   private async parseActivationMessage(message: string): Promise<Record<string, string>> {
     try {
+      const sanitized = sanitizeForAiPrompt(message);
+
       const response = await this.ai.generateContent([
         `Extraia as informações desta mensagem de ativação de um CRM WhatsApp.
 O formato esperado é: ATIVAR-XXXX | Nome | Negócio | Serviços | Horário
@@ -85,7 +88,7 @@ Retorne APENAS JSON válido (sem markdown):
 }
 
 Se não conseguir extrair algum campo, use string vazia.`,
-        `Mensagem: "${message}"`,
+        `Mensagem: "${sanitized}"`,
       ]);
 
       return JSON.parse(response);

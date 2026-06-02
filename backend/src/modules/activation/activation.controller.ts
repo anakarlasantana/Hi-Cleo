@@ -5,6 +5,13 @@ export const activationRouter = Router();
 
 activationRouter.post('/generate', async (req: Request, res: Response) => {
   try {
+    // Rota interna — validar que a chamada vem do próprio backend (webhook de pagamento)
+    const internalSecret = req.headers['x-internal-secret'] as string;
+    if (internalSecret !== process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      res.status(403).json({ error: 'Acesso negado' });
+      return;
+    }
+
     const { payment_id, plano } = req.body;
 
     if (!payment_id || !plano) {
@@ -24,7 +31,7 @@ activationRouter.post('/generate', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error('[Activation] Erro:', error);
+    container.logger.error({ err: error }, '[Activation] Erro ao gerar código');
     res.status(500).json({ error: 'Erro ao gerar código de ativação' });
   }
 });
@@ -82,7 +89,7 @@ activationRouter.get('/qrcode/:code', async (req: Request, res: Response) => {
       expiresIn: 45, // QR Code expira em ~45 segundos
     });
   } catch (error) {
-    console.error('[Activation] Erro ao gerar QR Code:', error);
+    container.logger.error({ err: error }, '[Activation] Erro ao gerar QR Code');
     res.status(500).json({ error: 'Erro ao gerar QR Code' });
   }
 });
@@ -120,8 +127,8 @@ activationRouter.get('/plans', async (_req: Request, res: Response) => {
 
     res.json({ plans });
   } catch (error) {
-    console.error('[Activation] Error fetching plans:', error);
-    res.status(500).json({ error: 'Error fetching plans' });
+    container.logger.error({ err: error }, '[Activation] Erro ao buscar planos');
+    res.status(500).json({ error: 'Erro ao buscar planos' });
   }
 });
 
@@ -177,7 +184,7 @@ activationRouter.get('/qrcode/:code/status', async (req: Request, res: Response)
       clearInterval(interval);
     });
   } catch (error) {
-    console.error('[Activation] Erro SSE:', error);
+    container.logger.error({ err: error }, '[Activation] Erro SSE');
     res.status(500).json({ error: 'Erro ao iniciar stream de status' });
   }
 });
