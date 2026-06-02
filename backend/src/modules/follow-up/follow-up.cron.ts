@@ -22,7 +22,7 @@ export function startFollowUpCron(): void {
         const contexto = lastMsg ? ` Última conversa: "${lastMsg.text.slice(0, 50)}..."` : '';
 
         await messaging.sendText({
-          instance: 'secretary',
+          instance: env.MONITOR_INSTANCE,
           to: user.phone,
           text: `🔔 *Lembrete:* Você pediu pra falar com alguém hoje.${contexto}`,
         });
@@ -37,14 +37,14 @@ export function startFollowUpCron(): void {
 
         if (staleLeads.length === 1) {
           await messaging.sendText({
-            instance: 'secretary',
+            instance: env.MONITOR_INSTANCE,
             to: user.phone,
             text: `👋 O(a) *${staleLeads[0].name}* tá esperando retorno. Quer que eu te lembre mais tarde?`,
           });
         } else {
           const list = staleLeads.slice(0, 5).map((l) => `• *${l.name}*`).join('\n');
           await messaging.sendText({
-            instance: 'secretary',
+            instance: env.MONITOR_INSTANCE,
             to: user.phone,
             text: `👋 Você tem ${staleLeads.length} clientes esperando retorno:\n\n${list}\n\nQuer ver detalhes?`,
           });

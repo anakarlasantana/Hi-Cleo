@@ -15,6 +15,24 @@ const createPaymentSchema = z.object({
   installments: z.number().int().min(1).max(12).optional(),
 });
 
+/**
+ * Busca preço base do plano no banco e calcula com juros/parcelamento.
+ */
+async function getPriceFromDatabase(planName: string, billingPeriod: BillingPeriod, method: 'pix' | 'credit_card', installments: number) {
+  const plan = await container.planRepo.getPlanLimit(planName);
+  if (!plan) throw new Error(`Plano "${planName}" não encontrado`);
+
+  const basePrice = billingPeriod === 'monthly' ? plan.price_monthly : plan.price_yearly_total;
+
+  return calculatePrice({
+    basePrice,
+    monthlyPrice: plan.price_monthly,
+    billingPeriod,
+    paymentMethod: method,
+    installments,
+  });
+}
+
 // POST /payments — cria pagamento (PIX ou cartão)
 paymentRouter.post('/', async (req: Request, res: Response) => {
   try {
@@ -42,10 +60,10 @@ paymentRouter.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// GET /payments/price — calcula preço sem criar pagamento
-paymentRouter.get('/price', (req: Request, res: Response) => {
+// GET /payments/price — calcula preço sem criar pagamento (busca do banco)
+paymentRouter.get('/price', async (req: Request, res: Response) => {
   try {
-    const planName = req.query.planName as PlanName;
+    const planName = req.query.planName as string;
     const billingPeriod = req.query.billingPeriod as BillingPeriod;
     const method = (req.query.method as 'pix' | 'credit_card') || 'pix';
     const installments = parseInt(String(req.query.installments)) || 1;
@@ -55,7 +73,8 @@ paymentRouter.get('/price', (req: Request, res: Response) => {
       return;
     }
 
-    res.json(calculatePrice(planName, billingPeriod, method, installments));
+    const price = await getPriceFromDatabase(planName, billingPeriod, method, installments);
+    res.json(price);
   } catch (error: any) {
     container.logger.error({ err: error }, 'Erro ao calcular preço');
     res.status(500).json({ error: 'Erro ao calcular preço. Tente novamente.' });

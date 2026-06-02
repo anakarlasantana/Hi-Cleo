@@ -1,12 +1,6 @@
 export type PlanName = 'solo' | 'equipe' | 'empresa';
 export type BillingPeriod = 'monthly' | 'yearly';
 
-const PLAN_PRICES: Record<PlanName, { monthly: number; yearly: number }> = {
-  solo: { monthly: 4900, yearly: 49000 },
-  equipe: { monthly: 11900, yearly: 119000 },
-  empresa: { monthly: 24900, yearly: 249000 },
-};
-
 const MONTHLY_INTEREST_RATE = 0.0199;
 
 export interface PriceResult {
@@ -22,16 +16,25 @@ export interface PriceResult {
   mpAmount: string;
 }
 
-export function calculatePrice(
-  planName: PlanName,
-  billingPeriod: BillingPeriod,
-  paymentMethod: 'pix' | 'credit_card',
-  installments: number
-): PriceResult {
-  const basePrice = PLAN_PRICES[planName][billingPeriod];
+interface CalculatePriceParams {
+  basePrice: number;
+  monthlyPrice: number;
+  billingPeriod: BillingPeriod;
+  paymentMethod: 'pix' | 'credit_card';
+  installments: number;
+}
+
+/**
+ * Calcula preço final com juros, formatação e valor pro Mercado Pago.
+ * Recebe o preço base do banco — não usa constantes hardcoded.
+ */
+export function calculatePrice(params: CalculatePriceParams): PriceResult {
+  const { basePrice, monthlyPrice, billingPeriod, paymentMethod, installments } = params;
+
   let finalPrice = basePrice;
   let interestApplied = false;
 
+  // Juros compostos apenas para cartão com mais de 3 parcelas
   if (paymentMethod === 'credit_card' && installments > 3) {
     finalPrice = Math.round(basePrice * Math.pow(1 + MONTHLY_INTEREST_RATE, installments));
     interestApplied = true;
@@ -42,8 +45,12 @@ export function calculatePrice(
 
   let savingsLabel: string | null = null;
   if (billingPeriod === 'yearly') {
-    const savings = PLAN_PRICES[planName].monthly * 2;
-    savingsLabel = `Economia de ${formatCurrency(savings)}`;
+    // Economia = diferença entre pagar 12 meses vs preço anual
+    const yearlyIfMonthly = monthlyPrice * 12;
+    const savings = yearlyIfMonthly - basePrice;
+    if (savings > 0) {
+      savingsLabel = `Economia de ${formatCurrency(savings)}`;
+    }
   }
 
   return {

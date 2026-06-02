@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { container } from '../../container.js';
+import { env } from '../../shared/config/env.js';
 
 export const cancellationRouter = Router();
 
@@ -25,7 +26,7 @@ cancellationRouter.post('/request', async (req: Request, res: Response) => {
     // Enviar confirmação via WhatsApp (já temos user da validação acima)
     const dateStr = result.accessUntil.toLocaleDateString('pt-BR');
     await container.messaging.sendText({
-      instance: 'secretary',
+      instance: env.MONITOR_INSTANCE,
       to: user.phone,
       text: `Seu cancelamento foi processado. Você ainda tem acesso até ${dateStr}. Após essa data, suas sessões serão desconectadas.`,
     });

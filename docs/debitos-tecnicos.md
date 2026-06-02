@@ -1,6 +1,6 @@
 # Débitos Técnicos
 
-Organizado por prioridade. Itens rápidos e médios já foram concluídos.
+Organizado por prioridade.
 
 ---
 
@@ -20,141 +20,77 @@ Organizado por prioridade. Itens rápidos e médios já foram concluídos.
 - ~~#9 Re-aceite de termos via WhatsApp~~ ✅
 
 ### 🔴 Grandes (implementação nova)
-- ~~#10 Gateway de Pagamento~~ ✅ (Mercado Pago integrado: checkout PIX/cartão, webhook com validação de assinatura, ativação de subscription)
-- ~~#18 Dockerfile e Deploy Config~~ ✅ (Dockerfiles multi-stage para backend e frontend, docker-compose unificado na raiz, override de produção, healthchecks)
+- ~~#10 Gateway de Pagamento~~ ✅ (Mercado Pago: PIX/cartão, webhook HMAC, subscription)
+- ~~#13 Segurança~~ ✅ (helmet, CORS, rate limit, payload limits, Zod, sanitização, prompt injection, LGPD logs)
+- ~~#17 Fix frontend build~~ ✅ (removido ignoreBuildErrors, build passa limpo)
+- ~~#18 Docker/Deploy~~ ✅ (Dockerfiles multi-stage, compose dev + prod Hostinger, healthchecks)
+- ~~#21 Mídia WhatsApp~~ ✅ (receber/armazenar metadados, forward de materiais, intent send_material)
 
 ### Outros concluídos
-- ~~#11 Padronizar banco para inglês~~ ✅ (migration consolidada)
+- ~~#11 Padronizar banco para inglês~~ ✅
+- ~~#20 Migrations versionadas~~ ✅ (Supabase CLI)
+- ~~Limpeza de código~~ ✅ (37 UI components, 23 deps Radix, LeadStatus cold)
 
 ---
 
-## 🔴 PENDENTES — BLOQUEANTES PARA PRODUÇÃO
+## 🔴 PENDENTE — ÚNICO BLOQUEANTE
 
-### 13. Segurança e Rate Limiting (BLOQUEANTE)
+### 22. Deploy no servidor (Hostinger)
 
-**Status atual:** Nenhuma camada de segurança implementada.
+**Status:** Código pronto. Nunca rodou em produção.
 
-**O que falta:**
-- Rate limiting nos endpoints públicos (`/api/payments`, `/api/activation`) — `express-rate-limit`
-- Helmet.js para headers de segurança (X-Frame-Options, CSP, etc.)
-- CORS restrito ao domínio do frontend (hoje aceita qualquer origem com `cors()`)
-- Validação de body nas requests com Zod (hoje só valida env vars)
-- Limite de tamanho de request (`express.json({ limit: '100kb' })`)
-- Autenticação/verificação nos endpoints de pagamento (qualquer pessoa pode chamar `/api/payments`)
-- Validação de assinatura nos webhooks da Evolution API
+**Checklist de deploy:**
 
+| # | Ação | Detalhes |
+|---|------|----------|
+| 1 | Contratar VPS Hostinger KVM 1 | 1vCPU, 4GB RAM, R$30/mês |
+| 2 | Comprar chip dedicado | Pré-pago, ativar WhatsApp, nunca usar pra outra coisa |
+| 3 | Comprar/configurar domínio | Ex: hicleo.com.br, apontar DNS |
+| 4 | SSL/HTTPS | Cloudflare (grátis) ou Let's Encrypt |
+| 5 | Clonar repo no servidor | `git clone` + configurar `.env` produção |
+| 6 | Variáveis de produção | `NODE_ENV=production`, URLs públicas, MP produção, CORS_ORIGIN |
+| 7 | Build e subir containers | `docker compose -f docker-compose.prod.yml up -d --build` |
+| 8 | Mercado Pago produção | Trocar `TEST-xxx` por token real, configurar webhook URL pública |
+| 9 | Webhook Evolution | Apontar pra `https://api.seudominio.com.br/webhooks/evolution` |
+| 10 | Conectar WhatsApp | Acessar Evolution API → criar instância → escanear QR com chip novo |
+| 11 | Teste end-to-end | Pagamento real (R$1) → código → ativação → onboarding → resposta automática |
+
+**Estimativa:** 1 dia (+ tempo de espera do chip e propagação DNS)
+
+---
+
+## 🟡 PENDENTES — MELHORIAS PÓS-LANÇAMENTO
+
+### 14. Error Tracking
+
+**O que falta:** Sentry + uptime monitoring (UptimeRobot).
+**Quando:** Primeira semana após deploy.
+**Estimativa:** 0.5 dia
+
+### 19. CI/CD Pipeline
+
+**O que falta:** GitHub Actions (lint + test + build no PR).
+**Quando:** Após validar que prod está estável.
+**Estimativa:** 0.5 dia
+
+### 12. Reconexão WhatsApp
+
+**O que falta:** Notificar o usuário quando desconecta + link /conectar.
+**Quando:** Após primeiros clientes reclamarem.
+**Estimativa:** 0.5 dia
+
+### 16. Testes Payment
+
+**O que falta:** Testes unitários para price calculator e subscription.
+**Quando:** Após fluxo validado com clientes reais.
 **Estimativa:** 1-2 dias
 
 ---
 
-### 17. Frontend — Remover `ignoreBuildErrors` (BLOQUEANTE)
+## ⚪ FUTURO
 
-**Status atual:** `next.config.mjs` tem `ignoreBuildErrors: true`, mascarando erros de TypeScript no build.
-
-**O que falta:**
-- Remover `ignoreBuildErrors: true` do next.config.mjs
-- Corrigir todos os erros de TypeScript que surgirem
-- Garantir que `next build` passa limpo
-
-**Estimativa:** 0.5 dia
-
----
-
-### 19. CI/CD Pipeline (BLOQUEANTE)
-
-**Status atual:** Nenhum workflow automatizado.
-
-**O que falta:**
-- GitHub Actions: lint + test + build no PR
-- Deploy automático para staging após merge
-- Deploy para produção com aprovação manual
-- Verificação de build do frontend
-
-**Estimativa:** 1 dia
-
----
-
-## 🟡 PENDENTES — IMPORTANTES (risco se não tiver)
-
-### 14. Error Tracking e Monitoramento
-
-**Status atual:** Logs em arquivo com rotação diária (pino-roll). Sem tracking centralizado.
-
-**O que falta:**
-- Sentry (ou equivalente) para error tracking em backend e frontend
-- Middleware centralizado de erro no Express (hoje cada controller trata individualmente)
-- Uptime monitoring (UptimeRobot, Better Stack)
-- Alertas de erro crítico (integrar com WhatsApp do admin)
-
-**Estimativa:** 1 dia
-
----
-
-### 16. Testes unitários e de propriedade — Payment Gateway
-
-**Status atual:** Cobertura mínima (terms, rules, activation). Fluxo de pagamento sem testes.
-
-**O que falta:**
-- Testes unitários para Price Calculator (tabela de preços, edge cases, parcelamento)
-- Testes de propriedade (fast-check) para validar corretude universal:
-  - Sem acréscimo para PIX e cartão até 3x
-  - Juros compostos corretos para parcelamento > 3x
-  - Preço anual = 10x mensal
-  - Webhook idempotente (processar 2x = mesmo efeito que 1x)
-  - Expiração de assinatura calculada corretamente (30d mensal, 365d anual)
-  - Renovação antecipada estende a partir da expiração atual
-  - Formatação monetária no padrão brasileiro
-- Testes unitários para Payment Service, Webhook Controller e Subscription Service
-- Testes de integração: webhook → queue → processor → resposta
-
-**Estimativa:** 2 dias
-
----
-
-### 12. Fluxo de reconexão WhatsApp
-
-**Status atual:** Connection monitor detecta desconexão e alerta admin. Usuário final não é notificado.
-
-**O que falta:**
-- Notificar o usuário via WhatsApp da Cleo quando sua instância desconecta
-- Orientar a reconectar (mandar link da página `/conectar`)
-- Definir: reconectar automaticamente ou esperar ação do usuário?
-
-**Estimativa:** 1 dia
-
----
-
-### 20. Database Migrations Versionadas
-
-**Status atual:** Schema gerenciado via Supabase CLI (`db push`), mas sem migrations versionadas no repositório.
-
-**O que falta:**
-- Exportar schema.sql atualizado
-- Criar sistema de migrations versionadas (Supabase migrations ou alternativa)
-- Documentar estratégia de backup
-- Script de rollback
-
-**Estimativa:** 0.5 dia
-
----
-
-## ⚪ FUTURO (não bloqueia produção)
-
-### 15. Serviço de E-mail
-
-**Decisão:** WhatsApp para notificações. E-mail só se necessário depois.
-**Preparação:** Interface `NotificationPort` com `sendWhatsApp` e `sendEmail`.
-
-**Estimativa:** 1 dia quando implementar
-
----
-
-## ⚪ DECISÕES (não são débitos)
-
-- **FAQ/testimonials:** Manter hardcoded.
-- **URLs em português:** Rotas visíveis ao usuário, produto pt-BR.
-- **Constantes por módulo:** Cada módulo tem seu `constants.ts`.
-- **E-mail:** Recibos pelo gateway, notificações pelo WhatsApp.
+- **#15 E-mail** — quando necessário
+- **#23 Dashboard web** — métricas, leads, upload de materiais via web
 
 ---
 
@@ -162,21 +98,38 @@ Organizado por prioridade. Itens rápidos e médios já foram concluídos.
 
 | Status | Itens |
 |--------|-------|
-| ✅ Concluídos | #1-11, #18 |
-| 🔴 Bloqueantes | #13, #17, #19 |
-| 🟡 Importantes | #12, #14, #16, #20 |
-| ⚪ Futuro | #15 |
-| **Estimativa restante** | **~7-9 dias** |
+| ✅ Concluídos | #1-11, #13, #17, #18, #20, #21 |
+| 🔴 Bloqueante | #22 (deploy) |
+| 🟡 Pós-lançamento | #12, #14, #16, #19 |
+| ⚪ Futuro | #15, #23 |
 
 ---
 
-## Ordem de execução para produção
+## Fluxo completo do serviço em produção
 
-1. 🔴 **#13 Segurança** — rate-limit, helmet, CORS, validação (1-2 dias)
-2. 🔴 **#17 Fix frontend build** — remover ignoreBuildErrors (0.5 dia)
-3. 🔴 **#19 CI/CD** — pipeline de lint/test/build/deploy (1 dia)
-4. 🟡 **#14 Error tracking** — Sentry + monitoring (1 dia)
-5. 🟡 **#16 Testes payment** — unitários + propriedade (2 dias)
-6. 🟡 **#12 Reconexão WhatsApp** — notificar usuário (1 dia)
-7. 🟡 **#20 Migrations** — versionar schema (0.5 dia)
-8. ⚪ **#15 E-mail** — quando necessário
+```
+CLIENTE NOVO:
+  hicleo.com.br → Escolhe plano → Paga (PIX/cartão)
+    → Webhook MP confirma → Gera código ATIVAR-XXXX
+    → Redireciona pra /ativacao?code=ATIVAR-XXXX
+    → Usuário abre WhatsApp da Cleo, manda código
+    → Onboarding conversacional (nome, boas-vindas, horário)
+    → Escaneia QR Code pra vincular WhatsApp
+    → Cleo começa a trabalhar automaticamente
+
+OPERAÇÃO DIÁRIA:
+  Aluno/cliente manda mensagem → Evolution API → Webhook → Fila
+    → Regras automáticas (boas-vindas, fora de horário)
+    → Lead criado automaticamente
+    → Follow-up se não responder em 48h
+
+  Professor/dono conversa com Cleo:
+    → "quem tá sem resposta?" → lista leads pendentes
+    → "manda material pro João" → forward do último arquivo
+    → Manda PDF/imagem → Cleo armazena como material
+
+ADMINISTRAÇÃO:
+  Monitor de conexão (5 em 5 min) → alerta admin se desconectar
+  Subscription cron → expira assinaturas vencidas
+  Cancellation cron → limpa dados após prazo
+```

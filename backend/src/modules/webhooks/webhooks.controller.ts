@@ -114,7 +114,7 @@ webhookRouter.post('/evolution', async (req: Request, res: Response) => {
     const { text: rawText, media } = extractMessageContent(data.message);
     const text = sanitizeMessageText(rawText);
     const isFromMe = data.key.fromMe;
-    const isSecretaryInstance = payload.instance === 'secretary';
+    const isSecretaryInstance = payload.instance === env.MONITOR_INSTANCE;
 
     if (isFromMe) return;
     if (!text && !media) return; // Mensagem vazia ou tipo não suportado

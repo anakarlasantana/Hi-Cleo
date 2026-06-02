@@ -2,6 +2,7 @@ import type { MessageJobData } from './queue.types.js';
 import type { MessageProcessorPort } from './queue.port.js';
 import type { Logger } from '../../shared/logger/logger.js';
 import { CURRENT_TERMS_VERSION } from '../terms/constants.js';
+import { env } from '../../shared/config/env.js';
 
 export type MessageProcessor = MessageProcessorPort;
 
@@ -52,25 +53,25 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     const valid = await activationService.validateCode(code);
 
     if (!valid) {
-      await messaging.sendText({ instance: 'secretary', to: phone, text: 'Código inválido ou expirado. Verifique o código e tente novamente.' });
+      await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: 'Código inválido ou expirado. Verifique o código e tente novamente.' });
       return;
     }
 
     const user = await activationService.activateUser(code, phone, text);
-    await messaging.sendText({ instance: 'secretary', to: phone, text: `Bem-vindo(a)! 🎉\n\nSeu código foi ativado com sucesso!\n\nMe confirma: posso te chamar de *${user.name}*?` });
+    await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: `Bem-vindo(a)! 🎉\n\nSeu código foi ativado com sucesso!\n\nMe confirma: posso te chamar de *${user.name}*?` });
     return;
   }
 
   const user = await userRepo.findByPhone(phone);
   if (!user) {
-    await messaging.sendText({ instance: 'secretary', to: phone, text: 'Não encontrei seu cadastro. Se você já pagou, envie seu código de ativação (formato: ATIVAR-XXXX).' });
+    await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: 'Não encontrei seu cadastro. Se você já pagou, envie seu código de ativação (formato: ATIVAR-XXXX).' });
     return;
   }
 
   const onboardingComplete = await onboardingService.isComplete(user.id);
   if (!onboardingComplete) {
     const response = await onboardingService.processMessage(user.id, text);
-    await messaging.sendText({ instance: 'secretary', to: phone, text: response });
+    await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: response });
     return;
   }
 
@@ -80,14 +81,14 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     const normalized = text.trim().toLowerCase();
     if (normalized === 'aceito' || normalized === 'aceitar' || normalized === 'concordo') {
       await termsConsentService.recordConsent(user.id, CURRENT_TERMS_VERSION);
-      await messaging.sendText({ instance: 'secretary', to: phone, text: '✅ Termos aceitos! Pode continuar usando normalmente.' });
+      await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: '✅ Termos aceitos! Pode continuar usando normalmente.' });
       return;
     }
 
     await messaging.sendText({
-      instance: 'secretary',
+      instance: env.MONITOR_INSTANCE,
       to: phone,
-      text: 'Atualizamos nossos Termos de Uso. Para continuar usando a Cleo, acesse e aceite os novos termos: https://hicleo.com.br/termos\n\nApós aceitar, me mande qualquer mensagem para continuar.',
+      text: `Atualizamos nossos Termos de Uso. Para continuar usando a Cleo, acesse e aceite os novos termos: ${env.SITE_URL}/termos\n\nApós aceitar, me mande qualquer mensagem para continuar.`,
     });
     return;
   }
@@ -111,7 +112,7 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
       media.type === 'audio' ? '🎵 áudio' : '🎬 vídeo';
 
     await messaging.sendText({
-      instance: 'secretary',
+      instance: env.MONITOR_INSTANCE,
       to: phone,
       text: `✅ Material recebido: ${mediaLabel}\n\nQuando quiser enviar pra alguém, me diga: "manda material pro [nome]"`,
     });
@@ -120,12 +121,12 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
 
   const intent = await assistenteService.recognize(text);
   if (intent.confidence < 0.7) {
-    await messaging.sendText({ instance: 'secretary', to: phone, text: 'Não entendi bem. Pode reformular? 🤔\n\nExemplos:\n• "quem tá sem resposta?"\n• "agenda retorno pro João amanhã"\n• "mostra meus clientes"' });
+    await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: 'Não entendi bem. Pode reformular? 🤔\n\nExemplos:\n• "quem tá sem resposta?"\n• "agenda retorno pro João amanhã"\n• "mostra meus clientes"' });
     return;
   }
 
   const response = await executeIntent(container, user, intent);
-  await messaging.sendText({ instance: 'secretary', to: phone, text: response });
+  await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: response });
 }
 
 async function handleUserWhatsAppMessage(container: any, instance: string, phone: string, text: string, pushName?: string, media?: any): Promise<void> {

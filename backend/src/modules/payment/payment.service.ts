@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import type { MercadoPagoPort, PaymentRepository } from './payment.port.js';
+import type { PlanRepository } from '../plans/plans.port.js';
 import { calculatePrice, type PlanName, type BillingPeriod } from './price-calculator.js';
 
 interface CreatePaymentParams {
@@ -23,7 +24,8 @@ export class PaymentService {
 
   constructor(
     private mp: MercadoPagoPort,
-    private repo: PaymentRepository
+    private repo: PaymentRepository,
+    private planRepo: PlanRepository
   ) {}
 
   setWebhookDeps(deps: WebhookDeps) {
@@ -33,7 +35,18 @@ export class PaymentService {
   async createPayment(params: CreatePaymentParams) {
     const { planName, billingPeriod, email, method, cardToken, cardBrand, installments = 1 } = params;
 
-    const price = calculatePrice(planName, billingPeriod, method, installments);
+    const plan = await this.planRepo.getPlanLimit(planName);
+    if (!plan) throw new Error(`Plano "${planName}" não encontrado`);
+
+    const basePrice = billingPeriod === 'monthly' ? plan.price_monthly : plan.price_yearly_total;
+
+    const price = calculatePrice({
+      basePrice,
+      monthlyPrice: plan.price_monthly,
+      billingPeriod,
+      paymentMethod: method,
+      installments,
+    });
     const externalReference = `hicleo_${randomUUID()}`;
 
     const paymentMethod = method === 'pix'

@@ -94,7 +94,7 @@ const contactMonitorService = new ContactMonitorService(contactMonitorRepo);
 
 // Payment & Subscription
 const mercadoPagoAdapter = new MercadoPagoAdapter(env.MERCADO_PAGO_ACCESS_TOKEN);
-const paymentService = new PaymentService(mercadoPagoAdapter, paymentRepo);
+const paymentService = new PaymentService(mercadoPagoAdapter, paymentRepo, planRepo);
 const subscriptionService = new SubscriptionService(subscriptionRepo);
 
 // Configurar dependências do webhook (referência circular resolvida aqui)

@@ -60,6 +60,7 @@ const envSchema = z.object({
 
   // URLs públicas
   CHECKOUT_URL: z.string().url().default('https://hicleo.com.br/checkout'),
+  SITE_URL: z.string().url().default('https://hicleo.com.br'),
 
   // Segurança
   CORS_ORIGIN: z.string().default('http://localhost:3000'),

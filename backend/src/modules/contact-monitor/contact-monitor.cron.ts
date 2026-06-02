@@ -33,7 +33,7 @@ export function startContactMonitorCron(): void {
       ].join('\n');
 
       await messaging.sendText({
-        instance: 'secretary',
+        instance: env.MONITOR_INSTANCE,
         to: adminPhone,
         text: alertText,
       });
