@@ -29,4 +29,12 @@ export class LeadService {
   async updateLastInteraction(leadId: string): Promise<void> {
     return this.leadRepo.updateLastInteraction(leadId);
   }
+
+  async searchByName(userId: string, name: string): Promise<Lead[]> {
+    return this.leadRepo.searchByName(userId, name);
+  }
+
+  async findByPhone(userId: string, phone: string): Promise<Lead | null> {
+    return this.leadRepo.findByUserAndPhone(userId, phone);
+  }
 }

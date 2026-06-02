@@ -8,4 +8,5 @@ export interface LeadRepository {
   listNoReply(userId: string, hoursThreshold?: number): Promise<Lead[]>;
   updateStatus(leadId: string, status: LeadStatus): Promise<void>;
   updateLastInteraction(leadId: string): Promise<void>;
+  searchByName(userId: string, name: string): Promise<Lead[]>;
 }

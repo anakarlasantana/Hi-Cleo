@@ -71,12 +71,19 @@ export interface Lead {
   created_at: string;
 }
 
+// === Media ===
+export type MediaType = 'image' | 'video' | 'audio' | 'document';
+
 export interface Message {
   id: string;
   lead_id: string;
   text: string;
   direction: MessageDirection;
   timestamp: string;
+  media_type?: MediaType | null;
+  media_mime_type?: string | null;
+  media_file_name?: string | null;
+  media_key?: string | null;
 }
 
 export interface FollowUp {
@@ -120,10 +127,14 @@ export interface WebhookPayload {
   instance: string;
   event: string;
   data: {
-    key: { remoteJid: string; fromMe: boolean };
+    key: { remoteJid: string; fromMe: boolean; id: string };
     message: {
       conversation?: string;
-      audioMessage?: { url: string; mimetype: string; seconds: number };
+      extendedTextMessage?: { text: string };
+      imageMessage?: { url: string; mimetype: string; caption?: string; mediaKey?: string };
+      audioMessage?: { url: string; mimetype: string; seconds: number; mediaKey?: string };
+      videoMessage?: { url: string; mimetype: string; caption?: string; seconds: number; mediaKey?: string };
+      documentMessage?: { url: string; mimetype: string; title?: string; fileName?: string; mediaKey?: string };
     };
     messageTimestamp: number;
     pushName?: string;

@@ -1,14 +1,42 @@
 # ===========================================
-# Hi Cleo — Docker Compose Override (Produção)
+# Hi Cleo — Docker Compose (Produção — Hostinger VPS)
 # ===========================================
-# Uso: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-# Aplica configurações de produção sobre a base local.
+# A Hostinger já roda Evolution API/Go separadamente.
+# Este compose sobe apenas: backend, frontend e Redis.
+#
+# Uso: docker compose -f docker-compose.prod.yml up -d --build
+#
+# Pré-requisitos:
+# - .env configurado com valores de produção
+# - EVOLUTION_API_URL apontando para a Evolution da Hostinger (ex: http://localhost:8080)
+# - Domínio e SSL configurados
 
 services:
   backend:
-    restart: always
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hicleo-backend
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    networks:
+      - hicleo-network
+    restart: always
     deploy:
       resources:
         limits:
@@ -16,6 +44,28 @@ services:
           memory: 512M
 
   frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+        - NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY=${NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY}
+        - NEXT_PUBLIC_SECRETARY_PHONE=${NEXT_PUBLIC_SECRETARY_PHONE}
+        - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
+    container_name: hicleo-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    networks:
+      - hicleo-network
     restart: always
     deploy:
       resources:
@@ -24,33 +74,27 @@ services:
           memory: 256M
 
   redis:
-    restart: always
-    ports: !reset []
+    image: redis:7-alpine
+    container_name: hicleo-redis
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - hicleo-network
+    restart: always
     deploy:
       resources:
         limits:
           cpus: "0.25"
           memory: 128M
 
-  evolution-api:
-    restart: always
-    ports: !reset []
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 512M
-
-  evolution-db:
-    restart: always
-    ports: !reset []
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 256M
+networks:
+  hicleo-network:
+    driver: bridge
 
 volumes:
   redis_data:

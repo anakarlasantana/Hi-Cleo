@@ -1,3 +1,12 @@
+import type { MediaType } from '../../shared/types/index.js';
+
+export interface MediaJobData {
+  type: MediaType;
+  mimeType: string;
+  fileName: string | null;
+  key: string | null;
+}
+
 export interface MessageJobData {
   phone: string;
   instance: string;
@@ -6,6 +15,8 @@ export interface MessageJobData {
   isSecretaryInstance: boolean;
   timestamp: number;
   remoteJid: string;
+  messageKey?: string;
+  media?: MediaJobData;
 }
 
 export interface QueueServiceConfig {

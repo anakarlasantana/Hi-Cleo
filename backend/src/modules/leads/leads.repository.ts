@@ -92,4 +92,16 @@ export class SupabaseLeadRepository implements LeadRepository {
 
     if (error) throw new Error(`Erro ao atualizar interação: ${error.message}`);
   }
+
+  async searchByName(userId: string, name: string): Promise<Lead[]> {
+    const { data, error } = await supabase
+      .from('leads')
+      .select('*')
+      .eq('user_id', userId)
+      .ilike('name', `%${name}%`)
+      .limit(5);
+
+    if (error) throw new Error(`Erro ao buscar leads por nome: ${error.message}`);
+    return (data || []) as Lead[];
+  }
 }

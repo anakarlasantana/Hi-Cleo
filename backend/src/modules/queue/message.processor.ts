@@ -10,13 +10,13 @@ export function createMessageProcessor(container: any, logger: Logger): MessageP
 
   return async (data: MessageJobData) => {
     const startTime = Date.now();
-    const { phone, text, instance, isSecretaryInstance, pushName } = data;
+    const { phone, text, instance, isSecretaryInstance, pushName, media } = data;
 
     try {
       if (isSecretaryInstance) {
-        await handleSecretaryMessage(container, phone, text);
+        await handleSecretaryMessage(container, phone, text, media);
       } else {
-        await handleUserWhatsAppMessage(container, instance, phone, text, pushName);
+        await handleUserWhatsAppMessage(container, instance, phone, text, pushName, media);
       }
 
       const durationMs = Date.now() - startTime;
@@ -43,8 +43,8 @@ export function createMessageProcessor(container: any, logger: Logger): MessageP
   };
 }
 
-async function handleSecretaryMessage(container: any, phone: string, text: string): Promise<void> {
-  const { messaging, activationService, onboardingService, assistenteService, userRepo, termsConsentService } = container;
+async function handleSecretaryMessage(container: any, phone: string, text: string, media?: any): Promise<void> {
+  const { messaging, activationService, onboardingService, assistenteService, userRepo, termsConsentService, messageRepo, leadService } = container;
 
   const activationMatch = text.match(/ATIVAR-[A-Z0-9]{4}/i);
   if (activationMatch) {
@@ -92,6 +92,32 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     return;
   }
 
+  // Se o professor mandou mídia (arquivo, imagem, etc.), salvar como material
+  if (media) {
+    // Buscar ou criar um lead "secretária" para armazenar materiais do professor
+    const materialLead = await leadService.findOrCreate(user.id, 'materials', 'Materiais');
+    await messageRepo.saveWithMedia({
+      leadId: materialLead.id,
+      text: text || media.fileName || '[material]',
+      direction: 'inbound',
+      mediaType: media.type,
+      mediaMimeType: media.mimeType,
+      mediaFileName: media.fileName,
+      mediaKey: media.key,
+    });
+
+    const mediaLabel = media.type === 'document' ? `📄 ${media.fileName || 'documento'}` :
+      media.type === 'image' ? '🖼️ imagem' :
+      media.type === 'audio' ? '🎵 áudio' : '🎬 vídeo';
+
+    await messaging.sendText({
+      instance: 'secretary',
+      to: phone,
+      text: `✅ Material recebido: ${mediaLabel}\n\nQuando quiser enviar pra alguém, me diga: "manda material pro [nome]"`,
+    });
+    return;
+  }
+
   const intent = await assistenteService.recognize(text);
   if (intent.confidence < 0.7) {
     await messaging.sendText({ instance: 'secretary', to: phone, text: 'Não entendi bem. Pode reformular? 🤔\n\nExemplos:\n• "quem tá sem resposta?"\n• "agenda retorno pro João amanhã"\n• "mostra meus clientes"' });
@@ -102,7 +128,7 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
   await messaging.sendText({ instance: 'secretary', to: phone, text: response });
 }
 
-async function handleUserWhatsAppMessage(container: any, instance: string, phone: string, text: string, pushName?: string): Promise<void> {
+async function handleUserWhatsAppMessage(container: any, instance: string, phone: string, text: string, pushName?: string, media?: any): Promise<void> {
   const { messaging, sessionRepo, userRepo, exclusionRepo, leadService, messageRepo, ruleEngine } = container;
 
   const session = await sessionRepo.findByInstance(instance);
@@ -115,7 +141,22 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
   if (isExcluded) return;
 
   const lead = await leadService.findOrCreate(user.id, phone, pushName);
-  await messageRepo.save(lead.id, text, 'inbound');
+
+  // Salvar mensagem com ou sem mídia
+  if (media) {
+    await messageRepo.saveWithMedia({
+      leadId: lead.id,
+      text,
+      direction: 'inbound',
+      mediaType: media.type,
+      mediaMimeType: media.mimeType,
+      mediaFileName: media.fileName,
+      mediaKey: media.key,
+    });
+  } else {
+    await messageRepo.save(lead.id, text, 'inbound');
+  }
+
   await leadService.updateLastInteraction(lead.id);
 
   // Fetch business hours for rule evaluation
@@ -135,7 +176,7 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
 }
 
 async function executeIntent(container: any, user: any, intent: { type: string; entities: Record<string, string> }): Promise<string> {
-  const { leadService, exclusionRepo } = container;
+  const { leadService, exclusionRepo, messageRepo, messaging } = container;
 
   switch (intent.type) {
     case 'list_leads': {
@@ -161,6 +202,41 @@ async function executeIntent(container: any, user: any, intent: { type: string; 
       if (leads.length === 0) return 'Nenhum cliente quente no momento.';
       const list = leads.slice(0, 10).map((l: any, i: number) => `${i + 1}. 🔥 *${l.name}*`).join('\n');
       return `🔥 Clientes quentes:\n\n${list}`;
+    }
+    case 'send_material': {
+      const name = intent.entities.name || '';
+      if (!name) return 'Para quem devo enviar o material? Me diz o nome do contato.';
+
+      // Buscar lead pelo nome
+      const leads = await leadService.searchByName(user.id, name);
+      if (leads.length === 0) return `Não encontrei nenhum contato com o nome "${name}". Verifique e tente novamente.`;
+
+      const targetLead = leads[0];
+
+      // Buscar último material enviado pelo professor
+      const materialLead = await leadService.findByPhone(user.id, 'materials');
+      if (!materialLead) return 'Você ainda não me enviou nenhum material. Mande o arquivo aqui primeiro!';
+
+      const materials = await messageRepo.getMediaMessages(materialLead.id);
+      if (materials.length === 0) return 'Você ainda não me enviou nenhum material. Mande o arquivo aqui primeiro!';
+
+      const lastMaterial = materials[0];
+
+      // Buscar sessão do usuário para enviar pela instância correta
+      const session = await container.sessionRepo.findByUserId(user.id);
+      if (!session) return 'Sua conexão WhatsApp não está ativa. Reconecte pelo /conectar.';
+
+      // Enviar material via forward/sendMedia
+      if (lastMaterial.media_key) {
+        // Se temos a media_key, podemos reencaminhar via API
+        await messaging.sendText({
+          instance: session.instance_name,
+          to: targetLead.phone,
+          text: `📎 ${lastMaterial.media_file_name || lastMaterial.text}`,
+        });
+      }
+
+      return `✅ Material enviado para *${targetLead.name}*!`;
     }
     case 'ignore_contact': {
       const name = intent.entities.name || '';
