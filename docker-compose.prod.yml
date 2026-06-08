@@ -1,17 +1,16 @@
 # ===========================================
-# Hi Cleo — Docker Compose (Produção — Hostinger VPS)
+# Hi Cleo — Docker Compose (Produção — VPS Limpa)
 # ===========================================
-# A Hostinger já roda Evolution API/Go separadamente.
-# Este compose sobe apenas: backend, frontend e Redis.
-#
+# Sobe TODOS os serviços: backend, frontend, Redis, Evolution API, Postgres.
 # Uso: docker compose -f docker-compose.prod.yml up -d --build
 #
 # Pré-requisitos:
 # - .env configurado com valores de produção
-# - EVOLUTION_API_URL apontando para a Evolution da Hostinger (ex: http://localhost:8080)
-# - Domínio e SSL configurados
+# - Domínio + SSL configurados (Cloudflare ou nginx reverse proxy)
 
 services:
+  # --- Aplicação ---
+
   backend:
     build:
       context: ./backend
@@ -25,8 +24,11 @@ services:
       - NODE_ENV=production
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - EVOLUTION_API_URL=http://evolution-api:8080
     depends_on:
       redis:
+        condition: service_healthy
+      evolution-api:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
@@ -73,6 +75,8 @@ services:
           cpus: "0.5"
           memory: 256M
 
+  # --- Infraestrutura ---
+
   redis:
     image: redis:7-alpine
     container_name: hicleo-redis
@@ -92,9 +96,82 @@ services:
           cpus: "0.25"
           memory: 128M
 
+  evolution-api:
+    image: atendai/evolution-api:latest
+    container_name: hicleo-evolution-api
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    environment:
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
+      - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
+      - DEL_INSTANCE=false
+      - LANGUAGE=pt-BR
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://${EVOLUTION_DB_USER}:${EVOLUTION_DB_PASSWORD}@evolution-db:5432/${EVOLUTION_DB_NAME}
+      - DATABASE_CONNECTION_CLIENT_NAME=evolution_api
+      - QRCODE_LIMIT=30
+      - CONFIG_SESSION_PHONE_VERSION=2.3000.1039782722
+      - CONFIG_SESSION_PHONE_CLIENT=Evolution API
+      - CONFIG_SESSION_PHONE_NAME=Chrome
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://redis:6379
+      - CACHE_LOCAL_ENABLED=false
+      - WPP_LID_MODE=false
+    volumes:
+      - evolution_data:/evolution/instances
+    depends_on:
+      evolution-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    networks:
+      - hicleo-network
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  evolution-db:
+    image: postgres:16
+    container_name: hicleo-evolution-db
+    environment:
+      - POSTGRES_USER=${EVOLUTION_DB_USER}
+      - POSTGRES_PASSWORD=${EVOLUTION_DB_PASSWORD}
+      - POSTGRES_DB=${EVOLUTION_DB_NAME}
+    volumes:
+      - evolution_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${EVOLUTION_DB_USER:-evolution}"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - hicleo-network
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+# --- Rede ---
+
 networks:
   hicleo-network:
     driver: bridge
 
+# --- Volumes ---
+
 volumes:
   redis_data:
+  evolution_data:
+  evolution_db_data:

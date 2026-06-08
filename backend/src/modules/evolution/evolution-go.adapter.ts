@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import type { MessagingPort, SendTextOptions, SendMediaOptions, CreateInstanceOptions, CreateInstanceResult, ConnectionStatus } from './evolution.port.js';
+import type { MessagingPort, SendTextOptions, SendMediaOptions, ForwardMessageOptions, CreateInstanceOptions, CreateInstanceResult, ConnectionStatus } from './evolution.port.js';
 
 export class EvolutionGoAdapter implements MessagingPort {
   private api: AxiosInstance;
@@ -18,6 +18,12 @@ export class EvolutionGoAdapter implements MessagingPort {
   async sendMedia({ instance, to, mediaUrl, caption, mediaType, fileName }: SendMediaOptions): Promise<void> {
     await this.api.post('/message/sendMedia', {
       instance, number: to, mediatype: mediaType, media: mediaUrl, caption: caption || '', fileName: fileName || '',
+    });
+  }
+
+  async forwardMessage({ instance, to, messageId }: ForwardMessageOptions): Promise<void> {
+    await this.api.post('/chat/forwardMessage', {
+      instance, number: to, message: { key: { id: messageId } },
     });
   }
 

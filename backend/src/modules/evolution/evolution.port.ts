@@ -25,9 +25,16 @@ export interface CreateInstanceResult {
   qrCode: string;
 }
 
+export interface ForwardMessageOptions {
+  instance: string;
+  to: string;
+  messageId: string;
+}
+
 export interface MessagingPort {
   sendText(options: SendTextOptions): Promise<void>;
   sendMedia(options: SendMediaOptions): Promise<void>;
+  forwardMessage(options: ForwardMessageOptions): Promise<void>;
   createInstance(options: CreateInstanceOptions): Promise<CreateInstanceResult>;
   getStatus(instance: string): Promise<ConnectionStatus>;
   getQrCode(instance: string): Promise<string>;

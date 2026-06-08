@@ -1,12 +1,10 @@
 # Hi Cleo — Secretária Virtual por WhatsApp
 
-CRM inteligente via WhatsApp com IA para pequenos empresários brasileiros. Responde leads automaticamente, gerencia clientes e envia follow-ups.
+CRM inteligente via WhatsApp com IA para pequenos empresários brasileiros. Responde leads automaticamente, gerencia clientes, envia follow-ups e encaminha materiais.
 
 ---
 
 ## Início Rápido (Docker)
-
-Suba toda a aplicação com um único comando:
 
 ```bash
 # 1. Copie e preencha as variáveis de ambiente
@@ -34,14 +32,23 @@ Acesse:
 ```
 /
 ├── docker-compose.yml          # Orquestra todos os serviços (dev)
-├── docker-compose.prod.yml     # Override para produção
+├── docker-compose.prod.yml     # Produção (VPS limpa, tudo incluso)
 ├── .env.example                # Template de variáveis de ambiente
+├── .env                        # Variáveis reais (gitignored, symlinked)
 ├── backend/                    # API Express.js + TypeScript
-│   ├── Dockerfile
-│   └── src/
+│   ├── Dockerfile              # Multi-stage build
+│   ├── src/
+│   │   ├── modules/            # Módulos feature-first
+│   │   ├── shared/             # Config, logger, middleware, types
+│   │   ├── container.ts        # DI container
+│   │   └── index.ts            # Entry point
+│   └── supabase/migrations/    # Migrations versionadas
 ├── frontend/                   # Next.js 16 + Tailwind
-│   ├── Dockerfile
-│   └── app/
+│   ├── Dockerfile              # Multi-stage build (standalone)
+│   ├── app/                    # Pages (checkout, ativação, conexão)
+│   ├── services/               # Chamadas HTTP centralizadas
+│   ├── lib/                    # Utilitários (api-client, sanitize, masks)
+│   └── components/             # UI components
 └── docs/                       # Documentação do projeto
 ```
 
@@ -55,42 +62,49 @@ Acesse:
 docker compose up --build
 ```
 
-Todos os serviços sobem juntos:
-- **backend** — Express.js na porta 3001
-- **frontend** — Next.js na porta 3000
-- **redis** — BullMQ queue na porta 6379
-- **evolution-api** — WhatsApp via Baileys na porta 8082
-- **evolution-db** — PostgreSQL para Evolution na porta 5433
+Todos os serviços sobem juntos com healthchecks e rede compartilhada.
 
-Healthchecks garantem que serviços só iniciam quando suas dependências estão prontas.
-
-### Produção
+### Produção (VPS limpa)
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-O override de produção:
-- Muda restart policy para `always`
-- Remove portas internas do host (Redis, Postgres, Evolution)
-- Adiciona limites de CPU e memória
-- Adiciona volume persistente para Redis
+Mesmo stack, com: `restart: always`, limites de CPU/RAM, portas internas fechadas, volumes persistentes.
 
 ---
 
 ## Variáveis de Ambiente
 
-Copie `.env.example` para `.env` e preencha. As variáveis estão organizadas em seções:
+Um único `.env` na raiz governa tudo (symlinked para backend/ e frontend/).
 
 | Seção | Variáveis principais |
 |-------|---------------------|
 | Backend | `SUPABASE_URL`, `GEMINI_API_KEY`, `MERCADO_PAGO_ACCESS_TOKEN` |
 | Messaging | `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `SECRETARY_PHONE` |
-| Redis | `REDIS_HOST`, `REDIS_PORT` (dentro do Docker: `redis` e `6379`) |
+| Redis | `REDIS_HOST=redis`, `REDIS_PORT=6379` |
+| Segurança | `CORS_ORIGIN`, `RATE_LIMIT_GLOBAL`, `RATE_LIMIT_PAYMENTS` |
 | Frontend | `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY` |
-| Evolution | `EVOLUTION_DB_USER`, `EVOLUTION_DB_PASSWORD` |
+| URLs | `SITE_URL`, `CHECKOUT_URL`, `WEBHOOK_URL` |
 
-> Dentro do Docker, serviços se comunicam por hostname interno (`redis`, `evolution-api`, `backend`). Não use `localhost` nas variáveis de conexão entre serviços.
+> Dentro do Docker, serviços se comunicam por hostname interno (`redis`, `evolution-api`, `backend`).
+
+---
+
+## Segurança
+
+A aplicação implementa múltiplas camadas de segurança:
+
+- Helmet.js (headers de segurança, CSP)
+- CORS restrito por domínio (`CORS_ORIGIN`)
+- Rate limiting: 200 req/min global na API, 5/min em pagamentos
+- Payload limits: 50kb para API, 5MB para webhooks (mídia)
+- Validação Zod nos controllers (tipos e formatos)
+- Sanitização de inputs (prompt injection, caracteres de controle)
+- Webhook Mercado Pago com validação HMAC
+- Webhook Evolution com validação por secret + IP interno
+- Dados pessoais mascarados nos logs (LGPD)
+- Endpoint `/api/activation/generate` protegido (só chamado internamente)
 
 ---
 
@@ -98,7 +112,7 @@ Copie `.env.example` para `.env` e preencha. As variáveis estão organizadas em
 
 1. Acesse http://localhost:8082/manager/login
 2. Use a API Key definida em `EVOLUTION_API_KEY`
-3. Crie uma instância chamada `secretary`
+3. Crie instância com nome igual a `MONITOR_INSTANCE` (default: `secretary`)
 4. Escaneie o QR code com o WhatsApp do número da secretária
 
 ---
@@ -108,29 +122,18 @@ Copie `.env.example` para `.env` e preencha. As variáveis estão organizadas em
 | Comando | Descrição |
 |---------|-----------|
 | `docker compose up --build` | Sobe tudo (dev) |
+| `docker compose -f docker-compose.prod.yml up -d --build` | Sobe tudo (prod) |
 | `docker compose down` | Para tudo |
 | `docker compose down -v` | Para tudo e limpa volumes |
-| `docker compose logs -f backend` | Logs do backend em tempo real |
-| `docker compose ps` | Status dos containers |
-
-### Sem Docker (desenvolvimento direto)
-
-```bash
-# Backend
-cd backend && npm install && npm run dev
-
-# Frontend
-cd frontend && npm install && npm run dev
-```
-
-Nesse caso, suba Redis e Evolution API separadamente.
+| `docker compose logs -f backend` | Logs do backend |
 
 ---
 
 ## Documentação
 
-- [Débitos Técnicos](docs/debitos-tecnicos.md) — pendências e roadmap
-- [Backend README](backend/README.md) — arquitetura, módulos e detalhes técnicos
+- [Débitos Técnicos](docs/debitos-tecnicos.md) — pendências, roadmap e fluxos futuros
+- [Backend README](backend/README.md) — arquitetura, módulos e regras de desenvolvimento
+- [Ideia do Produto](docs/ideia.md) — visão, problema e solução
 
 ---
 
@@ -140,8 +143,10 @@ Nesse caso, suba Redis e Evolution API separadamente.
 |------------|-----------|
 | Backend | Express.js + TypeScript |
 | Frontend | Next.js 16 + Tailwind + Radix UI |
-| IA | Google Gemini (com fallback Groq) |
+| IA | Google Gemini (fallback Groq) |
 | Banco | Supabase (PostgreSQL) |
-| WhatsApp | Evolution API (Baileys) |
+| WhatsApp | Evolution API/Go (Baileys) |
 | Fila | BullMQ + Redis |
-| Pagamento | Mercado Pago |
+| Pagamento | Mercado Pago (PIX + cartão) |
+| Segurança | Helmet + express-rate-limit + Zod |
+| Testes | Vitest |

@@ -98,7 +98,7 @@ IA retorna:
 }
 🧱 ARQUITETURA TÉCNICA (BAIXO CUSTO)
 Infraestrutura
-VPS barata (Hostinger, Contabo, etc.)
+VPS com Docker (Hetzner, Contabo, DigitalOcean, etc.)
 Node.js (backend principal)
 Supabase (banco de dados gratuito)
 Evolution API para WhatsApp

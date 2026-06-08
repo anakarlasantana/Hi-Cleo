@@ -11,13 +11,13 @@ export function createMessageProcessor(container: any, logger: Logger): MessageP
 
   return async (data: MessageJobData) => {
     const startTime = Date.now();
-    const { phone, text, instance, isSecretaryInstance, pushName, media } = data;
+    const { phone, text, instance, isSecretaryInstance, pushName, media, messageKey } = data;
 
     try {
       if (isSecretaryInstance) {
-        await handleSecretaryMessage(container, phone, text, media);
+        await handleSecretaryMessage(container, phone, text, media, messageKey);
       } else {
-        await handleUserWhatsAppMessage(container, instance, phone, text, pushName, media);
+        await handleUserWhatsAppMessage(container, instance, phone, text, pushName, media, messageKey);
       }
 
       const durationMs = Date.now() - startTime;
@@ -44,7 +44,7 @@ export function createMessageProcessor(container: any, logger: Logger): MessageP
   };
 }
 
-async function handleSecretaryMessage(container: any, phone: string, text: string, media?: any): Promise<void> {
+async function handleSecretaryMessage(container: any, phone: string, text: string, media?: any, messageKey?: string): Promise<void> {
   const { messaging, activationService, onboardingService, assistenteService, userRepo, termsConsentService, messageRepo, leadService } = container;
 
   const activationMatch = text.match(/ATIVAR-[A-Z0-9]{4}/i);
@@ -104,7 +104,7 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
       mediaType: media.type,
       mediaMimeType: media.mimeType,
       mediaFileName: media.fileName,
-      mediaKey: media.key,
+      mediaKey: messageKey || null,
     });
 
     const mediaLabel = media.type === 'document' ? `📄 ${media.fileName || 'documento'}` :
@@ -129,7 +129,7 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
   await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: response });
 }
 
-async function handleUserWhatsAppMessage(container: any, instance: string, phone: string, text: string, pushName?: string, media?: any): Promise<void> {
+async function handleUserWhatsAppMessage(container: any, instance: string, phone: string, text: string, pushName?: string, media?: any, messageKey?: string): Promise<void> {
   const { messaging, sessionRepo, userRepo, exclusionRepo, leadService, messageRepo, ruleEngine } = container;
 
   const session = await sessionRepo.findByInstance(instance);
@@ -152,7 +152,7 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
       mediaType: media.type,
       mediaMimeType: media.mimeType,
       mediaFileName: media.fileName,
-      mediaKey: media.key,
+      mediaKey: messageKey || null,
     });
   } else {
     await messageRepo.save(lead.id, text, 'inbound');
@@ -223,19 +223,20 @@ async function executeIntent(container: any, user: any, intent: { type: string; 
 
       const lastMaterial = materials[0];
 
+      if (!lastMaterial.media_key) {
+        return 'Não consegui reenviar o último material. Tente mandar o arquivo de novo.';
+      }
+
       // Buscar sessão do usuário para enviar pela instância correta
       const session = await container.sessionRepo.findByUserId(user.id);
       if (!session) return 'Sua conexão WhatsApp não está ativa. Reconecte pelo /conectar.';
 
-      // Enviar material via forward/sendMedia
-      if (lastMaterial.media_key) {
-        // Se temos a media_key, podemos reencaminhar via API
-        await messaging.sendText({
-          instance: session.instance_name,
-          to: targetLead.phone,
-          text: `📎 ${lastMaterial.media_file_name || lastMaterial.text}`,
-        });
-      }
+      // Forward da mensagem original (reenvia o arquivo real)
+      await messaging.forwardMessage({
+        instance: session.instance_name,
+        to: targetLead.phone,
+        messageId: lastMaterial.media_key,
+      });
 
       return `✅ Material enviado para *${targetLead.name}*!`;
     }

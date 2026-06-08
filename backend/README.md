@@ -1,69 +1,24 @@
-# WhatsApp-first CRM — Backend
+# Hi Cleo — Backend
 
-CRM inteligente via WhatsApp com IA (Gemini), regras automáticas e gestão de leads para pequenos empresários brasileiros.
+API do CRM WhatsApp-first com IA (Gemini), gestão de leads, pagamentos e envio de materiais.
 
-> **Documentação complementar:**
-> - [Ideia do produto](../docs/ideia.md) — visão geral, público-alvo e modelo de negócio
-> - [Guia de setup detalhado](../docs/guia-setup-backend.md) — passo a passo completo com explicações
-
----
-
-## O que é
-
-Uma secretária virtual por WhatsApp que:
-- Responde automaticamente leads de clientes usando IA (Gemini)
-- Gerencia o ciclo de vida dos leads (novo, quente, convertido)
-- Envia lembretes de follow-up para o dono do negócio
-- Permite comandos por WhatsApp ("quem tá sem resposta?", "mostra meus clientes")
+> **Docs complementares:**
+> - [Ideia do produto](../docs/ideia.md) — visão geral e modelo de negócio
+> - [Débitos técnicos](../docs/debitos-tecnicos.md) — roadmap e pendências
 
 ---
 
 ## Arquitetura
 
-O projeto usa **Arquitetura Hexagonal (Ports & Adapters)** organizada por **feature/módulo**.
+**Hexagonal (Ports & Adapters)** organizada por **feature/módulo**.
 
 Cada módulo contém:
-- `*.port.ts` — Interface (contrato). Define O QUE o módulo faz, não COMO.
+- `*.port.ts` — Interface (contrato). Define O QUE faz, não COMO.
 - `*.service.ts` — Regra de negócio. Depende apenas de ports.
 - `*.repository.ts` — Persistência. Implementa o port de dados.
 - `*.adapter.ts` — Integração externa. Implementa o port de comunicação.
 - `*.controller.ts` — Endpoint HTTP (quando aplicável).
 - `*.cron.ts` — Jobs agendados (quando aplicável).
-
-### Por que essa arquitetura?
-
-- **Trocar libs sem dor** — quer sair do BullMQ pro RabbitMQ? Cria um novo adapter, muda uma linha no container.
-- **Testar fácil** — services dependem de interfaces, não de Supabase/Redis/Gemini reais.
-- **Escalar** — cada módulo é independente, pode virar um microserviço no futuro.
-
-### Estrutura de pastas
-
-```
-src/
-├── modules/                         # Módulos (feature-first)
-│   ├── activation/                  # Ativação de contas via código
-│   ├── assistente/                  # IA — interpreta comandos do usuário
-│   ├── connection-monitor/          # Monitora conexão WhatsApp
-│   ├── evolution/                   # Comunicação WhatsApp (Evolution API)
-│   ├── queue/                       # Fila de mensagens assíncrona (BullMQ)
-│   ├── leads/                       # Gestão de leads
-│   ├── messages/                    # Histórico de mensagens
-│   ├── onboarding/                  # Onboarding conversacional
-│   ├── rules/                       # Motor de regras automáticas
-│   ├── exclusion/                   # Contatos ignorados (pessoais)
-│   ├── follow-up/                   # Lembretes agendados (cron)
-│   └── webhooks/                    # Recebe eventos da Evolution API
-│
-├── shared/                          # Código compartilhado
-│   ├── config/                      # Variáveis de ambiente (Zod)
-│   ├── logger/                      # Logger estruturado (Pino)
-│   ├── ports/                       # Ports globais (AiPort)
-│   ├── types/                       # Tipos e entidades
-│   └── database/                    # Schema SQL
-│
-├── container.ts                     # Injeção de dependências
-└── index.ts                         # Entry point
-```
 
 ### Princípios
 
@@ -71,7 +26,43 @@ src/
 2. **Ports & Adapters** — services dependem de interfaces, não de implementações
 3. **Container centralizado** — `container.ts` monta todas as dependências
 4. **Módulos independentes** — cada módulo pode ser entendido isoladamente
-5. **Fallback gracioso** — se Redis cai, processa síncrono; se Gemini falha, retenta
+5. **Fallback gracioso** — se Redis cai, processa síncrono; se Gemini falha, usa Groq
+
+### Estrutura de pastas
+
+```
+src/
+├── modules/
+│   ├── activation/          # Ativação de contas via código
+│   ├── assistente/          # IA — interpreta comandos (Gemini + Groq fallback)
+│   ├── cancellation/        # Cancelamento de assinaturas
+│   ├── connection-monitor/  # Monitora conexão WhatsApp (cron 5min)
+│   ├── contact-monitor/     # Alerta de threshold de contatos
+│   ├── evolution/           # Adapters WhatsApp (Evolution API + Go)
+│   ├── exclusion/           # Contatos ignorados (pessoais)
+│   ├── follow-up/           # Lembretes automáticos (cron)
+│   ├── leads/               # Gestão de leads (CRUD + busca)
+│   ├── messages/            # Histórico de mensagens + mídia
+│   ├── onboarding/          # Onboarding conversacional
+│   ├── payment/             # Mercado Pago (PIX/cartão)
+│   ├── plans/               # Planos e preços (do banco)
+│   ├── queue/               # Fila assíncrona (BullMQ)
+│   ├── rules/               # Motor de regras automáticas
+│   ├── subscription/        # Gestão de assinaturas
+│   ├── terms/               # Aceite de termos LGPD
+│   └── webhooks/            # Recebe eventos da Evolution API
+│
+├── shared/
+│   ├── config/              # Env vars (Zod validation)
+│   ├── database/            # Schema SQL
+│   ├── logger/              # Pino (rotação diária em prod)
+│   ├── middleware/          # Segurança (helmet, rate-limit, sanitize)
+│   ├── ports/               # Ports globais (AiPort)
+│   └── types/               # Tipos e entidades
+│
+├── container.ts             # Injeção de dependências
+└── index.ts                 # Entry point + middleware setup
+```
 
 ### Como trocar um provider
 
@@ -81,166 +72,129 @@ src/
 | Supabase → outro banco | Criar novo `.repository.ts` implementando o `.port.ts` |
 | Gemini → OpenAI | Criar novo adapter implementando `AiPort` |
 | BullMQ → RabbitMQ/SQS | Criar novo adapter implementando `QueuePort` e `WorkerPort` |
-| Pino → Winston | Criar novo `logger.ts` exportando `createLogger()` com mesma interface |
+| Pino → Winston | Criar novo `logger.ts` exportando `createLogger()` |
+
+---
+
+## Regras de Desenvolvimento
+
+### Nomenclatura
+- Funções e variáveis: nomes descritivos, em inglês
+- Prefixar transformações: `apply`, `format`, `parse`, `calculate`, `validate`
+- Constantes: descrevem o que representam (`MONTHLY_INTEREST_RATE`, não `RATE`)
+- Banco de dados: tabelas e colunas em inglês
+- Comentários: português permitido
+- Valores monetários: sempre em centavos (inteiros)
+
+### Controllers
+- Usa `Router()` do Express + importa `container` direto
+- Validação de body com Zod
+- Erros genéricos pro cliente, detalhes no logger
+- Nunca expor `error.message` diretamente na resposta
+
+### Services
+- Recebe dependências via constructor
+- Depende apenas de interfaces (ports), nunca de implementações
+- Preços e configurações vêm do banco, não hardcoded
+
+### Crons
+- Exporta função `startXxxCron()` que se auto-configura
+- Usa `env.MONITOR_INSTANCE` (nunca string literal `'secretary'`)
+- Schedule configurável via env var
+
+### Segurança
+- Rate limiting em todas as rotas `/api/*`
+- Payload limit: 50kb API, 5MB webhooks
+- Sanitizar inputs antes de enviar pra IA (`sanitizeForAiPrompt`)
+- Validar telefone antes de processar (`validatePhoneNumber`)
+- Mascarar dados pessoais nos logs (`maskPhone`, `maskEmail`)
 
 ---
 
 ## Fluxo de mensagens
 
 ```
-WhatsApp → Evolution API → Webhook → Fila (BullMQ/Redis) → Worker
-                                                              │
-                                          ┌───────────────────┼───────────────────┐
-                                          ▼                   ▼                   ▼
-                                     Secretária          Lead novo           Follow-up
-                                     (comandos)         (auto-resp)         (lembrete)
-                                          │                   │                   │
-                                          ▼                   ▼                   ▼
-                                     Gemini IA          Regras auto          Cron job
-                                          │                   │                   │
-                                          └───────────────────┼───────────────────┘
-                                                              ▼
-                                                       Evolution API → WhatsApp
+WhatsApp → Evolution API → Webhook → Validação → Fila (BullMQ) → Worker
+                                                                     │
+                                         ┌───────────────────────────┼──────────────────┐
+                                         ▼                           ▼                  ▼
+                                    Secretária                  Lead novo          Follow-up
+                                    (comandos)                 (auto-resp)         (lembrete)
+                                         │                           │                  │
+                                         ▼                           ▼                  ▼
+                                    Gemini IA                   Regras auto         Cron job
+                                         │                           │                  │
+                                         └───────────────────────────┼──────────────────┘
+                                                                     ▼
+                                                              Evolution API → WhatsApp
 ```
+
+### Mídia (imagem, áudio, vídeo, documento)
+
+- Webhook extrai metadados + messageId de qualquer tipo de mídia
+- Metadados salvos no banco (tipo, mime, nome do arquivo, messageId)
+- Arquivo em si fica no WhatsApp (sem storage próprio)
+- Forward usa o messageId original pra reenviar o arquivo real
 
 ### Resiliência
 
-- **Retry automático** — se Gemini/Evolution falhar, retenta 3x com backoff (5s, 15s, 45s)
-- **Dead-Letter Queue** — mensagens que falharam 3x ficam salvas para análise
-- **Fallback síncrono** — se Redis cair, processa direto (sem fila)
-- **Monitor de conexão** — verifica WhatsApp a cada 5 min, alerta se desconectar
-- **Graceful shutdown** — SIGTERM/SIGINT espera job atual terminar
+- Retry 3x com backoff (5s, 15s, 45s)
+- Dead-Letter Queue para mensagens que falharam
+- Fallback síncrono se Redis indisponível
+- Monitor de conexão WhatsApp (5 em 5 min)
+- Graceful shutdown (SIGTERM/SIGINT)
+- AI fallback (Gemini → Groq)
 
 ---
 
 ## Setup — Desenvolvimento
 
-### Opção 1: Docker Compose (recomendado)
-
-A forma mais simples de rodar tudo. Na raiz do projeto:
+### Docker Compose (recomendado)
 
 ```bash
-# 1. Configurar variáveis de ambiente
-cp .env.example .env
-# Preencha os valores no .env
-
-# 2. Subir tudo (backend, frontend, Redis, Evolution API, Postgres)
+cp .env.example .env  # na raiz
 docker compose up --build
 ```
 
-O backend fica disponível em http://localhost:3001.
+Backend disponível em http://localhost:3001.
 
-> Ver [README raiz](../README.md) para detalhes completos do Docker setup.
-
-### Opção 2: Desenvolvimento direto (sem Docker para o backend)
+### Sem Docker
 
 ```bash
-# 1. Instalar dependências
 npm install
-
-# 2. Configurar variáveis de ambiente
-cp .env.example .env
-# Preencha os valores no .env
-
-# 3. Subir apenas infraestrutura (Redis + Evolution API)
-# Use o docker-compose.yml da raiz ou suba manualmente
-
-# 4. Criar tabelas no Supabase
-# Copie o conteúdo de src/shared/database/schema.sql
-# Cole no Supabase → SQL Editor → Run
-
-# 5. Expor webhook com ngrok (em outro terminal)
-ngrok http 3001
-# Copie a URL gerada e coloque em WEBHOOK_URL no .env
-
-# 6. Conectar WhatsApp
-# Acesse http://localhost:8082/manager/login
-# API Key: valor de EVOLUTION_API_KEY no .env
-# Crie instância "secretary" → escaneie QR code
-
-# 7. Rodar backend
+cp ../.env.example ../.env  # ou use o symlink existente
 npm run dev
 ```
 
-### Testando
-
-1. Peça para alguém mandar mensagem no número conectado
-2. Acompanhe os logs no terminal (Pino formatado com cores)
-3. O bot responde automaticamente
+Precisa de Redis e Evolution API rodando separadamente.
 
 ---
 
 ## Setup — Produção
 
-### Com Docker Compose (recomendado)
-
 ```bash
-# Na raiz do projeto, com .env de produção configurado:
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-O override de produção (`docker-compose.prod.yml`):
-- Restart policy `always` para todos os serviços
-- Portas internas (Redis, Postgres, Evolution) não expostas ao host
-- Limites de CPU e memória por serviço
-- Volume persistente para Redis
-
-### Infraestrutura necessária
-
-| Serviço | Opções |
-|---|---|
-| Servidor | VPS (Hetzner, DigitalOcean) ou container (Railway, Render) |
-| Banco | Supabase (já configurado) |
-| Redis | Incluso no Docker Compose |
-| WhatsApp | Evolution API inclusa no Docker Compose |
-| DNS/SSL | Cloudflare ou Let's Encrypt |
-
-### Checklist de deploy
-
-1. Configurar `.env` com valores de produção (`NODE_ENV=production`)
-2. Apontar `WEBHOOK_URL` para URL pública com HTTPS
-3. Configurar `NEXT_PUBLIC_API_URL` para URL pública do backend
-4. Configurar `MONITOR_ADMIN_PHONE` para receber alertas
-5. Garantir volumes persistentes (Evolution API + Redis)
-6. Logs vão para arquivo com rotação (diária, 7 dias)
-
-### Variáveis específicas de produção
-
-```env
-NODE_ENV=production
-LOG_LEVEL=info
-LOG_DIR=./logs
-MONITOR_ADMIN_PHONE=5585999999999
-WEBHOOK_URL=https://api.seudominio.com.br/webhooks/evolution
-NEXT_PUBLIC_API_URL=https://api.seudominio.com.br
-NEXT_PUBLIC_SITE_URL=https://seudominio.com.br
-```
+Sobe todos os serviços numa VPS limpa com Docker. Ver [checklist completo](../docs/debitos-tecnicos.md#22-deploy-no-servidor-vps-limpa-com-docker).
 
 ---
 
-## Variáveis de Ambiente
+## Endpoints
 
-| Variável | Descrição | Default |
-|---|---|---|
-| `PORT` | Porta do servidor | 3001 |
-| `NODE_ENV` | Ambiente (development/production) | development |
-| `MESSAGING_PROVIDER` | `evolution-api` ou `evolution-go` | evolution-api |
-| `EVOLUTION_API_URL` | URL da Evolution API | http://localhost:8082 |
-| `EVOLUTION_API_KEY` | API Key da Evolution | — |
-| `SUPABASE_URL` | URL do projeto Supabase | — |
-| `SUPABASE_ANON_KEY` | Anon key do Supabase | — |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service role key | — |
-| `GEMINI_API_KEY` | API Key do Google AI | — |
-| `SECRETARY_PHONE` | Número da secretária virtual | — |
-| `WEBHOOK_URL` | URL pública para webhooks | — |
-| `REDIS_HOST` | Host do Redis | localhost |
-| `REDIS_PORT` | Porta do Redis | 6379 |
-| `QUEUE_MAX_RETRIES` | Tentativas de retry por mensagem | 3 |
-| `QUEUE_BACKOFF_DELAYS` | Delays de retry em ms | 5000,15000,45000 |
-| `LOG_LEVEL` | Nível de log (info/warn/error/debug) | info |
-| `LOG_DIR` | Diretório de logs (produção) | ./logs |
-| `MONITOR_INSTANCE` | Instância WhatsApp monitorada | secretary |
-| `MONITOR_ADMIN_PHONE` | Número que recebe alertas | — |
+| Método | Rota | Descrição | Proteção |
+|---|---|---|---|
+| GET | `/health` | Health check | Nenhuma |
+| POST | `/webhooks/evolution` | Webhook Evolution API | Secret + IP interno |
+| POST | `/webhooks/mercadopago` | Webhook Mercado Pago | HMAC signature |
+| POST | `/api/activation/generate` | Gera código ativação | Secret interno |
+| GET | `/api/activation/validate/:code` | Valida código | Rate limit |
+| GET | `/api/activation/plans` | Lista planos | Rate limit |
+| GET | `/api/activation/qrcode/:code` | QR Code conexão | Rate limit |
+| POST | `/api/payments` | Cria pagamento | Rate limit + Zod |
+| GET | `/api/payments/price` | Calcula preço | Rate limit |
+| GET | `/api/payments/:orderId/status` | Status pagamento | Rate limit |
+| POST | `/api/cancellation/request` | Solicita cancelamento | Rate limit + ownership |
 
 ---
 
@@ -248,21 +202,11 @@ NEXT_PUBLIC_SITE_URL=https://seudominio.com.br
 
 | Comando | Descrição |
 |---|---|
-| `npm run dev` | Desenvolvimento com hot-reload (tsx watch) |
-| `npm run build` | Compila TypeScript para dist/ |
+| `npm run dev` | Dev com hot-reload (tsx watch) |
+| `npm run build` | Compila TypeScript → dist/ |
 | `npm run start` | Roda build de produção |
 | `npm run test` | Roda testes (vitest) |
-
----
-
-## Endpoints
-
-| Método | Rota | Descrição |
-|---|---|---|
-| GET | `/health` | Health check |
-| POST | `/webhooks/evolution` | Webhook da Evolution API |
-| POST | `/api/activation/generate` | Gera código de ativação |
-| GET | `/api/activation/validate/:code` | Valida código |
+| `npm run lint` | Lint (eslint) |
 
 ---
 
@@ -270,12 +214,14 @@ NEXT_PUBLIC_SITE_URL=https://seudominio.com.br
 
 | Componente | Tecnologia | Por quê |
 |---|---|---|
-| Runtime | Node.js + TypeScript | Ecossistema rico, tipagem forte |
-| Framework | Express | Simples, maduro, extensível |
-| IA | Google Gemini | Free tier generoso, boa qualidade |
-| Banco | Supabase (PostgreSQL) | Managed, auth built-in, realtime |
-| Mensageria | Evolution API (Baileys) | WhatsApp sem API oficial, gratuito |
-| Fila | BullMQ + Redis | Retry, backoff, DLQ, alta performance |
-| Logger | Pino | Mais rápido logger para Node.js |
-| Validação | Zod | Schema validation com TypeScript |
-| Testes | Vitest + fast-check | Rápido, property-based testing |
+| Runtime | Node.js 20 + TypeScript | Tipagem forte, ecossistema |
+| Framework | Express | Simples, maduro |
+| IA | Gemini (fallback Groq) | Free tier generoso |
+| Banco | Supabase (PostgreSQL) | Managed, RLS, realtime |
+| WhatsApp | Evolution API/Go | Open-source, gratuito |
+| Fila | BullMQ + Redis | Retry, backoff, DLQ |
+| Pagamento | Mercado Pago | PIX + cartão, SDK oficial |
+| Logger | Pino | Performance, rotação |
+| Validação | Zod | Runtime + TypeScript |
+| Segurança | Helmet + express-rate-limit | Headers + throttling |
+| Testes | Vitest | Rápido, compatível |

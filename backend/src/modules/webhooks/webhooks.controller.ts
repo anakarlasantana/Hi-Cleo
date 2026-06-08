@@ -31,7 +31,7 @@ function extractMessageContent(message: WebhookPayload['data']['message']) {
         type: 'image' as MediaType,
         mimeType: message.imageMessage.mimetype,
         fileName: null as string | null,
-        key: message.imageMessage.mediaKey || null,
+        key: null as string | null,
       },
     };
   }
@@ -44,7 +44,7 @@ function extractMessageContent(message: WebhookPayload['data']['message']) {
         type: 'audio' as MediaType,
         mimeType: message.audioMessage.mimetype,
         fileName: null as string | null,
-        key: message.audioMessage.mediaKey || null,
+        key: null as string | null,
       },
     };
   }
@@ -57,7 +57,7 @@ function extractMessageContent(message: WebhookPayload['data']['message']) {
         type: 'video' as MediaType,
         mimeType: message.videoMessage.mimetype,
         fileName: null as string | null,
-        key: message.videoMessage.mediaKey || null,
+        key: null as string | null,
       },
     };
   }
@@ -70,7 +70,7 @@ function extractMessageContent(message: WebhookPayload['data']['message']) {
         type: 'document' as MediaType,
         mimeType: message.documentMessage.mimetype,
         fileName: message.documentMessage.fileName || message.documentMessage.title || null,
-        key: message.documentMessage.mediaKey || null,
+        key: null as string | null,
       },
     };
   }

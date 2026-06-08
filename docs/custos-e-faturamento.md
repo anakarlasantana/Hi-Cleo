@@ -1,28 +1,30 @@
 # Simulação de Custos e Faturamento — WhatsApp-first CRM
 
-## Planos VPS Hostinger (Evolution API pré-instalada)
+## Planos VPS (qualquer provider com Docker)
 
-| Plano | Preço | vCPU | RAM | NVMe | Instâncias WhatsApp |
-|-------|-------|------|-----|------|---------------------|
-| **VPS NVMe 2** | R$25,89/mês (3 anos) | 1 | 2GB DDR5 | 50GB | Até 20 |
-| **VPS NVMe 4** (mais popular) | R$35,49/mês (3 anos) | 2 | 4GB DDR5 | 100GB | Até 50 |
-| **VPS NVMe 8** (recomendado) | R$69,99/mês (3 anos) | 4 | 8GB DDR5 | 200GB | Até 100 |
+| Provider | Plano | Preço estimado | vCPU | RAM | Disco |
+|----------|-------|----------------|------|-----|-------|
+| Hetzner | CX22 | ~R$25/mês | 2 | 4GB | 40GB |
+| Contabo | VPS S | ~R$30/mês | 4 | 8GB | 50GB |
+| DigitalOcean | Droplet | ~R$30/mês | 1 | 2GB | 50GB |
+| Hostinger | KVM 1 | ~R$30/mês | 1 | 4GB | 50GB |
 
-Todos incluem: transferência ilimitada, servidor no Brasil, 1 IP dedicado, migração grátis.
+Requisito mínimo: 1 vCPU, 4GB RAM, Docker instalado. Todos os serviços (backend, frontend, Redis, Evolution API, Postgres) rodam no mesmo servidor via Docker Compose.
 
 ---
 
 ## Infraestrutura Base (custo fixo)
 
-| Recurso | Plano | Custo | Limite |
-|---------|-------|-------|--------|
-| VPS Hostinger NVMe 2 | Evolution API pré-instalada | R$25,89/mês | 1 vCPU, 2GB RAM, 50GB, 20 instâncias |
-| Supabase | Free tier | R$0 | 500MB banco, 50K MAUs |
-| Evolution API | Open-source (na VPS) | R$0 | Incluso na VPS |
-| Chip secretária | Pré-pago | R$10 (único) | 1 número para a secretária virtual |
-| Domínio | .com.br | ~R$40/ano (~R$3,33/mês) | Landing page + webhook HTTPS (obrigatório) |
+| Recurso | Descrição | Custo | Detalhe |
+|---------|-----------|-------|---------|
+| VPS | Servidor com Docker (tudo roda junto) | ~R$30/mês | 1 vCPU, 4GB RAM |
+| Supabase | Banco de dados (free tier) | R$0 | 500MB, 50K MAUs |
+| Evolution API | Open-source (no Docker Compose) | R$0 | Incluso no compose |
+| Chip secretária | Pré-pago para WhatsApp da Cleo | R$10 (único) | 1 número dedicado |
+| Domínio | .com.br | ~R$40/ano (~R$3/mês) | DNS + HTTPS |
+| Cloudflare | SSL/CDN | R$0 | Free tier |
 
-**Custo fixo mínimo: ~R$29/mês** (VPS + domínio rateado) (plano NVMe 2)
+**Custo fixo mínimo: ~R$33/mês** (VPS + domínio rateado)
 
 ---
 
@@ -260,4 +262,4 @@ Sob consulta — plano Enterprise customizado. Cliente entra em contato para neg
 | Supabase remove free tier | Baixo | Migrar para PostgreSQL self-hosted na VPS |
 | Áudio não transcreve bem | Médio | Estratégia 2 camadas + pedir confirmação quando confidence baixa |
 | Concorrência (WhatsApp Business AI) | Baixo | Diferencial é gestão pro DONO, não atendimento ao cliente |
-| Hostinger aumenta preço após 3 anos | Médio | Migrar para Contabo/Hetzner ou renegociar |
+| Provider aumenta preço | Baixo | Docker Compose portável — migrar para outro provider em 1h |
