@@ -191,10 +191,10 @@ Profissões que mais usam WhatsApp para atendimento e como a Cleo resolve suas d
 |---|---|
 | Resposta automática fora do horário | Todos (universal) |
 | Acompanhamento de clientes inativos | Corretores, personal, consultores, vendedores |
-| Lembrete com contato do cliente | Corretores, saúde, advogados |
 | Organização automática de contatos | Todos (universal) |
 | Separação pessoal/profissional | Vendedores, prestadores de serviço |
 | Follow-up de orçamentos/propostas | Prestadores, fotógrafos, corretores |
+| Encaminhamento de materiais por comando | Professores, corretores, vendedores |
 
 ---
 

@@ -104,6 +104,7 @@ Comparativo visual (tabela ou cards lado a lado):
 | Responde fora do horário | ⚠️ (só msg fixa) | ✅ | ✅ (personalizada) |
 | Acompanhamento da carteira | ❌ | ✅ | ✅ |
 | Avisa quando cliente esfria | ❌ | ⚠️ (por email/painel) | ✅ (direto no WhatsApp) |
+| Envia materiais (PDF, fotos) pro cliente | ❌ (você faz tudo manual) | ⚠️ (por email) | ✅ (você pede, a Cleo envia) |
 | Sem precisar aprender sistema novo | ✅ | ❌ | ✅ |
 | Entende áudio e texto | ❌ | ❌ | ✅ |
 | Preço acessível | Grátis (mas limitado) | R$80-200/mês | A partir de R$49/mês |
@@ -138,6 +139,8 @@ Cards ou lista visual:
 - ⏰ Acompanhamento automático — nunca mais esqueça um cliente
 - 📋 Contatos organizados — sem planilha, sem anotação
 - 💬 Respostas automáticas — atenda fora do horário
+- 📎 Envio de materiais — mande PDFs, fotos e docs pra clientes pelo WhatsApp
+- 🔒 Dados seguros — criptografia e proteção de dados (LGPD)
 - 💰 Preço justo — a partir de R$49/mês
 
 ### 5. Demonstração / Exemplo de Conversa
@@ -154,8 +157,19 @@ Quer ver detalhes de algum?"
 ```
 
 ```
-Você: "agenda retorno pro João amanhã"
-Cleo: "Pronto! Vou te lembrar amanhã de falar com o João ✅"
+Você: "manda material pro João"
+Cleo: "✅ Material enviado para João!"
+```
+
+```
+[Você envia um PDF]
+Cleo: "✅ Material recebido: 📄 aula-03.pdf
+Quando quiser enviar pra alguém, me diga: 'manda material pro [nome]'"
+```
+
+```
+Você: "ignora o número da minha mãe"
+Cleo: "✅ Pronto! Não vou mais acompanhar esse contato."
 ```
 
 ### 6. Planos e Preços
@@ -225,8 +239,11 @@ ATIVAR-7X3K | João Silva | Imobiliária Centro | Venda e aluguel de imóveis | 
 - Responsiva (mobile-first)
 - Carregamento rápido (< 3s)
 - Domínio: hicleo.com.br
-- HTTPS obrigatório
-- Integração com gateway de pagamento (Stripe ou Mercado Pago)
+- HTTPS obrigatório (Cloudflare)
+- Pagamento: Mercado Pago (PIX + cartão de crédito)
+- Checkout transparente (sem redirect)
+- Frontend: Next.js 16 (já implementado)
+- Deploy: Docker Compose em VPS limpa
 
 ## Estratégia de SEO
 
