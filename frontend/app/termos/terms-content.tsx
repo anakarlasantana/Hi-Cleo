@@ -101,7 +101,7 @@ export function TermsContent() {
             <p>Para exercer seus direitos ou esclarecer dúvidas sobre o tratamento de dados, entre em contato:</p>
             <div className="mt-3 bg-muted rounded-lg p-4">
               <p className="text-foreground font-medium">Hi Cleo - Encarregado de Dados (DPO)</p>
-              <p className="mt-1">E-mail: privacidade@hicleo.com.br</p>
+              <p className="mt-1">E-mail: hicleo.app@gmail.com</p>
               <p>WhatsApp: (48) 99999-9999</p>
             </div>
           </div>

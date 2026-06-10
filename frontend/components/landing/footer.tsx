@@ -33,6 +33,12 @@ export function Footer() {
             >
               Contato
             </a>
+            <a
+              href="mailto:hicleo.app@gmail.com"
+              className="text-slate-400 hover:text-white transition-colors"
+            >
+              Suporte
+            </a>
           </div>
         </div>
 
