@@ -13,37 +13,57 @@ Requisito mínimo: 1 vCPU, 4GB RAM, Docker instalado. Todos os serviços (backen
 
 ---
 
-## Infraestrutura Base (custo fixo)
+## Custos Iniciais (Setup — pagamento único ou primeiro mês)
+
+| Item | Custo | Detalhe |
+|------|-------|---------|
+| Chip pré-pago (TIM) | ~R$15 | Número dedicado da Cleo |
+| Domínio .com.br | ~R$40/ano | hicleo.com.br (Registro.br) |
+| Primeira recarga (manter chip ativo) | ~R$15 | Dura 90-180 dias |
+| **Total setup** | **~R$70** | |
+
+---
+
+## Infraestrutura Base (custo fixo recorrente)
 
 | Recurso | Descrição | Custo | Detalhe |
 |---------|-----------|-------|---------|
 | VPS | Servidor com Docker (tudo roda junto) | ~R$30/mês | 1 vCPU, 4GB RAM |
 | Supabase | Banco de dados (free tier) | R$0 | 500MB, 50K MAUs |
 | Evolution API | Open-source (no Docker Compose) | R$0 | Incluso no compose |
-| Chip secretária | Pré-pago para WhatsApp da Cleo | R$10 (único) | 1 número dedicado |
-| Domínio | .com.br | ~R$40/ano (~R$3/mês) | DNS + HTTPS |
+| Recarga chip | Manter número ativo (pré-pago TIM) | ~R$5-7/mês | R$15 a cada 2-3 meses |
+| Domínio | .com.br (rateado) | ~R$3/mês | Renovação anual ~R$40 |
 | Cloudflare | SSL/CDN | R$0 | Free tier |
 
-**Custo fixo mínimo: ~R$33/mês** (VPS + domínio rateado)
+**Custo fixo mínimo: ~R$38/mês** (VPS + domínio rateado + chip rateado)
 
 ---
 
 ## Taxas do Gateway de Pagamento (Mercado Pago)
 
+As taxas são por venda, com recebimento na hora:
+
 | Método | Taxa MP | Impacto no recebimento | Quem paga |
 |--------|---------|------------------------|-----------|
-| PIX | 0% | Recebe 100% na hora | Ninguém |
-| Cartão à vista | ~4.99% | Recebe ~95% | Sistema absorve |
-| Cartão 2x-3x | ~4.99% | Recebe ~95% | Sistema absorve |
-| Cartão 4x-12x | ~4.99% + juros | Recebe 100% (juros repassados) | Cliente paga juros |
+| PIX | 0,99% | Recebe ~99% | Sistema absorve |
+| Cartão à vista | 4,98% | Recebe ~95% | Sistema absorve |
+| Cartão 2x-6x (parcelado vendedor) | 2,99% | Recebe ~97% | Sistema absorve |
+| Cartão 7x-12x (parcelado vendedor) | 3,09% | Recebe ~97% | Sistema absorve |
+| Cartão (parcelado comprador) | até 4,98% | Recebe ~95% | Cliente paga juros |
+| Open Finance | 0,00% | Recebe 100% | Ninguém |
+| Boleto | R$3,49 fixo | Recebe valor - R$3,49 | Sistema absorve |
+
+> ℹ️ **Open Finance (0%)** é a opção mais barata, mas ainda é pouco adotada pelos consumidores. Pix (0,99%) é o melhor custo-benefício considerando adoção + taxa.
 
 **Exemplo prático (Plano Solo R$49/mês):**
-- PIX: recebe R$49,00
-- Cartão 1x: recebe ~R$46,55 (absorve R$2,45)
-- Cartão 3x: recebe ~R$46,55 (cliente paga 3x R$16,33)
-- Cartão 6x: cliente paga ~R$57,00 total (juros), você recebe ~R$54,16 (menos taxa MP)
+- PIX: recebe R$48,51 (absorve R$0,49)
+- Open Finance: recebe R$49,00 (sem taxa)
+- Cartão 1x: recebe R$46,56 (absorve R$2,44)
+- Cartão 3x (parcelado vendedor): recebe R$47,54 (absorve R$1,46)
+- Cartão 3x (parcelado comprador): cliente paga mais, você recebe ~R$46,56
+- Boleto: recebe R$45,51 (absorve R$3,49)
 
-**Impacto na margem:** com 95%+ de margem operacional, absorver a taxa de cartão até 3x é trivial.
+**Impacto na margem:** com 90%+ de margem operacional, absorver qualquer taxa é trivial. Pix é o meio mais usado e a taxa de 0,99% é bem baixa.
 
 ---
 
@@ -53,8 +73,10 @@ Requisito mínimo: 1 vCPU, 4GB RAM, Docker instalado. Todos os serviços (backen
 
 | Tier | Limite | Custo | Usuários suportados |
 |------|--------|-------|---------------------|
-| Free | 1.000 req/dia, 15 req/min | R$0 | ~55 usuários |
-| Tier 1 (pago) | 150 req/min | ~$0.25/1M tokens input | 55-200 usuários |
+| Free | ~1.500 req/dia, 15 req/min (Flash) | R$0 | ~30-50 usuários (limitado por RPM) |
+| Tier 1 (pago) | 150+ req/min | ~$0.075/1M tokens input (Flash) | 50-200 usuários |
+
+> ⚠️ **Atenção:** O limite real no free tier é o RPM (15 req/min), não o RPD. Em horários de pico (manhã, noite), 15 req/min pode ser gargalo com 30+ usuários ativos simultaneamente.
 
 **Uso médio por usuário/dia:** ~18 chamadas Gemini
 - Interpretar intenções (texto): ~10
@@ -62,19 +84,25 @@ Requisito mínimo: 1 vCPU, 4GB RAM, Docker instalado. Todos os serviços (backen
 - Resumos contextuais: ~3
 - Notificações proativas: ~2
 
-**Cálculo:** 1.000 req/dia ÷ 18 req/usuário = **~55 usuários no free tier**
+**Cálculo conservador:** 15 req/min × 60 min × 12h ativas = ~10.800 req/dia útil. Dividido por 18 req/usuário = **~50 usuários no free tier** (mas com possíveis 429 errors em picos).
 
-### Transcrição de Áudio (estratégia 2 camadas)
+### IA Fallback — Groq API
 
-| Camada | Quando usa | Custo | % dos áudios |
-|--------|-----------|-------|--------------|
-| Gemini Flash (multimodal) | Sempre (primeira tentativa) | R$0 (conta como 1 req Gemini) | 90-95% |
-| Whisper fallback | Quando Gemini falha (confidence < 0.7) | $0.006/min (~R$0.03/min) | 5-10% |
+| Tier | Limite | Custo | Quando usa |
+|------|--------|-------|------------|
+| Free | 30 req/min, 14.400 req/dia | R$0 | Quando Gemini falha (rate limit, erro) |
 
-**Estimativa mensal (20 usuários, 3 áudios/dia de 30s cada):**
-- Total áudios: 20 × 3 × 30 = 1.800 min/mês
-- Gemini resolve 95%: 1.710 min → R$0
-- Whisper fallback 5%: 90 min × R$0.03 = **~R$2.70/mês**
+O sistema usa Groq (Llama 3.1 8B) como fallback automático quando Gemini está indisponível. Custo zero no free tier, suficiente como backup.
+
+### Transcrição de Áudio
+
+| Status | Situação atual | Custo |
+|--------|---------------|-------|
+| Não implementado | Áudios são salvos como material, sem transcrição | R$0 |
+
+> ℹ️ Transcrição de áudio (Whisper ou Gemini multimodal) está planejada mas **ainda não implementada**. Quando for, o custo será:
+> - Gemini multimodal (incluído no free tier): R$0
+> - Whisper fallback (se implementar): ~$0.006/min (~R$0.03/min)
 
 ### Supabase
 
@@ -94,64 +122,83 @@ Requisito mínimo: 1 vCPU, 4GB RAM, Docker instalado. Todos os serviços (backen
 
 ## Cenários de Faturamento
 
+> ℹ️ **Receita líquida** = receita bruta - taxa Mercado Pago. Considerando mix de 70% Pix (0,99%) + 30% Cartão (4,98%).
+> Taxa média ponderada: ~2,19% por transação.
+
 ### Cenário 1: MVP / Validação (1-5 usuários)
 
 | Item | Custo |
 |------|-------|
 | VPS NVMe 2 | R$25,89/mês |
+| Chip pré-pago (rateado) | ~R$7/mês |
+| Domínio (rateado) | ~R$3/mês |
 | Gemini | R$0 (free) |
-| Whisper fallback | ~R$1/mês |
+| Groq fallback | R$0 (free) |
 | Supabase | R$0 (free) |
-| **Total** | **~R$27/mês** |
+| **Total infra** | **~R$36/mês** |
 
-**Se cobrar R$49/mês por usuário:**
-- 1 cliente = R$49 receita → R$22 lucro
-- 3 clientes = R$147 receita → R$120 lucro
-- 5 clientes = R$245 receita → R$218 lucro
+**Receita com Plano Solo R$49/mês:**
+
+| Clientes | Receita bruta | Taxa MP (~2,19%) | Receita líquida | Lucro |
+|----------|--------------|------------------|-----------------|-------|
+| 1 | R$49 | R$1,07 | R$47,93 | R$11,93 |
+| 3 | R$147 | R$3,22 | R$143,78 | R$107,78 |
+| 5 | R$245 | R$5,37 | R$239,63 | R$203,63 |
 
 ### Cenário 2: Primeiros Clientes (5-19 usuários)
 
 | Item | Custo |
 |------|-------|
 | VPS NVMe 2 | R$25,89/mês |
+| Chip pré-pago (rateado) | ~R$7/mês |
+| Domínio (rateado) | ~R$3/mês |
 | Gemini | R$0 (free) |
-| Whisper fallback | ~R$5/mês |
+| Groq fallback | R$0 (free) |
 | Supabase | R$0 (free) |
-| **Total** | **~R$31/mês** |
+| **Total infra** | **~R$36/mês** |
 
-**Se cobrar R$69/mês por usuário:**
-- 10 clientes = R$690 receita → R$659 lucro
-- 15 clientes = R$1.035 receita → R$1.004 lucro
-- 19 clientes = R$1.311 receita → R$1.280 lucro (limite do plano NVMe 2)
+**Receita com Plano Solo R$49/mês:**
+
+| Clientes | Receita bruta | Taxa MP (~2,19%) | Receita líquida | Lucro |
+|----------|--------------|------------------|-----------------|-------|
+| 10 | R$490 | R$10,73 | R$479,27 | R$443,27 |
+| 15 | R$735 | R$16,10 | R$718,90 | R$682,90 |
+| 19 | R$931 | R$20,39 | R$910,61 | R$874,61 |
 
 ### Cenário 3: Escala Inicial (20-49 usuários) → Upgrade para NVMe 4
 
 | Item | Custo |
 |------|-------|
 | VPS NVMe 4 | R$35,49/mês |
-| Gemini | R$0 (free, ainda dentro de 1.000/dia) |
-| Whisper fallback | ~R$10/mês |
+| Chip pré-pago (rateado) | ~R$7/mês |
+| Domínio (rateado) | ~R$3/mês |
+| Gemini | R$0 (free, mas próximo do limite de RPM) |
+| Groq fallback | R$0 (free) |
 | Supabase | R$0 (free) |
-| **Total** | **~R$46/mês** |
+| **Total infra** | **~R$46/mês** |
 
-**Se cobrar R$79/mês por usuário:**
-- 30 clientes = R$2.370 receita → R$2.324 lucro
-- 49 clientes = R$3.871 receita → R$3.825 lucro (limite do plano NVMe 4)
+| Clientes | Receita bruta | Taxa MP (~2,19%) | Receita líquida | Lucro |
+|----------|--------------|------------------|-----------------|-------|
+| 30 | R$1.470 | R$32,19 | R$1.437,81 | R$1.391,81 |
+| 49 | R$2.401 | R$52,58 | R$2.348,42 | R$2.302,42 |
 
 ### Cenário 4: Escala Real (50-99 usuários) → Upgrade para NVMe 8
 
 | Item | Custo |
 |------|-------|
 | VPS NVMe 8 | R$69,99/mês |
-| Gemini Tier 1 | ~R$50/mês (acima de 55 usuários) |
-| Whisper fallback | ~R$25/mês |
-| Supabase Pro | R$130/mês ($25) |
-| **Total** | **~R$275/mês** |
+| Chip pré-pago (rateado) | ~R$7/mês |
+| Domínio (rateado) | ~R$3/mês |
+| Gemini Tier 1 | ~R$50/mês |
+| Groq fallback | R$0 (free) |
+| Supabase Pro | R$130/mês |
+| **Total infra** | **~R$260/mês** |
 
-**Se cobrar R$89/mês por usuário:**
-- 60 clientes = R$5.340 receita → R$5.065 lucro
-- 80 clientes = R$7.120 receita → R$6.845 lucro
-- 99 clientes = R$8.811 receita → R$8.536 lucro
+| Clientes | Receita bruta | Taxa MP (~2,19%) | Receita líquida | Lucro |
+|----------|--------------|------------------|-----------------|-------|
+| 60 | R$2.940 | R$64,39 | R$2.875,61 | R$2.615,61 |
+| 80 | R$3.920 | R$85,85 | R$3.834,15 | R$3.574,15 |
+| 99 | R$4.851 | R$106,24 | R$4.744,76 | R$4.484,76 |
 
 ---
 
@@ -160,10 +207,25 @@ Requisito mínimo: 1 vCPU, 4GB RAM, Docker instalado. Todos os serviços (backen
 | Gatilho | Ação | Custo adicional |
 |---------|------|-----------------|
 | 19º usuário | Upgrade VPS NVMe 2 → NVMe 4 | +R$10/mês |
+| ~30-50 usuários | Gemini free → Tier 1 (RPM insuficiente) | +R$30-50/mês |
 | 49º usuário | Upgrade VPS NVMe 4 → NVMe 8 | +R$35/mês |
-| 55º usuário | Gemini free → Tier 1 (pago) | +R$30-50/mês |
 | ~6 meses com 50+ users | Supabase free → Pro | +R$130/mês |
+| Transcrição de áudio | Implementar Whisper ou Gemini multimodal | +R$5-25/mês (depende do volume) |
 | 99º usuário | Segunda VPS ou cloud (AWS/GCP) | Reavaliar arquitetura |
+
+---
+
+## Custos NÃO contabilizados (possíveis no futuro)
+
+| Item | Quando | Estimativa |
+|------|--------|------------|
+| Email transacional (Resend, SendGrid) | Se precisar enviar emails (recibos, recuperação) | R$0 (free tier: ~100 emails/dia) |
+| Ngrok/Tunnel (testes webhook) | Desenvolvimento local com webhook | R$0 (free) ou ~$10/mês (pro) |
+| Backup externo | Se quiser backup fora do Supabase | ~R$5-10/mês (S3/Backblaze) |
+| Monitoramento (Uptime Robot, etc.) | Alertas quando o servidor cai | R$0 (free tier) |
+| Certificado SSL | Se não usar Cloudflare | R$0 (Let's Encrypt gratuito) |
+
+> ℹ️ Nenhum desses é necessário agora. São custos que podem surgir conforme o produto escala.
 
 ---
 
@@ -212,17 +274,19 @@ Sob consulta — plano Enterprise customizado. Cliente entra em contato para neg
 4. **Upsell natural:** Quando o negócio cresce e contrata atendente, faz upgrade
 5. **Anual garante caixa:** Receita adiantada cobre upgrades de infra com folga
 
-### Simulação de receita com esse modelo:
+### Simulação de receita com esse modelo (incluindo taxas MP):
 
-| Mix de clientes | Receita mensal | Custo infra | Lucro |
-|-----------------|---------------|-------------|-------|
-| 10 Solo + 2 Equipe | R$728/mês | ~R$31/mês | R$697 |
-| 20 Solo + 5 Equipe + 1 Empresa | R$1.824/mês | ~R$46/mês | R$1.778 |
-| 30 Solo + 10 Equipe + 3 Empresa | R$3.407/mês | ~R$70/mês | R$3.337 |
+> Mix assumido: 70% Pix (0,99%) + 30% Cartão (4,98%) = taxa média ~2,19%
+
+| Mix de clientes | Receita bruta | Taxa MP | Receita líquida | Custo infra | Lucro |
+|-----------------|--------------|---------|-----------------|-------------|-------|
+| 10 Solo + 2 Equipe | R$728/mês | R$15,94 | R$712,06 | ~R$36/mês | R$676,06 |
+| 20 Solo + 5 Equipe + 1 Empresa | R$1.824/mês | R$39,95 | R$1.784,05 | ~R$46/mês | R$1.738,05 |
+| 30 Solo + 10 Equipe + 3 Empresa | R$3.407/mês | R$74,61 | R$3.332,39 | ~R$260/mês | R$3.072,39 |
 
 **Se 50% dos clientes optarem pelo anual (cenário 2):**
 - Receita adiantada no 1º mês: ~R$9.520 (caixa imediato para expansão)
-- Receita mensal recorrente dos mensais: ~R$912/mês
+- Receita mensal recorrente dos mensais: ~R$892/mês (já descontando MP)
 
 ---
 
@@ -230,15 +294,65 @@ Sob consulta — plano Enterprise customizado. Cliente entra em contato para neg
 
 | Métrica | Valor |
 |---------|-------|
-| Investimento inicial | ~R$76 (VPS + chip + domínio 1º ano) |
-| Custo mensal mínimo | ~R$29/mês |
-| Break-even | 1 cliente Solo (R$49) já cobre tudo |
-| Margem com 10 clientes Solo | ~95% |
-| Margem com 30 clientes (mix) | ~98% |
-| Limite free (sem pagar IA) | ~55 números conectados |
-| Receita potencial (20 Solo + 5 Equipe + 1 Empresa) | R$1.824/mês |
+| Investimento inicial (setup) | ~R$70 (chip + recarga + domínio 1º ano) |
+| Custo mensal mínimo | ~R$36/mês |
+| Taxa média Mercado Pago | ~2,19% (mix 70% Pix + 30% Cartão) |
+| Break-even | 1 cliente Solo (R$49 - R$1,07 taxa = R$47,93 > R$36 infra) ✅ |
+| Margem com 10 clientes Solo | ~91% |
+| Margem com 30 clientes (mix) | ~92% |
+| Limite free (sem pagar IA) | ~30-50 números conectados (gargalo: 15 RPM Gemini) |
+| Receita potencial (20 Solo + 5 Equipe + 1 Empresa) | R$1.784/mês líquido |
 | Custo com esse mix | ~R$46/mês |
-| **Lucro líquido** | **~R$1.778/mês** |
+| **Lucro líquido** | **~R$1.738/mês** |
+
+---
+
+## Análise de Viabilidade por Plano
+
+### Plano Solo (R$49/mês) — 1 número
+
+| Métrica | Valor |
+|---------|-------|
+| Receita bruta | R$49,00 |
+| Taxa MP (Pix 0,99%) | -R$0,49 |
+| Taxa MP (Cartão 4,98%) | -R$2,44 |
+| Receita líquida (melhor caso - Pix) | R$48,51 |
+| Receita líquida (pior caso - Cartão) | R$46,56 |
+| Custo marginal por usuário (infra) | ~R$0* |
+
+*O custo de infra é fixo (VPS). Cada novo usuário Solo não adiciona custo significativo até atingir limite da VPS.
+
+**Veredicto: ✅ Viável.** Mesmo com 1 único cliente, já cobre toda a infra. A taxa do MP é irrelevante.
+
+### Plano Equipe (R$119/mês) — 3 números
+
+| Métrica | Valor |
+|---------|-------|
+| Receita líquida (Pix) | R$117,82 |
+| Receita líquida (Cartão) | R$113,07 |
+| Custo marginal | ~R$0 (mesma VPS) |
+
+**Veredicto: ✅ Muito viável.** Margem excelente.
+
+### Plano Empresa (R$249/mês) — 8 números
+
+| Métrica | Valor |
+|---------|-------|
+| Receita líquida (Pix) | R$246,54 |
+| Receita líquida (Cartão) | R$236,60 |
+| Custo marginal | ~R$0 (mesma VPS, mas 8 instâncias consomem mais RAM) |
+
+**Veredicto: ✅ Altamente viável.** Margem altíssima.
+
+### Conclusão da análise
+
+| Cenário | Taxa MP total/mês | % da receita perdida | Impacto real |
+|---------|-------------------|---------------------|--------------|
+| 10 clientes Solo (todos Pix) | R$4,90 | 1% | Irrelevante |
+| 10 clientes Solo (todos Cartão) | R$24,40 | 5% | Baixo |
+| 20 Solo + 5 Equipe + 1 Empresa | R$17-40 | 1-2,2% | Irrelevante |
+
+**A taxa do Mercado Pago não ameaça a viabilidade do negócio em nenhum cenário.** O maior custo continua sendo a infraestrutura (VPS + Gemini pago quando escalar), e mesmo assim as margens ficam acima de 90% em todos os cenários.
 
 ### Posicionamento de mercado:
 
