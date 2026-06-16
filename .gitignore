@@ -1,3 +1,5 @@
 .kiro/
 .vscode/
 .env
+supabase/.temp/
+backend/supabase/.temp/

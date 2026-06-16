@@ -214,7 +214,7 @@ Sobe todos os serviços numa VPS limpa com Docker. Ver [checklist completo](../d
 
 | Componente | Tecnologia | Por quê |
 |---|---|---|
-| Runtime | Node.js 20 + TypeScript | Tipagem forte, ecossistema |
+| Runtime | Node.js 22 + TypeScript | Tipagem forte, ecossistema, WebSocket nativo |
 | Framework | Express | Simples, maduro |
 | IA | Gemini (fallback Groq) | Free tier generoso |
 | Banco | Supabase (PostgreSQL) | Managed, RLS, realtime |

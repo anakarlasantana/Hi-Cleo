@@ -1,5 +1,5 @@
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { Request, Response, NextFunction } from 'express';
 import { env } from '../config/env.js';
 
@@ -40,10 +40,8 @@ export const apiRateLimit = rateLimit({
   legacyHeaders: false,
   message: { error: 'Muitas requisições. Aguarde um momento e tente novamente.' },
   keyGenerator: (req: Request) => {
-    // Usar X-Forwarded-For se atrás de proxy (Docker/nginx)
-    return (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
-      || req.ip
-      || 'unknown';
+    const forwardedIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim();
+    return ipKeyGenerator(forwardedIp || req.ip || 'unknown');
   },
 });
 
@@ -55,9 +53,8 @@ export const paymentRateLimit = rateLimit({
   legacyHeaders: false,
   message: { error: 'Limite de tentativas de pagamento atingido. Aguarde 1 minuto.' },
   keyGenerator: (req: Request) => {
-    return (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
-      || req.ip
-      || 'unknown';
+    const forwardedIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim();
+    return ipKeyGenerator(forwardedIp || req.ip || 'unknown');
   },
 });
 

@@ -9,10 +9,19 @@ export function truncate(text: string, maxLength = 200): string {
   return text.slice(0, maxLength) + '...';
 }
 
+function isPinoPrettyAvailable(): boolean {
+  try {
+    require.resolve('pino-pretty');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function createLogger(): Logger {
   const isDev = env.NODE_ENV === 'development';
 
-  if (isDev) {
+  if (isDev && isPinoPrettyAvailable()) {
     return pino({
       level: env.LOG_LEVEL,
       timestamp: pino.stdTimeFunctions.isoTime,
