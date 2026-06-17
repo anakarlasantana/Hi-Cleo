@@ -75,11 +75,10 @@ function extractMessageContent(message: WebhookPayload['data']['message']) {
     };
   }
 
-  // Tipo não suportado
   return { text: '', media: null };
 }
 
-webhookRouter.post('/evolution', async (req: Request, res: Response) => {
+webhookRouter.post('/', async (req: Request, res: Response) => {
   // Validar secret se configurado (dupla camada: IP interno + secret)
   if (env.EVOLUTION_WEBHOOK_SECRET) {
     const receivedSecret = req.headers['x-webhook-secret'] as string;
@@ -94,6 +93,7 @@ webhookRouter.post('/evolution', async (req: Request, res: Response) => {
 
   try {
     const payload = req.body as WebhookPayload;
+
     if (payload.event !== 'messages.upsert') return;
 
     const { data } = payload;
@@ -101,9 +101,9 @@ webhookRouter.post('/evolution', async (req: Request, res: Response) => {
     // Ignorar mensagens de grupo (@g.us)
     if (data.key.remoteJid.endsWith('@g.us')) return;
 
-    // Extrair e validar telefone
+    // Extrair telefone e destinatário para resposta
     const remoteJid = data.key.remoteJid;
-    const phone = remoteJid.replace('@s.whatsapp.net', '').replace('@lid', '');
+    const phone = remoteJid.replace('@s.whatsapp.net', '');
 
     if (!validatePhoneNumber(phone)) {
       log.warn({ jid: remoteJid }, 'telefone inválido recebido no webhook');

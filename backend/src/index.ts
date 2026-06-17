@@ -19,6 +19,7 @@ import { startConnectionMonitor } from './modules/connection-monitor/connection-
 import { startContactMonitorCron } from './modules/contact-monitor/contact-monitor.cron.js';
 import { startCancellationCron } from './modules/cancellation/cancellation.cron.js';
 import { startSubscriptionCron } from './modules/subscription/subscription.cron.js';
+import { ensureEvolutionInstance } from './modules/evolution/evolution-setup.js';
 
 const app = express();
 const { logger } = container;
@@ -66,6 +67,14 @@ startConnectionMonitor({
   await container.queueService.initialize();
   await container.messageWorker.start();
   logger.info('Queue e Worker inicializados');
+
+  // Garantir instância Evolution API com webhook
+  await ensureEvolutionInstance({
+    messaging: container.messaging,
+    logger,
+    instanceName: env.MONITOR_INSTANCE,
+    webhookUrl: env.WEBHOOK_URL,
+  });
 })();
 
 // Graceful shutdown

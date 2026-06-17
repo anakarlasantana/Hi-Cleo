@@ -97,7 +97,7 @@ services:
           memory: 128M
 
   evolution-api:
-    image: atendai/evolution-api:latest
+    image: evoapicloud/evolution-api:v2.3.7
     container_name: hicleo-evolution-api
     dns:
       - 8.8.8.8

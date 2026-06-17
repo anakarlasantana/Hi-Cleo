@@ -126,18 +126,31 @@ export interface OnboardingState {
 export interface WebhookPayload {
   instance: string;
   event: string;
+  /** Número do remetente com @s.whatsapp.net (presente no root do payload) */
+  sender?: string;
+  server_url?: string;
+  apikey?: string;
+  date_time?: string;
+  source?: string;
   data: {
-    key: { remoteJid: string; fromMe: boolean; id: string };
+    key: { remoteJid: string; fromMe: boolean; id: string; participant?: string; remoteJidAlt?: string; addressingMode?: string };
     message: {
       conversation?: string;
       extendedTextMessage?: { text: string };
       imageMessage?: { url: string; mimetype: string; caption?: string; mediaKey?: string };
-      audioMessage?: { url: string; mimetype: string; seconds: number; mediaKey?: string };
+      audioMessage?: { url: string; mimetype: string; seconds: number; ptt?: boolean; mediaKey?: string };
       videoMessage?: { url: string; mimetype: string; caption?: string; seconds: number; mediaKey?: string };
       documentMessage?: { url: string; mimetype: string; title?: string; fileName?: string; mediaKey?: string };
+      stickerMessage?: { url: string; mimetype: string; mediaKey?: string };
+      contactMessage?: { displayName: string; vcard: string };
+      locationMessage?: { degreesLatitude: number; degreesLongitude: number };
     };
+    messageType?: string;
     messageTimestamp: number;
     pushName?: string;
+    status?: string;
+    instanceId?: string;
+    source?: string;
   };
 }
 
