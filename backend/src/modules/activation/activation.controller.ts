@@ -70,8 +70,8 @@ activationRouter.get('/qrcode/:code', async (req: Request, res: Response) => {
   try {
     const code = req.params.code as string;
 
-    const validCode = await container.activationService.validateCode(code);
-    if (!validCode) {
+    const activationCode = await container.activationRepo.findCodeByValue(code);
+    if (!activationCode) {
       res.status(404).json({ error: 'Código inválido ou expirado' });
       return;
     }

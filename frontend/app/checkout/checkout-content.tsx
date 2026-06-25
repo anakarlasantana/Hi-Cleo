@@ -10,6 +10,7 @@ import { CheckoutSummary } from "./checkout-summary"
 import { PaymentForm } from "./payment-form"
 import { PixModal } from "./pix-modal"
 import { generateCardToken } from "@/lib/mercadopago"
+import { formatCentsToBRL } from "@/lib/formatters"
 import { ApiError } from "@/lib/api-client"
 import { toast } from "@/hooks/use-toast"
 import { OnboardingProgress } from "@/components/layout/onboarding-progress"
@@ -31,6 +32,8 @@ export function CheckoutContent() {
   )
   const [isYearly, setIsYearly] = useState(searchParams.get("billing") === "yearly")
   const [paymentMethod, setPaymentMethod] = useState<"pix" | "card">("pix")
+  const [selectedInstallments, setSelectedInstallments] = useState(1)
+  const [detectedCardBrand, setDetectedCardBrand] = useState<string>("visa")
   const [isProcessing, setIsProcessing] = useState(false)
   const [showPixModal, setShowPixModal] = useState(false)
   const [pixConfirmed, setPixConfirmed] = useState(false)
@@ -98,11 +101,11 @@ export function CheckoutContent() {
         const cardToken = await generateCardToken({
           cardholderName: formData.cardName || formData.name,
           identificationType: "CPF",
-          identificationNumber: "",
+          identificationNumber: formData.cpf?.replace(/\D/g, "") || "",
         })
 
         if (!cardToken) {
-          throw new Error("Não foi possível processar os dados do cartão. Verifique as informações e tente novamente.")
+          throw new Error("Verifique os dados do cartão: número, validade (MM/AA) e CVV devem ser válidos.")
         }
 
         const paymentData = await createCardPayment({
@@ -110,12 +113,16 @@ export function CheckoutContent() {
           billingPeriod,
           email: formData.email,
           cardToken,
-          cardBrand: "visa",
-          installments: 1,
+          cardBrand: detectedCardBrand,
+          installments: selectedInstallments,
+          cpf: formData.cpf?.replace(/\D/g, "") || "",
         })
 
         if (paymentData.status === "processed") {
-          router.push(`/ativacao`)
+          const redirectUrl = paymentData.activationCode
+            ? `/ativacao?code=${paymentData.activationCode}`
+            : `/ativacao`
+          router.push(redirectUrl)
         } else {
           const rejectionMessage = "Pagamento não aprovado. Tente outro cartão ou método de pagamento."
           setError(rejectionMessage)
@@ -163,7 +170,7 @@ export function CheckoutContent() {
   }
 
   const pixDisplayAmount = plan
-    ? (isYearly ? plan.yearlyTotal.toLocaleString("pt-BR") : `${plan.priceMonthly},00`)
+    ? (isYearly ? formatCentsToBRL(plan.yearlyTotal) : formatCentsToBRL(plan.priceMonthly))
     : "0,00"
 
   if (isLoadingPlans) {
@@ -181,21 +188,26 @@ export function CheckoutContent() {
 
       <CheckoutHeader />
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12 relative z-10">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12 relative z-10 flex flex-col items-center">
         <OnboardingProgress currentStep="pagamento" />
 
         {error && (
-          <div className="max-w-2xl mx-auto mb-6 bg-destructive/10 border border-destructive/20 rounded-lg p-4 text-center">
+          <div className="max-w-2xl w-full mb-6 bg-destructive/10 border border-destructive/20 rounded-lg p-4 text-center">
             <p className="text-sm text-destructive">{error}</p>
           </div>
         )}
 
-        <div className="grid lg:grid-cols-5 gap-8 lg:gap-12">
+        <div className="w-full grid lg:grid-cols-5 gap-8 lg:gap-12">
           <div className="lg:col-span-3">
             <PaymentForm
               paymentMethod={paymentMethod}
               isProcessing={isProcessing}
+              selectedInstallments={selectedInstallments}
+              planName={selectedPlan}
+              billingPeriod={isYearly ? "yearly" : "monthly"}
               onMethodChange={setPaymentMethod}
+              onInstallmentsChange={setSelectedInstallments}
+              onCardBrandDetected={setDetectedCardBrand}
               onSubmit={handlePaymentSubmit}
             />
           </div>
@@ -205,7 +217,7 @@ export function CheckoutContent() {
               selectedPlan={selectedPlan}
               isYearly={isYearly}
               onSelectPlan={setSelectedPlan}
-              onToggleYearly={() => setIsYearly(!isYearly)}
+              onToggleYearly={() => { setIsYearly(!isYearly); setSelectedInstallments(1) }}
             />
           </div>
         </div>

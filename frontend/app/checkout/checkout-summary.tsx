@@ -2,6 +2,7 @@
 
 import { Check } from "lucide-react"
 import type { Plan, PlanKey } from "./constants"
+import { formatCentsToBRL, formatReaisToBRL } from "@/lib/formatters"
 
 interface CheckoutSummaryProps {
   plans: Record<string, Plan>
@@ -16,7 +17,7 @@ export function CheckoutSummary({ plans, selectedPlan, isYearly, onSelectPlan, o
   if (!plan) return null
 
   const price = isYearly ? plan.priceYearly : plan.priceMonthly
-  const savings = isYearly ? plan.priceMonthly * 2 : 0
+  const savingsInCents = isYearly ? (plan.priceMonthly * 12) - plan.yearlyTotal : 0
 
   return (
     <div className="bg-card border border-border rounded-xl p-6 sticky top-24">
@@ -31,7 +32,7 @@ export function CheckoutSummary({ plans, selectedPlan, isYearly, onSelectPlan, o
               <p className="text-xs text-muted-foreground">{plans[key].users}</p>
             </div>
             <div className="text-right">
-              <p className="font-bold text-foreground text-sm">R${isYearly ? plans[key].priceYearly.toFixed(2).replace(".", ",") : plans[key].priceMonthly}</p>
+              <p className="font-bold text-foreground text-sm">R${isYearly ? formatReaisToBRL(plans[key].priceYearly) : formatCentsToBRL(plans[key].priceMonthly)}</p>
               <p className="text-xs text-muted-foreground">/mês</p>
             </div>
           </button>
@@ -46,9 +47,9 @@ export function CheckoutSummary({ plans, selectedPlan, isYearly, onSelectPlan, o
         </button>
       </div>
 
-      {isYearly && (
+      {isYearly && savingsInCents > 0 && (
         <div className="bg-primary/10 border border-primary/20 rounded-lg px-3 py-2 mb-5 text-center">
-          <p className="text-sm text-primary font-medium">Economia de R${savings},00/ano</p>
+          <p className="text-sm text-primary font-medium">Economia de R${formatCentsToBRL(savingsInCents)}/ano</p>
         </div>
       )}
 
@@ -67,9 +68,9 @@ export function CheckoutSummary({ plans, selectedPlan, isYearly, onSelectPlan, o
           <span className="text-foreground font-medium">Total</span>
           <div className="text-right">
             <p className="text-2xl font-bold text-foreground">
-              R${isYearly ? price.toFixed(2).replace(".", ",") : price}<span className="text-sm font-normal text-muted-foreground">/mês</span>
+              R${isYearly ? formatReaisToBRL(price) : formatCentsToBRL(price)}<span className="text-sm font-normal text-muted-foreground">/mês</span>
             </p>
-            {isYearly && <p className="text-xs text-muted-foreground">R${plan.yearlyTotal.toLocaleString("pt-BR")} cobrado anualmente</p>}
+            {isYearly && <p className="text-xs text-muted-foreground">R${formatCentsToBRL(plan.yearlyTotal)} cobrado anualmente</p>}
           </div>
         </div>
       </div>

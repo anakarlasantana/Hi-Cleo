@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useCallback } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Button } from "@/components/ui/button"
@@ -8,22 +8,29 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { CreditCard, QrCode, Lock, Check, X, Shield, Loader2 } from "lucide-react"
 import { CardNumber, SecurityCode, ExpirationDate } from "@mercadopago/sdk-react"
-import { applyPhoneMask } from "@/lib/masks"
-import { initializeMercadoPago } from "@/lib/mercadopago"
+import { applyPhoneMask, applyCpfMask } from "@/lib/masks"
+import { initializeMercadoPago, detectCardBrand } from "@/lib/mercadopago"
 import { baseSchema, cardSchema, type CardFormData } from "./schema"
+import { InstallmentSelector } from "./installment-selector"
 
 interface PaymentFormProps {
   paymentMethod: "pix" | "card"
   isProcessing: boolean
+  selectedInstallments: number
+  planName: string
+  billingPeriod: "monthly" | "yearly"
   onMethodChange: (method: "pix" | "card") => void
+  onInstallmentsChange: (installments: number) => void
+  onCardBrandDetected: (brand: string) => void
   onSubmit: (data: CardFormData) => void
 }
 
-export function PaymentForm({ paymentMethod, isProcessing, onMethodChange, onSubmit }: PaymentFormProps) {
+export function PaymentForm({ paymentMethod, isProcessing, selectedInstallments, planName, billingPeriod, onMethodChange, onInstallmentsChange, onCardBrandDetected, onSubmit }: PaymentFormProps) {
   const schema = paymentMethod === "card" ? cardSchema : baseSchema
 
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<CardFormData>({
     resolver: zodResolver(schema),
+    mode: "onChange",
   })
 
   useEffect(() => {
@@ -31,6 +38,14 @@ export function PaymentForm({ paymentMethod, isProcessing, onMethodChange, onSub
       initializeMercadoPago()
     }
   }, [paymentMethod])
+
+  const handleCardBinChange = useCallback(async (arg: { bin?: string }) => {
+    const bin = arg.bin
+    if (bin && bin.length >= 6) {
+      const brand = await detectCardBrand(bin)
+      if (brand) onCardBrandDetected(brand)
+    }
+  }, [onCardBrandDetected])
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -77,29 +92,49 @@ export function PaymentForm({ paymentMethod, isProcessing, onMethodChange, onSub
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Número do cartão</Label>
-              <div className="border border-border rounded-md p-3 bg-background min-h-[42px]">
-                <CardNumber placeholder="0000 0000 0000 0000" />
+              <div className="border border-border rounded-md h-10 px-3 flex items-center bg-background overflow-visible">
+                <CardNumber placeholder="0000 0000 0000 0000" onBinChange={handleCardBinChange} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Validade</Label>
-                <div className="border border-border rounded-md p-3 bg-background min-h-[42px]">
-                  <ExpirationDate placeholder="MM/AA" />
+                <div className="border border-border rounded-md h-10 px-3 flex items-center bg-background overflow-visible">
+                  <ExpirationDate placeholder="MM/YY" />
                 </div>
               </div>
               <div className="space-y-2">
                 <Label>CVV</Label>
-                <div className="border border-border rounded-md p-3 bg-background min-h-[42px]">
+                <div className="border border-border rounded-md h-10 px-3 flex items-center bg-background overflow-visible">
                   <SecurityCode placeholder="123" />
                 </div>
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="cardName">Nome no cartão</Label>
-              <Input id="cardName" placeholder="JOAO SILVA" {...register("cardName")} className="uppercase" />
-              {errors.cardName && <p className="text-xs text-destructive">{errors.cardName.message}</p>}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="cardName">Nome no cartão</Label>
+                <Input id="cardName" placeholder="JOAO SILVA" {...register("cardName")} className="uppercase" />
+                {errors.cardName && <p className="text-xs text-destructive">{errors.cardName.message}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="cpf">CPF do titular</Label>
+                <Input
+                  id="cpf"
+                  placeholder="000.000.000-00"
+                  {...register("cpf")}
+                  onChange={(e) => setValue("cpf", applyCpfMask(e.target.value), { shouldValidate: true })}
+                />
+                {errors.cpf && <p className="text-xs text-destructive">{errors.cpf.message}</p>}
+              </div>
             </div>
+            {billingPeriod === "yearly" && (
+              <InstallmentSelector
+                planName={planName}
+                billingPeriod={billingPeriod}
+                selectedInstallments={selectedInstallments}
+                onSelect={onInstallmentsChange}
+              />
+            )}
           </div>
         ) : (
           <div className="bg-muted rounded-lg p-4 text-center">

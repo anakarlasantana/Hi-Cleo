@@ -13,6 +13,7 @@ const createPaymentSchema = z.object({
   cardToken: z.string().min(1).optional(),
   cardBrand: z.string().min(1).optional(),
   installments: z.number().int().min(1).max(12).optional(),
+  cpf: z.string().min(11).max(11).optional(),
 });
 
 /**
@@ -42,7 +43,7 @@ paymentRouter.post('/', async (req: Request, res: Response) => {
       return;
     }
 
-    const { planName, billingPeriod, email, method, cardToken, cardBrand, installments } = parsed.data;
+    const { planName, billingPeriod, email, method, cardToken, cardBrand, installments, cpf } = parsed.data;
 
     if (method === 'credit_card' && (!cardToken || !cardBrand)) {
       res.status(400).json({ error: 'Cartão requer: cardToken, cardBrand' });
@@ -50,11 +51,12 @@ paymentRouter.post('/', async (req: Request, res: Response) => {
     }
 
     const result = await container.paymentService.createPayment({
-      planName: planName as PlanName, billingPeriod, email, method, cardToken, cardBrand, installments,
+      planName: planName as PlanName, billingPeriod, email, method, cardToken, cardBrand, installments, cpf,
     });
 
     res.status(201).json(result);
   } catch (error: any) {
+    console.error('[Payment] Erro detalhado:', JSON.stringify(error?.response?.data || error?.cause || error?.message || error));
     container.logger.error({ err: error }, 'Erro ao criar pagamento');
     res.status(500).json({ error: 'Erro ao processar pagamento. Tente novamente.' });
   }

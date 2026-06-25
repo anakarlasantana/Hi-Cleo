@@ -11,6 +11,7 @@ interface CreatePaymentParams {
   cardToken?: string;
   cardBrand?: string;
   installments?: number;
+  cpf?: string;
 }
 
 // Ports injetados via container (não no constructor para manter simples)
@@ -33,7 +34,7 @@ export class PaymentService {
   }
 
   async createPayment(params: CreatePaymentParams) {
-    const { planName, billingPeriod, email, method, cardToken, cardBrand, installments = 1 } = params;
+    const { planName, billingPeriod, email, method, cardToken, cardBrand, installments = 1, cpf } = params;
 
     const plan = await this.planRepo.getPlanLimit(planName);
     if (!plan) throw new Error(`Plano "${planName}" não encontrado`);
@@ -57,6 +58,7 @@ export class PaymentService {
       amount: price.mpAmount,
       paymentMethod,
       payerEmail: email,
+      payerIdentification: cpf ? { type: 'CPF', number: cpf } : undefined,
       externalReference,
       idempotencyKey: randomUUID(),
     });
@@ -75,6 +77,21 @@ export class PaymentService {
       pix_qr_code_base64: order.pixQrCodeBase64,
     });
 
+    // Se pagamento aprovado na hora (cartão), gerar código de ativação imediatamente
+    let activationCode: string | undefined;
+    if (order.status === 'processed' && this.webhookDeps) {
+      try {
+        const code = await this.webhookDeps.activationService.generateCode(order.orderId, planName);
+        await this.repo.linkActivationCode(record.id, code.id);
+        activationCode = code.code;
+
+        // Ativar subscription (pode não encontrar user em sandbox — não bloqueia)
+        await this.webhookDeps.subscriptionService.activate(email, order.orderId, billingPeriod, price.finalPrice);
+      } catch (err: any) {
+        console.error('[Payment] Erro ao gerar código de ativação:', err.message, err.stack);
+      }
+    }
+
     return {
       paymentId: record.id,
       orderId: order.orderId,
@@ -82,6 +99,7 @@ export class PaymentService {
       statusDetail: order.statusDetail,
       qrCode: order.pixQrCode,
       qrCodeBase64: order.pixQrCodeBase64,
+      activationCode,
       ...price,
     };
   }

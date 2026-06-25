@@ -35,6 +35,163 @@ Organizado por prioridade.
 
 ## 🔴 PENDENTE — ÚNICO BLOQUEANTE
 
+### 31. Reestruturação do Fluxo de Ativação e Suporte Multi-Usuário
+
+**Status:** Pendente — Pré-requisito para planos Equipe/Empresa  
+**Prioridade:** Máxima (bloqueia monetização completa)  
+**Estimativa:** 3-5 dias (após decisões de negócio)
+
+---
+
+#### Diagnóstico do Problema
+
+O sistema foi construído com foco no plano Solo (1 pagamento = 1 WhatsApp = 1 user). Agora que os planos Equipe (3 conexões) e Empresa (8 conexões) existem no banco com preços, o fluxo de pagamento → ativação → conexão não suporta múltiplos WhatsApps por assinatura. Além disso, o código de ativação é um bearer token sem vínculo ao comprador — qualquer pessoa que tenha acesso ao código pode usá-lo.
+
+---
+
+#### Fluxo Atual (problemático para multi-conta)
+
+```
+1. POST /api/payments → MP processa → gera activation_code (sem user_id, sem email)
+2. Frontend redireciona → /ativacao?code=ATIVAR-XXXX
+3. Usuário manda código no WhatsApp da Cleo
+4. activateUser() → CRIA user no banco (com phone da mensagem)
+5. Onboarding: 3 perguntas → marca código como used
+6. Frontend redireciona → /conectar?code=ATIVAR-XXXX
+7. Endpoint gera QR code → cria whatsapp_session vinculada ao user
+```
+
+**Problemas nesse fluxo:**
+- Passo 1: Código não sabe QUEM pagou (sem email, sem user_id)
+- Passo 4: User criado pelo PHONE de quem manda a msg — se alguém transferir o código, outra pessoa cria o user
+- Passo 7: Não valida se o código pertence ao user. Não verifica slots disponíveis no plano.
+- Plano Equipe: Como o dono conecta 3 WhatsApps? O código já foi marcado como `used` na primeira ativação.
+
+---
+
+#### Novo Fluxo Proposto
+
+```
+1. POST /api/payments → MP processa → CRIA USER no banco (com email + plano)
+   → gera activation_code vinculado ao user_id e user_email
+   → user fica com subscription ativa mas sem phone/business (incompleto)
+
+2. Frontend redireciona → /ativacao?code=ATIVAR-XXXX
+   → Tela mostra instruções para mandar código no WhatsApp
+
+3. Usuário manda código no WhatsApp da Cleo
+   → BUSCA user existente pelo activation_code.user_id
+   → COMPLEMENTA user (add phone, name)
+   → Cria business profile
+   → Roda onboarding (perguntas de configuração)
+   → Marca código como used
+
+4. Frontend detecta ativação → redireciona → /conectar?code=ATIVAR-XXXX
+   → Aceita termos
+   → Endpoint de QR code:
+     a) Valida que o código pertence ao user (via user_email ou user_id)
+     b) Busca plan do user → max_users
+     c) Conta whatsapp_sessions ativas do user
+     d) Se slots < max_users → gera QR code
+     e) Se slots >= max_users → retorna erro "limite atingido"
+   → Escaneamento cria whatsapp_session com instance_name único
+
+5. Para conexões ADICIONAIS (Equipe/Empresa):
+   → Mesma página /conectar (com o code do dono)
+   → Cada scan cria nova session com instance_name diferente
+   → UI mostra: "2 de 3 conexões usadas"
+```
+
+---
+
+#### Mudanças no Banco de Dados (migration necessária)
+
+```sql
+-- 1. Vincular código ao comprador
+ALTER TABLE activation_codes ADD COLUMN user_email TEXT;
+ALTER TABLE activation_codes ADD COLUMN user_id UUID REFERENCES users(id);
+
+-- 2. Permitir user sem phone inicialmente (criado no pagamento)
+ALTER TABLE users ALTER COLUMN phone DROP NOT NULL;
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_phone_key;
+-- Re-adicionar UNIQUE mas permitindo NULL
+CREATE UNIQUE INDEX idx_users_phone_unique ON users(phone) WHERE phone IS NOT NULL;
+
+-- 3. Adicionar email como identificador alternativo
+CREATE UNIQUE INDEX idx_users_email_unique ON users(email) WHERE email IS NOT NULL;
+```
+
+---
+
+#### Mudanças no Backend
+
+| Arquivo | O que muda |
+|---------|------------|
+| `payment.service.ts` | Criar user no banco ao processar pagamento (email + plan). Vincular user_id ao activation_code. |
+| `activation.service.ts` | `activateUser()` busca user existente pelo code.user_id em vez de criar novo. Complementa com phone/name/business. |
+| `activation.repository.ts` | `createCode()` aceita `userEmail` e `userId`. Nova query `findCodeByUserEmail()`. |
+| `activation.controller.ts` | Endpoint QR code valida ownership + verifica slots disponíveis. |
+| `subscription.service.ts` | `activate()` usa user_id direto (user já existe), não precisa buscar por email. |
+| `plans.service.ts` | Expor `getRemainingSlots(userId)` para UI mostrar "X de Y conexões". |
+| `onboarding.service.ts` | Sem mudança funcional — recebe userId que já existe. |
+
+---
+
+#### Mudanças no Frontend
+
+| Arquivo | O que muda |
+|---------|------------|
+| `/conectar/use-qr-connection.ts` | Exibir slots usados/disponíveis. Botão "Conectar outro WhatsApp" quando slots > 1. |
+| `/conectar/conectar-content.tsx` | Mostrar contador de conexões. Mensagem de erro clara quando limite atingido. |
+| `/ativacao/activation-content.tsx` | Sem mudança grande — continua fazendo polling do status. |
+
+---
+
+#### Decisões de Negócio a Definir Antes de Implementar
+
+| # | Pergunta | Opções | Impacto |
+|---|----------|--------|---------|
+| 1 | Quem conecta WhatsApps adicionais? | A) Só o dono (mesmo QR, N dispositivos dele) / B) Dono convida colaboradores | Se B: precisa de sistema de convites |
+| 2 | Como o dono se identifica ao adicionar conexão? | A) Mesmo código / B) Email + link mágico / C) Login com senha | Se A: mais simples. Se B/C: área do cliente |
+| 3 | Adicionar conexão é via web ou WhatsApp? | A) Web (botão na tela /conectar) / B) Cleo ("quero conectar outro WhatsApp") | Se A: já resolve. Se B: nova intent |
+| 4 | Expiração com N conexões: | A) Desconecta todas / B) Mantém 1 (downgrade) / C) Carência de 7 dias | Afeta cron de expiração |
+| 5 | Transferência de plano entre devices: | A) Não permite / B) Permite desconectar um e conectar outro | Se B: endpoint de "desconectar slot" |
+
+---
+
+#### Critérios de Aceite
+
+- [ ] Pagamento processado → user existe no banco com email + plano + subscription ativa
+- [ ] Activation code vinculado ao user_id e user_email (intransferível)
+- [ ] Ativação via WhatsApp complementa user existente (não cria novo)
+- [ ] Endpoint de QR code valida que código pertence ao user correto
+- [ ] Endpoint de QR code verifica slots: `active_sessions < plan.max_users`
+- [ ] Solo: 1 conexão permitida, erro claro ao tentar segunda
+- [ ] Equipe: até 3 conexões, UI mostra "2 de 3 usadas"
+- [ ] Empresa: até 8 conexões
+- [ ] Tentativa acima do limite → erro "Limite de conexões atingido. Faça upgrade."
+- [ ] Downgrade desconecta sessões excedentes (comportamento definido)
+- [ ] Código usado por email diferente → rejeição
+
+---
+
+#### Riscos
+
+- Quebra de compatibilidade com users já ativados (migration de dados existentes)
+- Se users.phone passa a ser NULL, queries que fazem `.eq('phone', ...)` podem precisar de ajuste
+- Onboarding precisa lidar com user "incompleto" (sem phone) de forma graceful
+- Testes existentes de activation podem quebrar
+
+---
+
+#### Referências
+
+- Detalhamento completo: `docs/debito-tecnico/reestruturacao-fluxo-ativacao-multiusuario.md`
+- Schema atual: `backend/supabase/migrations/20260525000001_initial_schema.sql`
+- Payment tables: `backend/supabase/migrations/20260526000001_payment_tables.sql`
+
+---
+
 ### 22. Deploy no servidor (VPS limpa com Docker)
 
 **Status:** Código pronto. Nunca rodou em produção.
@@ -240,7 +397,7 @@ Organizado por prioridade.
 | Status | Itens |
 |--------|-------|
 | ✅ Concluídos | #1-11, #13, #17, #18, #20, #21 |
-| 🔴 Bloqueante | #22 (deploy) |
+| 🔴 Bloqueante | #31 (reestruturação ativação multi-user), #22 (deploy) |
 | 🟡 Pós-lançamento | #12, #14, #16, #19 |
 | ⚪ Futuro | #15, #23-30 |
 
@@ -274,3 +431,30 @@ ADMINISTRAÇÃO:
   Subscription cron → expira assinaturas vencidas
   Cancellation cron → limpa dados após prazo
 ```
+
+
+---
+
+### 31. Reestruturação do Fluxo de Ativação e Suporte Multi-Usuário
+
+**Prioridade:** Alta (pré-requisito para planos Equipe/Empresa funcionarem corretamente)
+
+**Contexto:** O fluxo atual cria o `user` no banco apenas durante o onboarding via WhatsApp. O código de ativação não é vinculado ao comprador (email), tornando-o transferível. Planos multi-conta (Equipe=3, Empresa=8) não têm mecanismo para gerar múltiplas conexões WhatsApp de forma controlada.
+
+**Problemas:**
+1. User criado no momento errado (onboarding, não pagamento)
+2. Código de ativação sem vínculo ao email do comprador (transferível)
+3. Sem conceito de "dono do plano" vs "slots de conexão"
+4. Endpoint de QR code não valida ownership nem verifica slots disponíveis
+
+**Decisões de negócio pendentes:**
+- Quem conecta WhatsApps adicionais? (dono vs colaboradores convidados)
+- Autenticação do dono: email+código (stateless) vs login (stateful)?
+- Adicionar conexões via interface web ou via Cleo?
+- Comportamento ao expirar assinatura com N conexões ativas?
+
+**Impacto:** Módulos activation, payment, plans, subscription, onboarding, frontend /conectar
+
+**Detalhamento completo:** `docs/debito-tecnico/reestruturacao-fluxo-ativacao-multiusuario.md`
+
+**Estimativa:** 3-5 dias (após decisões de negócio definidas)

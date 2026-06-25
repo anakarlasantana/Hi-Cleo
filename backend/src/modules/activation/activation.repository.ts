@@ -42,6 +42,17 @@ export class SupabaseActivationRepository implements ActivationRepository {
     return data as ActivationCode;
   }
 
+  async findCodeByValue(code: string): Promise<ActivationCode | null> {
+    const { data } = await supabase
+      .from("activation_codes")
+      .select("*")
+      .eq("code", code.toUpperCase())
+      .single();
+
+    if (!data) return null;
+    return data as ActivationCode;
+  }
+
   async markUsed(code: string, userId: string): Promise<void> {
     await supabase
       .from("activation_codes")

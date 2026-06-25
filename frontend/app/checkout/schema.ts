@@ -8,6 +8,7 @@ export const baseSchema = z.object({
 
 export const cardSchema = baseSchema.extend({
   cardName: z.string().min(3, "Nome no cartão é obrigatório"),
+  cpf: z.string().min(14, "CPF inválido").max(14, "CPF inválido"),
 })
 
 export type BaseFormData = z.infer<typeof baseSchema>

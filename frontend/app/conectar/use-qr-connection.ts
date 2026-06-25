@@ -23,7 +23,7 @@ export function useQRConnection(code: string | null) {
     setState((prev) => ({ ...prev, status: "loading", errorMessage: undefined }))
 
     try {
-      const response = await fetch(`${API_URL}/activation/qrcode/${code}`)
+      const response = await fetch(`${API_URL}/api/activation/qrcode/${code}`)
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
         setState({
@@ -58,7 +58,7 @@ export function useQRConnection(code: string | null) {
     if (!code) return
     if (eventSourceRef.current) eventSourceRef.current.close()
 
-    const es = new EventSource(`${API_URL}/activation/qrcode/${code}/status`)
+    const es = new EventSource(`${API_URL}/api/activation/qrcode/${code}/status`)
     eventSourceRef.current = es
 
     es.addEventListener("connected", () => {

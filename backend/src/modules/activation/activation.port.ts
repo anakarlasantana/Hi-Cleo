@@ -3,6 +3,7 @@ import type { ActivationCode, User, Business } from '../../shared/types/index.js
 export interface ActivationRepository {
   createCode(code: string, plan: string, paymentId: string, expiresAt: Date): Promise<ActivationCode>;
   findValidCode(code: string): Promise<ActivationCode | null>;
+  findCodeByValue(code: string): Promise<ActivationCode | null>;
   markUsed(code: string, userId: string): Promise<void>;
 }
 
