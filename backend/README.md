@@ -50,11 +50,11 @@ src/
 │   ├── rules/               # Motor de regras automáticas
 │   ├── subscription/        # Gestão de assinaturas
 │   ├── terms/               # Aceite de termos LGPD
+│   ├── invites/             # Convites para colaboradores (multi-user)
 │   └── webhooks/            # Recebe eventos da Evolution API
 │
 ├── shared/
 │   ├── config/              # Env vars (Zod validation)
-│   ├── database/            # Schema SQL
 │   ├── logger/              # Pino (rotação diária em prod)
 │   ├── middleware/          # Segurança (helmet, rate-limit, sanitize)
 │   ├── ports/               # Ports globais (AiPort)
