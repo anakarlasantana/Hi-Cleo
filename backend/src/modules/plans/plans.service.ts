@@ -17,26 +17,30 @@ export class PlanService {
 
   /**
    * Retorna o uso atual de usuários (sessões ativas) e o limite máximo
-   * do plano do usuário.
+   * do plano do usuário (respeitando override customizado).
    *
    * Requirement 1.1: Solo = 1, Equipe = até 3, Empresa = até 8.
+   * Requirement 3.2, 3.4: max_connections_override prevalece sobre plano.
    */
   async getCurrentUsage(userId: string): Promise<{ current: number; max: number }> {
-    const planName = await this.planRepo.getUserPlan(userId);
-    if (!planName) {
-      throw new Error('Usuário não encontrado ou sem plano definido');
-    }
-
-    const planLimit = await this.planRepo.getPlanLimit(planName);
-    if (!planLimit) {
-      throw new Error(`Plano "${planName}" não encontrado na tabela de limites`);
-    }
-
+    const maxConnections = await this.planRepo.getUserMaxConnections(userId);
     const currentCount = await this.planRepo.countActiveUsers(userId);
 
     return {
       current: currentCount,
-      max: planLimit.max_users,
+      max: maxConnections,
+    };
+  }
+
+  /**
+   * Retorna slots restantes para uso em endpoints e UI.
+   */
+  async getRemainingSlots(userId: string): Promise<{ used: number; total: number; remaining: number }> {
+    const usage = await this.getCurrentUsage(userId);
+    return {
+      used: usage.current,
+      total: usage.max,
+      remaining: usage.max - usage.current,
     };
   }
 

@@ -16,5 +16,6 @@ export interface PlanRepository {
   getAllPlanLimits(): Promise<PlanLimit[]>;
   countActiveUsers(userId: string): Promise<number>;
   getUserPlan(userId: string): Promise<string | null>;
+  getUserMaxConnections(userId: string): Promise<number>;
   disconnectExcessUsers(userId: string, maxUsers: number): Promise<number>;
 }

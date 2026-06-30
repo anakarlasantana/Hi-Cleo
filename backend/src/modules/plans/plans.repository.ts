@@ -42,6 +42,26 @@ export class SupabasePlanRepository implements PlanRepository {
     return data?.plan || null;
   }
 
+  async getUserMaxConnections(userId: string): Promise<number> {
+    // Busca override e plan do user
+    const { data: user } = await supabase
+      .from('users')
+      .select('plan, max_connections_override')
+      .eq('id', userId)
+      .single();
+
+    if (!user) throw new Error('Usuário não encontrado');
+
+    // Se tem override customizado, usa ele
+    if (user.max_connections_override != null) {
+      return user.max_connections_override;
+    }
+
+    // Senão, busca o limite padrão do plano
+    const planLimit = await this.getPlanLimit(user.plan);
+    return planLimit?.max_users ?? 1;
+  }
+
   async disconnectExcessUsers(userId: string, maxUsers: number): Promise<number> {
     // Get all active sessions ordered by connected_at (most recent first)
     const { data: sessions } = await supabase

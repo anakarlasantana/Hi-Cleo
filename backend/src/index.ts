@@ -14,6 +14,7 @@ import { activationRouter } from './modules/activation/activation.controller.js'
 import { cancellationRouter } from './modules/cancellation/cancellation.controller.js';
 import { paymentRouter } from './modules/payment/payment.controller.js';
 import { paymentWebhookRouter } from './modules/payment/payment-webhook.controller.js';
+import { invitesRouter } from './modules/invites/invites.controller.js';
 import { startFollowUpCron } from './modules/follow-up/follow-up.cron.js';
 import { startConnectionMonitor } from './modules/connection-monitor/connection-monitor.cron.js';
 import { startContactMonitorCron } from './modules/contact-monitor/contact-monitor.cron.js';
@@ -49,6 +50,7 @@ app.use('/webhooks', paymentWebhookRouter); // MP já valida assinatura no contr
 // --- API pública (com rate limit) ---
 app.use('/api/payments', apiRateLimit, paymentRateLimit, paymentRouter);
 app.use('/api/activation', apiRateLimit, activationRouter);
+app.use('/api/invites', apiRateLimit, invitesRouter);
 app.use('/api/cancellation', apiRateLimit, cancellationRouter);
 
 startFollowUpCron();

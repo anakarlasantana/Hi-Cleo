@@ -65,7 +65,7 @@ activationRouter.get('/status/:code', async (req: Request, res: Response) => {
 });
 
 // GET /activation/qrcode/:code - Gera QR Code para conexão WhatsApp
-// Requirements: 6.1, 6.3
+// Requirements: 2.4, 3.1, 6.1, 6.3, 7.2
 activationRouter.get('/qrcode/:code', async (req: Request, res: Response) => {
   try {
     const code = req.params.code as string;
@@ -76,7 +76,32 @@ activationRouter.get('/qrcode/:code', async (req: Request, res: Response) => {
       return;
     }
 
-    const instanceName = `activation-${code}`;
+    // Validar ownership: código deve ter user_id vinculado
+    if (!activationCode.user_id) {
+      res.status(403).json({ error: 'Código sem vínculo de proprietário' });
+      return;
+    }
+
+    // Verificar subscription ativa
+    const user = await container.userRepo.findById(activationCode.user_id);
+    if (!user || user.subscription_status !== 'active') {
+      res.status(403).json({ error: 'Assinatura inativa. Renove para conectar.' });
+      return;
+    }
+
+    // Verificar slots disponíveis
+    const canConnect = await container.planService.canAddUser(user.id);
+    if (!canConnect) {
+      const usage = await container.planService.getCurrentUsage(user.id);
+      res.status(403).json({
+        error: 'Limite de conexões atingido. Faça upgrade ou desconecte uma conexão existente.',
+        used: usage.current,
+        total: usage.max,
+      });
+      return;
+    }
+
+    const instanceName = `user-${user.id}-${Date.now()}`;
     const qr = await container.messaging.getQrCode(instanceName);
 
     if (!qr) {
@@ -86,7 +111,7 @@ activationRouter.get('/qrcode/:code', async (req: Request, res: Response) => {
 
     res.json({
       qr,
-      expiresIn: 45, // QR Code expira em ~45 segundos
+      expiresIn: 45,
     });
   } catch (error) {
     container.logger.error({ err: error }, '[Activation] Erro ao gerar QR Code');
@@ -105,6 +130,26 @@ activationRouter.post('/consent', async (req: Request, res: Response) => {
     res.json({ accepted: true, termsVersion });
   } catch (error) {
     res.status(500).json({ error: 'Error recording consent' });
+  }
+});
+
+// GET /activation/slots/:code - Retorna slots usados/disponíveis para o código
+// Requirements: 3.1, 9.1
+activationRouter.get('/slots/:code', async (req: Request, res: Response) => {
+  try {
+    const code = req.params.code as string;
+
+    const activationCode = await container.activationRepo.findCodeByValue(code);
+    if (!activationCode || !activationCode.user_id) {
+      res.status(404).json({ error: 'Código inválido' });
+      return;
+    }
+
+    const slots = await container.planService.getRemainingSlots(activationCode.user_id);
+    res.json(slots);
+  } catch (error) {
+    container.logger.error({ err: error }, '[Activation] Erro ao buscar slots');
+    res.status(500).json({ error: 'Erro ao buscar slots' });
   }
 });
 

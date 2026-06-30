@@ -20,6 +20,7 @@ import { SupabaseCancellationRepository } from './modules/cancellation/cancellat
 import { SupabaseContactMonitorRepository } from './modules/contact-monitor/contact-monitor.repository.js';
 import { SupabasePaymentRepository } from './modules/payment/payment.repository.js';
 import { SupabaseSubscriptionRepository } from './modules/subscription/subscription.repository.js';
+import { SupabaseInviteRepository } from './modules/invites/invites.repository.js';
 
 // Services
 import { ActivationService } from './modules/activation/activation.service.js';
@@ -33,6 +34,7 @@ import { CancellationService } from './modules/cancellation/cancellation.service
 import { ContactMonitorService } from './modules/contact-monitor/contact-monitor.service.js';
 import { PaymentService } from './modules/payment/payment.service.js';
 import { SubscriptionService } from './modules/subscription/subscription.service.js';
+import { InviteService } from './modules/invites/invites.service.js';
 
 // Adapters (Payment)
 import { MercadoPagoAdapter } from './modules/payment/mercadopago.adapter.js';
@@ -79,6 +81,7 @@ const cancellationRepo = new SupabaseCancellationRepository();
 const contactMonitorRepo = new SupabaseContactMonitorRepository();
 const paymentRepo = new SupabasePaymentRepository();
 const subscriptionRepo = new SupabaseSubscriptionRepository();
+const inviteRepo = new SupabaseInviteRepository();
 
 // --- Services ---
 
@@ -96,9 +99,10 @@ const contactMonitorService = new ContactMonitorService(contactMonitorRepo);
 const mercadoPagoAdapter = new MercadoPagoAdapter(env.MERCADO_PAGO_ACCESS_TOKEN);
 const paymentService = new PaymentService(mercadoPagoAdapter, paymentRepo, planRepo);
 const subscriptionService = new SubscriptionService(subscriptionRepo);
+const inviteService = new InviteService(inviteRepo, planService, userRepo);
 
 // Configurar dependências do webhook (referência circular resolvida aqui)
-paymentService.setWebhookDeps({ subscriptionService, activationService });
+paymentService.setWebhookDeps({ subscriptionService, activationService, userRepo });
 
 // --- Queue ---
 
@@ -151,6 +155,7 @@ export const container = {
   contactMonitorService,
   paymentService,
   subscriptionService,
+  inviteService,
   mercadoPagoAdapter,
 
   queueService,

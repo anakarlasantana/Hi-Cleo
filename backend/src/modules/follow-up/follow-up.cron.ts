@@ -16,7 +16,7 @@ export function startFollowUpCron(): void {
 
       for (const followUp of dueFollowUps) {
         const user = await userRepo.findById(followUp.user_id);
-        if (!user) continue;
+        if (!user || !user.phone) continue;
 
         const lastMsg = await messageRepo.getLastMessage(followUp.lead_id);
         const contexto = lastMsg ? ` Última conversa: "${lastMsg.text.slice(0, 50)}..."` : '';
@@ -32,6 +32,8 @@ export function startFollowUpCron(): void {
       const users = await userRepo.listAll();
 
       for (const user of users) {
+        if (!user.phone) continue;
+
         const staleLeads = await followUpRepo.checkStaleLeads(user.id, staleHours);
         if (staleLeads.length === 0) continue;
 

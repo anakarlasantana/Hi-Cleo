@@ -23,10 +23,11 @@ export class ActivationService {
     private termsConsentService?: TermsConsentService,
   ) {}
 
-  async generateCode(paymentId: string, plan: string): Promise<ActivationCode> {
+  async generateCode(paymentId: string, plan: string, userId?: string, userEmail?: string): Promise<ActivationCode> {
     const code = generateCode();
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    return this.activationRepo.createCode(code, plan, paymentId, expiresAt);
+    const ACTIVATION_CODE_EXPIRY_DAYS = 7;
+    const expiresAt = new Date(Date.now() + ACTIVATION_CODE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+    return this.activationRepo.createCode(code, plan, paymentId, expiresAt, userId, userEmail);
   }
 
   async validateCode(code: string): Promise<ActivationCode | null> {
@@ -42,11 +43,31 @@ export class ActivationService {
     const parsed = await this.parseActivationMessage(rawMessage);
     const validCode = await this.activationRepo.findValidCode(code);
 
-    const user = await this.userRepo.create({
-      name: parsed.nome,
-      phone: phone,
-      plan: validCode?.plan || 'solo',
-    });
+    if (!validCode) {
+      throw new Error('INVALID_OR_EXPIRED_CODE');
+    }
+
+    let user: User;
+
+    // Novo fluxo: se o código tem user_id, complementa user existente (criado no pagamento)
+    if (validCode.user_id) {
+      const existingUser = await this.userRepo.findById(validCode.user_id);
+      if (!existingUser) {
+        throw new Error('USER_NOT_FOUND_FOR_CODE');
+      }
+      // Complementar user com phone e name
+      user = await this.userRepo.complementUser(existingUser.id, {
+        phone,
+        name: parsed.nome || phone,
+      });
+    } else {
+      // Fluxo legado: criar user novo (para códigos antigos sem user_id)
+      user = await this.userRepo.create({
+        name: parsed.nome,
+        phone: phone,
+        plan: validCode.plan || 'solo',
+      });
+    }
 
     await this.activationRepo.markUsed(code, user.id);
 

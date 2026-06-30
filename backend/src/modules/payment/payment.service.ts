@@ -17,7 +17,8 @@ interface CreatePaymentParams {
 // Ports injetados via container (não no constructor para manter simples)
 interface WebhookDeps {
   subscriptionService: { activate(email: string, orderId: string, period: 'monthly' | 'yearly', amount: number): Promise<void> };
-  activationService: { generateCode(paymentId: string, plan: string): Promise<{ id: string; code: string }> };
+  activationService: { generateCode(paymentId: string, plan: string, userId?: string, userEmail?: string): Promise<{ id: string; code: string }> };
+  userRepo: { findByEmail(email: string): Promise<any>; create(data: any): Promise<any> };
 }
 
 export class PaymentService {
@@ -81,12 +82,12 @@ export class PaymentService {
     let activationCode: string | undefined;
     if (order.status === 'processed' && this.webhookDeps) {
       try {
-        const code = await this.webhookDeps.activationService.generateCode(order.orderId, planName);
+        // Criar user no banco vinculado ao pagamento
+        const user = await this.createUserOnPayment(email, planName, billingPeriod, order.orderId, price.finalPrice);
+
+        const code = await this.webhookDeps.activationService.generateCode(order.orderId, planName, user.id, email);
         await this.repo.linkActivationCode(record.id, code.id);
         activationCode = code.code;
-
-        // Ativar subscription (pode não encontrar user em sandbox — não bloqueia)
-        await this.webhookDeps.subscriptionService.activate(email, order.orderId, billingPeriod, price.finalPrice);
       } catch (err: any) {
         console.error('[Payment] Erro ao gerar código de ativação:', err.message, err.stack);
       }
@@ -122,6 +123,62 @@ export class PaymentService {
   }
 
   /**
+   * Cria user no banco no momento do pagamento (com email + plan + subscription).
+   * Se o user já existir pelo email, reutiliza (idempotente para retries).
+   * Retry: até 3 tentativas em caso de falha.
+   */
+  private async createUserOnPayment(
+    email: string,
+    planName: string,
+    billingPeriod: 'monthly' | 'yearly',
+    orderId: string,
+    amountCents: number,
+  ): Promise<{ id: string }> {
+    if (!this.webhookDeps) throw new Error('WebhookDeps not configured');
+
+    const MAX_PAYMENT_USER_CREATION_RETRIES = 3;
+
+    for (let attempt = 1; attempt <= MAX_PAYMENT_USER_CREATION_RETRIES; attempt++) {
+      try {
+        // Verificar se user já existe (idempotência)
+        const existingUser = await this.webhookDeps.userRepo.findByEmail(email);
+        if (existingUser) {
+          // Ativar subscription no user existente
+          await this.webhookDeps.subscriptionService.activate(email, orderId, billingPeriod, amountCents);
+          return { id: existingUser.id };
+        }
+
+        // Criar user com email + plan (sem phone/name — será complementado na ativação)
+        const now = new Date();
+        const days = billingPeriod === 'monthly' ? 30 : 365;
+        const expiresAt = new Date(now);
+        expiresAt.setDate(expiresAt.getDate() + days);
+
+        const user = await this.webhookDeps.userRepo.create({
+          email,
+          plan: planName,
+          subscription_status: 'active',
+          subscription_started_at: now.toISOString(),
+          subscription_expires_at: expiresAt.toISOString(),
+          billing_period: billingPeriod,
+          payment_provider_id: orderId,
+        });
+
+        return { id: user.id };
+      } catch (err: any) {
+        if (attempt === MAX_PAYMENT_USER_CREATION_RETRIES) {
+          console.error(`[Payment] Falha ao criar user após ${MAX_PAYMENT_USER_CREATION_RETRIES} tentativas:`, err.message);
+          throw err;
+        }
+        // Aguarda antes de retry (backoff simples)
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+      }
+    }
+
+    throw new Error('createUserOnPayment: unreachable');
+  }
+
+  /**
    * Processa notificação do webhook do Mercado Pago.
    * Idempotente: ignora orders já processadas.
    */
@@ -136,14 +193,16 @@ export class PaymentService {
       await this.repo.updateStatus(existing.id, 'processed', payment?.id);
 
       if (this.webhookDeps) {
-        await this.webhookDeps.subscriptionService.activate(
+        // Criar user vinculado ao pagamento
+        const user = await this.createUserOnPayment(
           existing.user_email,
-          orderId,
+          existing.plan_name,
           existing.billing_period as 'monthly' | 'yearly',
+          orderId,
           existing.amount_cents
         );
 
-        const code = await this.webhookDeps.activationService.generateCode(orderId, existing.plan_name);
+        const code = await this.webhookDeps.activationService.generateCode(orderId, existing.plan_name, user.id, existing.user_email);
         await this.repo.linkActivationCode(existing.id, code.id);
       }
     } else if (['rejected', 'cancelled'].includes(order.status)) {

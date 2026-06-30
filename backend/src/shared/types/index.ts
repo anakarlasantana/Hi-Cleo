@@ -28,15 +28,17 @@ export type IntentType =
 // === Entities ===
 export interface User {
   id: string;
-  name: string;
+  name: string | null;
   plan: string;
-  phone: string;
-  email?: string;
+  phone: string | null;
+  email: string | null;
   subscription_status?: string;
   subscription_started_at?: string;
   subscription_expires_at?: string;
   billing_period?: string;
   payment_provider_id?: string;
+  max_connections_override?: number | null;
+  owner_user_id?: string | null;
   created_at: string;
 }
 
@@ -110,6 +112,9 @@ export interface ActivationCode {
   payment_id: string;
   used: boolean;
   used_by?: string;
+  user_id?: string | null;
+  user_email?: string | null;
+  activated_at?: string | null;
   expires_at: string;
   created_at: string;
 }
@@ -160,4 +165,18 @@ export interface RecognizedIntent {
   confidence: number;
   entities: Record<string, string>;
   originalText: string;
+}
+
+// === Invite ===
+export type InviteStatus = 'pending' | 'accepted' | 'expired' | 'cancelled';
+
+export interface Invite {
+  id: string;
+  owner_user_id: string;
+  phone: string;
+  token: string;
+  status: InviteStatus;
+  created_at: string;
+  expires_at: string;
+  used_by_user_id: string | null;
 }

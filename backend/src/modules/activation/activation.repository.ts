@@ -11,16 +11,23 @@ export class SupabaseActivationRepository implements ActivationRepository {
     plan: string,
     paymentId: string,
     expiresAt: Date,
+    userId?: string,
+    userEmail?: string,
   ): Promise<ActivationCode> {
+    const insertData: Record<string, unknown> = {
+      code,
+      plan,
+      payment_id: paymentId,
+      used: false,
+      expires_at: expiresAt.toISOString(),
+    };
+
+    if (userId) insertData.user_id = userId;
+    if (userEmail) insertData.user_email = userEmail;
+
     const { data, error } = await supabase
       .from("activation_codes")
-      .insert({
-        code,
-        plan,
-        payment_id: paymentId,
-        used: false,
-        expires_at: expiresAt.toISOString(),
-      })
+      .insert(insertData)
       .select()
       .single();
 
@@ -53,10 +60,22 @@ export class SupabaseActivationRepository implements ActivationRepository {
     return data as ActivationCode;
   }
 
+  async findByUserId(userId: string): Promise<ActivationCode | null> {
+    const { data } = await supabase
+      .from("activation_codes")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    return (data as ActivationCode) || null;
+  }
+
   async markUsed(code: string, userId: string): Promise<void> {
     await supabase
       .from("activation_codes")
-      .update({ used: true, used_by: userId })
+      .update({ used: true, used_by: userId, activated_at: new Date().toISOString() })
       .eq("code", code.toUpperCase());
   }
 }
@@ -82,6 +101,16 @@ export class SupabaseUserRepository implements UserRepository {
     return (data as User) || null;
   }
 
+  async findByEmail(email: string): Promise<User | null> {
+    const { data } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", email)
+      .single();
+
+    return (data as User) || null;
+  }
+
   async create(userData: Partial<User>): Promise<User> {
     const { data, error } = await supabase
       .from("users")
@@ -90,6 +119,18 @@ export class SupabaseUserRepository implements UserRepository {
       .single();
 
     if (error) throw new Error(`Erro ao criar usuário: ${error.message}`);
+    return data as User;
+  }
+
+  async complementUser(userId: string, complementData: { phone: string; name: string }): Promise<User> {
+    const { data, error } = await supabase
+      .from("users")
+      .update(complementData)
+      .eq("id", userId)
+      .select()
+      .single();
+
+    if (error) throw new Error(`Erro ao complementar usuário: ${error.message}`);
     return data as User;
   }
 
