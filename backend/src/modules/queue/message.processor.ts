@@ -177,9 +177,54 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
 }
 
 async function executeIntent(container: any, user: any, intent: { type: string; entities: Record<string, string> }): Promise<string> {
-  const { leadService, exclusionRepo, messageRepo, messaging } = container;
+  const { leadService, exclusionRepo, messageRepo, messaging, inviteService, planService } = container;
 
   switch (intent.type) {
+    case 'invite_user': {
+      const phone = intent.entities.phone || '';
+      if (!phone) return 'Para quem devo enviar o convite? Me diz o número (ex: "convida 11999887766").';
+
+      try {
+        const invite = await inviteService.createInvite(user.id, phone);
+        const inviteLink = `${env.SITE_URL}/conectar/convite?token=${invite.token}`;
+
+        // Enviar link de convite para o colaborador via WhatsApp
+        await messaging.sendText({
+          instance: env.MONITOR_INSTANCE,
+          to: phone,
+          text: `Olá! Você foi convidado(a) por *${user.name || 'seu gestor'}* para usar a Cleo, sua secretária virtual.\n\n📱 Clique no link abaixo para conectar seu WhatsApp:\n${inviteLink}\n\nO convite expira em 72 horas.`,
+        });
+
+        const slots = await planService.getRemainingSlots(user.id);
+        return `✅ Convite enviado para ${phone}!\n\nConexões: ${slots.used} de ${slots.total} usadas (${slots.remaining} restantes).`;
+      } catch (error: any) {
+        if (error.message === 'NO_SLOTS_AVAILABLE') {
+          const slots = await planService.getRemainingSlots(user.id);
+          return `❌ Limite de conexões atingido (${slots.used}/${slots.total}). Desconecte alguém ou faça upgrade.`;
+        }
+        if (error.message === 'SUBSCRIPTION_INACTIVE') {
+          return '❌ Sua assinatura está inativa. Renove para convidar colaboradores.';
+        }
+        return '❌ Erro ao criar convite. Tente novamente.';
+      }
+    }
+
+    case 'disconnect_user': {
+      const phone = intent.entities.phone || '';
+      if (!phone) return 'Qual número quer desconectar? Me diz o número (ex: "desconecta 11999887766").';
+
+      try {
+        await inviteService.disconnectCollaborator(user.id, phone);
+        const slots = await planService.getRemainingSlots(user.id);
+        return `✅ Conexão de ${phone} desconectada!\n\nConexões: ${slots.used} de ${slots.total} usadas (${slots.remaining} vagas livres).`;
+      } catch (error: any) {
+        if (error.message === 'COLLABORATOR_NOT_FOUND') {
+          return `❌ Não encontrei ${phone} nas suas conexões. Verifique o número.`;
+        }
+        return '❌ Erro ao desconectar. Tente novamente.';
+      }
+    }
+
     case 'list_leads': {
       const leads = await leadService.listByStatus(user.id, 'new');
       if (leads.length === 0) return 'Você não tem clientes novos no momento. 📭';

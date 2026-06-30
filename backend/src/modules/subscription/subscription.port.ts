@@ -7,6 +7,7 @@ export interface SubscriptionRepository {
   getExpiringIn(days: number): Promise<ExpiringSubscription[]>;
   getExpired(): Promise<ExpiredSubscription[]>;
   createEvent(event: SubscriptionEvent): Promise<void>;
+  disconnectAllSessionsByOwner(userId: string): Promise<number>;
 }
 
 export interface ExpiringSubscription {

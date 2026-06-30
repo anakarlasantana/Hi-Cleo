@@ -24,9 +24,11 @@ Intenções possíveis:
 - ignore_contact: quer que o sistema ignore um número (contato pessoal)
 - list_ignored: quer ver quais contatos estão sendo ignorados
 - stop_ignoring: quer voltar a acompanhar um contato que estava ignorado
+- invite_user: quer convidar alguém para usar o serviço (adicionar colaborador/conexão WhatsApp)
+- disconnect_user: quer desconectar/remover um colaborador do plano
 - unknown: não conseguiu identificar
 
-Extraia entidades quando possível (name do cliente, date, time).
+Extraia entidades quando possível (name do cliente, phone, date, time).
 Se a data for relativa ("amanhã", "segunda"), converta para formato ISO.`;
 
 export class AssistenteService {
@@ -69,6 +71,8 @@ export class AssistenteService {
       { keywords: ['ignora', 'pessoal', 'não é cliente', 'exclui'], type: 'ignore_contact' },
       { keywords: ['ignorados', 'excluídos', 'quem tá ignorado'], type: 'list_ignored' },
       { keywords: ['volta a acompanhar', 'para de ignorar', 'desbloqueia'], type: 'stop_ignoring' },
+      { keywords: ['convida', 'adiciona conexão', 'convite', 'adicionar whatsapp', 'novo colaborador'], type: 'invite_user' },
+      { keywords: ['desconecta', 'remove conexão', 'tira acesso', 'desvincula'], type: 'disconnect_user' },
     ];
 
     for (const pattern of patterns) {

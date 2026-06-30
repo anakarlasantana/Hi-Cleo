@@ -23,6 +23,8 @@ export type IntentType =
   | 'ignore_contact'
   | 'list_ignored'
   | 'stop_ignoring'
+  | 'invite_user'
+  | 'disconnect_user'
   | 'unknown';
 
 // === Entities ===

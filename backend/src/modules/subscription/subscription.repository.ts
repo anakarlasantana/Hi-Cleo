@@ -61,4 +61,31 @@ export class SupabaseSubscriptionRepository implements SubscriptionRepository {
     const { error } = await supabase.from('subscription_events').insert(event);
     if (error) throw new Error(`Erro ao criar evento: ${error.message}`);
   }
+
+  async disconnectAllSessionsByOwner(userId: string): Promise<number> {
+    // Desconectar sessões do owner
+    const { data: ownerSessions } = await supabase
+      .from('whatsapp_sessions')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('status', 'active');
+
+    // Desconectar sessões dos colaboradores vinculados ao owner
+    const { data: collaborators } = await supabase
+      .from('users')
+      .select('id')
+      .eq('owner_user_id', userId);
+
+    const collaboratorIds = (collaborators || []).map((c: any) => c.id);
+    const allUserIds = [userId, ...collaboratorIds];
+
+    const { error, count } = await supabase
+      .from('whatsapp_sessions')
+      .update({ status: 'disconnected', disconnected_at: new Date().toISOString() })
+      .in('user_id', allUserIds)
+      .eq('status', 'active');
+
+    if (error) throw new Error(`Erro ao desconectar sessões: ${error.message}`);
+    return count || 0;
+  }
 }

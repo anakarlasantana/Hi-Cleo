@@ -51,7 +51,8 @@ export class SubscriptionService {
   }
 
   /**
-   * Marca assinaturas vencidas como "expired".
+   * Marca assinaturas vencidas como "expired" e desconecta TODAS as sessões.
+   * Requirement 8.1: desconectar owner + colaboradores ao expirar.
    */
   async checkExpirations(): Promise<number> {
     const expired = await this.repo.getExpired();
@@ -59,6 +60,10 @@ export class SubscriptionService {
 
     for (const sub of expired) {
       await this.repo.updateFields(sub.user_id, { subscription_status: 'expired' });
+
+      // Desconectar todas as sessões do owner e seus colaboradores
+      await this.repo.disconnectAllSessionsByOwner(sub.user_id);
+
       await this.repo.createEvent({
         user_id: sub.user_id,
         event_type: 'expired',
