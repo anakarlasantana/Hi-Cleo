@@ -58,7 +58,7 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     }
 
     const user = await activationService.activateUser(code, phone, text);
-    await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: `Bem-vindo(a)! 🎉\n\nSeu código foi ativado com sucesso!\n\nMe confirma: posso te chamar de *${user.name}*?` });
+    await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: `Opa! 🎉 Código ativado com sucesso!\n\nEu sou a Cleo, sua nova secretária virtual. Vou cuidar dos seus contatos e te ajudar a não perder nenhum cliente.\n\nPra começar, como posso te chamar?` });
     return;
   }
 

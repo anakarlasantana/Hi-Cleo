@@ -7,8 +7,12 @@ export type FollowUpStatus = 'pending' | 'sent' | 'cancelled';
 export type OnboardingStep =
   | 'awaiting_activation'
   | 'confirm_name'
-  | 'configure_welcome'
-  | 'configure_outside_hours'
+  | 'business_type'
+  | 'target_audience'
+  | 'tone_of_voice'
+  | 'business_hours'
+  | 'outside_hours_behavior'
+  | 'confirm_summary'
   | 'completed';
 
 export type IntentType =
@@ -51,6 +55,8 @@ export interface Business {
   type?: string;
   services?: string;
   description?: string;
+  target_audience?: string;
+  tone_of_voice?: string;
   business_hours_start?: string;
   business_hours_end?: string;
   created_at: string;

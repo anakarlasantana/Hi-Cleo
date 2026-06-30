@@ -64,62 +64,115 @@ describe('OnboardingService', () => {
     service = new OnboardingService(onboardingRepo, ruleRepo);
   });
 
-  describe('handleForaHorario - completion message', () => {
-    it('includes pin message when onboarding completes', async () => {
+  describe('confirm_name step', () => {
+    it('asks about business type after confirming name', async () => {
       onboardingRepo.seed('user-1', {
-        id: 'state-1',
-        user_id: 'user-1',
-        step: 'configure_outside_hours',
-        data: { nome_confirmado: 'João', boas_vindas: 'ativa' },
-        updated_at: '2025-01-01T00:00:00Z',
+        id: 'state-1', user_id: 'user-1', step: 'confirm_name',
+        data: {}, updated_at: '2025-01-01T00:00:00Z',
       });
 
-      const response = await service.processMessage('user-1', '1');
+      const response = await service.processMessage('user-1', 'João');
 
-      expect(response).toContain('Fixe a Cleo no topo do seu WhatsApp');
+      expect(response).toContain('João');
+      expect(response).toContain('me conta o que você faz');
+      const state = await onboardingRepo.getState('user-1');
+      expect(state?.step).toBe('business_type');
     });
+  });
 
-    it('includes orientation to go back to computer for QR Code', async () => {
+  describe('business_type step', () => {
+    it('asks about target audience after business type', async () => {
       onboardingRepo.seed('user-1', {
-        id: 'state-1',
-        user_id: 'user-1',
-        step: 'configure_outside_hours',
-        data: { nome_confirmado: 'João', boas_vindas: 'ativa' },
-        updated_at: '2025-01-01T00:00:00Z',
+        id: 'state-1', user_id: 'user-1', step: 'business_type',
+        data: { nome_confirmado: 'João' }, updated_at: '2025-01-01T00:00:00Z',
       });
 
-      const response = await service.processMessage('user-1', '1');
+      const response = await service.processMessage('user-1', 'Corretor de imóveis, venda e aluguel');
 
-      expect(response).toContain('Volte para a tela no seu computador');
+      expect(response).toContain('quem são seus clientes');
+      const state = await onboardingRepo.getState('user-1');
+      expect(state?.step).toBe('target_audience');
+      expect(state?.data.negocio).toBe('Corretor de imóveis, venda e aluguel');
     });
+  });
 
-    it('transitions to completed step', async () => {
+  describe('tone_of_voice step', () => {
+    it('parses option 1 as formal', async () => {
       onboardingRepo.seed('user-1', {
-        id: 'state-1',
-        user_id: 'user-1',
-        step: 'configure_outside_hours',
-        data: { nome_confirmado: 'Maria', boas_vindas: 'ativa' },
+        id: 'state-1', user_id: 'user-1', step: 'tone_of_voice',
+        data: { nome_confirmado: 'João', negocio: 'Corretor', publico_alvo: 'Casais' },
         updated_at: '2025-01-01T00:00:00Z',
       });
 
       await service.processMessage('user-1', '1');
 
       const state = await onboardingRepo.getState('user-1');
-      expect(state?.step).toBe('completed');
+      expect(state?.data.tom_de_voz).toBe('formal');
     });
 
-    it('mentions WhatsApp Web comparison', async () => {
+    it('parses option 2 as friendly_professional', async () => {
       onboardingRepo.seed('user-1', {
-        id: 'state-1',
-        user_id: 'user-1',
-        step: 'configure_outside_hours',
-        data: { nome_confirmado: 'Ana', boas_vindas: 'desativada' },
+        id: 'state-1', user_id: 'user-1', step: 'tone_of_voice',
+        data: { nome_confirmado: 'João', negocio: 'Corretor', publico_alvo: 'Casais' },
         updated_at: '2025-01-01T00:00:00Z',
       });
 
-      const response = await service.processMessage('user-1', '2');
+      await service.processMessage('user-1', '2');
 
-      expect(response).toContain('WhatsApp Web');
+      const state = await onboardingRepo.getState('user-1');
+      expect(state?.data.tom_de_voz).toBe('friendly_professional');
+    });
+  });
+
+  describe('business_hours step', () => {
+    it('parses time range from message', async () => {
+      onboardingRepo.seed('user-1', {
+        id: 'state-1', user_id: 'user-1', step: 'business_hours',
+        data: { nome_confirmado: 'João', negocio: 'Corretor', publico_alvo: 'Casais', tom_de_voz: 'friendly_professional' },
+        updated_at: '2025-01-01T00:00:00Z',
+      });
+
+      await service.processMessage('user-1', 'Seg-Sáb 8h-20h');
+
+      const state = await onboardingRepo.getState('user-1');
+      expect(state?.data.horario_inicio).toBe('08:00');
+      expect(state?.data.horario_fim).toBe('20:00');
+    });
+  });
+
+  describe('confirm_summary step', () => {
+    it('completes onboarding on confirmation', async () => {
+      onboardingRepo.seed('user-1', {
+        id: 'state-1', user_id: 'user-1', step: 'confirm_summary',
+        data: {
+          nome_confirmado: 'João', negocio: 'Corretor', publico_alvo: 'Casais',
+          tom_de_voz: 'friendly_professional', horario_inicio: '08:00', horario_fim: '18:00',
+          fora_horario: 'notify', fora_horario_mensagem: '',
+        },
+        updated_at: '2025-01-01T00:00:00Z',
+      });
+
+      const response = await service.processMessage('user-1', 'ok');
+
+      expect(response).toContain('configurado');
+      expect(response).toContain('QR Code');
+      expect(response).toContain('Dispositivos Vinculados');
+      const state = await onboardingRepo.getState('user-1');
+      expect(state?.step).toBe('completed');
+    });
+
+    it('restarts if user wants to adjust', async () => {
+      onboardingRepo.seed('user-1', {
+        id: 'state-1', user_id: 'user-1', step: 'confirm_summary',
+        data: { nome_confirmado: 'João', negocio: 'Corretor', publico_alvo: 'Casais', tom_de_voz: 'formal', horario_inicio: '08:00', horario_fim: '18:00', fora_horario: 'notify', fora_horario_mensagem: '' },
+        updated_at: '2025-01-01T00:00:00Z',
+      });
+
+      const response = await service.processMessage('user-1', 'quero mudar o horário');
+
+      expect(response).toContain('refazer');
+      const state = await onboardingRepo.getState('user-1');
+      expect(state?.step).toBe('business_type');
     });
   });
 });
