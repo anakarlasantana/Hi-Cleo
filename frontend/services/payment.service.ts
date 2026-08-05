@@ -32,6 +32,7 @@ export interface CardPaymentResponse {
   statusDetail: string
   formattedTotal: string
   activationCode?: string
+  isRenewal?: boolean
 }
 
 export interface PaymentStatusResponse {

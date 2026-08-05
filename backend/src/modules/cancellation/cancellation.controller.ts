@@ -23,13 +23,25 @@ cancellationRouter.post('/request', async (req: Request, res: Response) => {
 
     const result = await container.cancellationService.requestCancellation(userId);
 
-    // Enviar confirmação via WhatsApp (já temos user da validação acima)
+    // Enviar confirmação detalhada via WhatsApp
     const dateStr = result.accessUntil.toLocaleDateString('pt-BR');
     if (user.phone) {
+      let confirmationMessage = `✅ *Cancelamento confirmado*\n\n`;
+      confirmationMessage += `📅 Seu acesso continua ativo até *${dateStr}*.\n`;
+      confirmationMessage += `Após essa data, suas sessões WhatsApp serão desconectadas.\n\n`;
+
+      if (result.refundEligible) {
+        confirmationMessage += `💰 Você tem direito a reembolso integral (cancelamento dentro de 7 dias). Nossa equipe vai processar em até 5 dias úteis.\n\n`;
+      }
+
+      confirmationMessage += `📂 Seus dados (contatos, mensagens, materiais) ficam guardados por *30 dias* após o encerramento. Nesse período, você pode reativar com um novo pagamento sem perder nada.\n\n`;
+      confirmationMessage += `Caso mude de ideia, é só renovar pelo site: ${env.CHECKOUT_URL}\n\n`;
+      confirmationMessage += `Obrigada por ter usado a Cleo! Se precisar voltar, estaremos aqui. 💙`;
+
       await container.messaging.sendText({
         instance: env.MONITOR_INSTANCE,
         to: user.phone,
-        text: `Seu cancelamento foi processado. Você ainda tem acesso até ${dateStr}. Após essa data, suas sessões serão desconectadas.`,
+        text: confirmationMessage,
       });
     }
 

@@ -26,6 +26,7 @@ Intenções possíveis:
 - stop_ignoring: quer voltar a acompanhar um contato que estava ignorado
 - invite_user: quer convidar alguém para usar o serviço (adicionar colaborador/conexão WhatsApp)
 - disconnect_user: quer desconectar/remover um colaborador do plano
+- help: quer saber o que pode fazer, pediu ajuda, quer ver comandos disponíveis
 - unknown: não conseguiu identificar
 
 Extraia entidades quando possível (name do cliente, phone, date, time).
@@ -73,6 +74,7 @@ export class AssistenteService {
       { keywords: ['volta a acompanhar', 'para de ignorar', 'desbloqueia'], type: 'stop_ignoring' },
       { keywords: ['convida', 'adiciona conexão', 'convite', 'adicionar whatsapp', 'novo colaborador'], type: 'invite_user' },
       { keywords: ['desconecta', 'remove conexão', 'tira acesso', 'desvincula'], type: 'disconnect_user' },
+      { keywords: ['ajuda', 'help', 'o que você faz', 'comandos', 'como funciona', 'o que posso', 'menu'], type: 'help' },
     ];
 
     for (const pattern of patterns) {

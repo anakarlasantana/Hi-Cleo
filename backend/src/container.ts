@@ -102,7 +102,7 @@ const subscriptionService = new SubscriptionService(subscriptionRepo);
 const inviteService = new InviteService(inviteRepo, planService, userRepo);
 
 // Configurar dependências do webhook (referência circular resolvida aqui)
-paymentService.setWebhookDeps({ subscriptionService, activationService, userRepo });
+paymentService.setWebhookDeps({ subscriptionService, activationService, userRepo, messaging, monitorInstance: env.MONITOR_INSTANCE });
 
 // --- Queue ---
 

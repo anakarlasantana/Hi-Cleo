@@ -109,6 +109,25 @@ src/
 - Validar telefone antes de processar (`validatePhoneNumber`)
 - Mascarar dados pessoais nos logs (`maskPhone`, `maskEmail`)
 
+### Comandos da Cleo (intents reconhecidas via IA)
+
+| Comando (linguagem natural) | Intent | Ação |
+|---|---|---|
+| "ajuda", "o que você faz?", "comandos" | `help` | Lista todas as capacidades por categoria |
+| "mostra meus clientes", "leads" | `list_leads` | Lista leads com status 'new' |
+| "clientes novos de hoje" | `leads_today` | Leads criados nas últimas 24h |
+| "quem tá sem resposta?" | `no_reply` | Leads sem retorno (threshold configurável) |
+| "clientes quentes" | `hot_leads` | Leads com status 'hot' |
+| "como tá o João?" | `lead_status` | Ficha completa: status, última msg, tempo inativo |
+| "agenda retorno pro João amanhã 14h" | `schedule_followup` | Agenda lembrete com data/hora |
+| "manda material pro João" | `send_material` | Forward do último arquivo para o lead |
+| "muda horário pra 8h às 20h" | `configure_rule` | Atualiza horário de atendimento |
+| "ignora 11999..." | `ignore_contact` | Marca contato como pessoal |
+| "quem tá ignorado?" | `list_ignored` | Lista contatos excluídos |
+| "para de ignorar 11999..." | `stop_ignoring` | Remove da lista de exclusão |
+| "convida 11999..." | `invite_user` | Gera convite para colaborador |
+| "desconecta 11999..." | `disconnect_user` | Remove colaborador e libera slot |
+
 ---
 
 ## Fluxo de mensagens
@@ -141,9 +160,10 @@ WhatsApp → Evolution API → Webhook → Validação → Fila (BullMQ) → Wor
 - Retry 3x com backoff (5s, 15s, 45s)
 - Dead-Letter Queue para mensagens que falharam
 - Fallback síncrono se Redis indisponível
-- Monitor de conexão WhatsApp (5 em 5 min)
+- Monitor de conexão WhatsApp (5 em 5 min) — alerta admin + notifica users desconectados
 - Graceful shutdown (SIGTERM/SIGINT)
 - AI fallback (Gemini → Groq)
+- Renovação idempotente (user existente reutilizado, não duplicado)
 
 ---
 

@@ -119,10 +119,20 @@ export function CheckoutContent() {
         })
 
         if (paymentData.status === "processed") {
-          const redirectUrl = paymentData.activationCode
-            ? `/ativacao?code=${paymentData.activationCode}`
-            : `/ativacao`
-          router.push(redirectUrl)
+          if (paymentData.isRenewal) {
+            // Renovação: não precisa de ativação, tudo continua funcionando
+            toast({
+              title: "Renovação confirmada!",
+              description: "Sua assinatura foi renovada com sucesso. Tudo continua funcionando normalmente.",
+            })
+            // Redirecionar para a landing ou mostrar sucesso
+            setTimeout(() => router.push("/"), 2000)
+          } else {
+            const redirectUrl = paymentData.activationCode
+              ? `/ativacao?code=${paymentData.activationCode}`
+              : `/ativacao`
+            router.push(redirectUrl)
+          }
         } else {
           const rejectionMessage = "Pagamento não aprovado. Tente outro cartão ou método de pagamento."
           setError(rejectionMessage)

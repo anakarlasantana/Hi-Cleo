@@ -62,6 +62,8 @@ startConnectionMonitor({
   logger: container.logger,
   instanceName: env.MONITOR_INSTANCE,
   adminPhone: env.MONITOR_ADMIN_PHONE,
+  sessionRepo: container.sessionRepo,
+  userRepo: container.userRepo,
 });
 
 // Inicializar fila e worker

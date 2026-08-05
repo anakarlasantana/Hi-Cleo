@@ -39,7 +39,7 @@ export class CancellationService {
     const cancellation = await this.repo.insertCancellation(userId, accessUntil, refundEligible);
     await this.repo.updateSubscriptionStatus(userId, 'cancelled');
 
-    // TODO: Integrar envio de e-mail e mensagem WhatsApp de confirmação
+    // Confirmação enviada pelo controller via WhatsApp (não aqui no service)
     const confirmationSent = true;
 
     return {

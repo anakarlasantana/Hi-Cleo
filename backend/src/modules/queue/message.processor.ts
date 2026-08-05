@@ -176,7 +176,7 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
   }
 }
 
-async function executeIntent(container: any, user: any, intent: { type: string; entities: Record<string, string> }): Promise<string> {
+async function executeIntent(container: any, user: any, intent: { type: string; entities: Record<string, string>; originalText?: string }): Promise<string> {
   const { leadService, exclusionRepo, messageRepo, messaging, inviteService, planService } = container;
 
   switch (intent.type) {
@@ -225,6 +225,10 @@ async function executeIntent(container: any, user: any, intent: { type: string; 
       }
     }
 
+    case 'help': {
+      return `👋 Oi! Sou a *Cleo*, sua secretária virtual.\n\nAqui vai o que posso fazer por você:\n\n📋 *Clientes*\n• "mostra meus clientes"\n• "clientes novos de hoje"\n• "quem tá sem resposta?"\n• "clientes quentes"\n• "como tá o João?" (status de um contato)\n\n📅 *Lembretes*\n• "agenda retorno pro João amanhã"\n• "lembra de falar com a Maria segunda"\n\n📎 *Materiais*\n• Mande um arquivo aqui e eu guardo\n• "manda material pro João"\n\n⚙️ *Configurações*\n• "muda horário pra 8h às 20h"\n• "ignora 11999..." (contato pessoal)\n• "para de ignorar 11999..."\n• "quem tá ignorado?"\n\n👥 *Equipe* (planos Equipe/Empresa)\n• "convida 11999..." (adicionar conexão)\n• "desconecta 11999..." (liberar vaga)\n\n💡 Pode falar do seu jeito — eu entendo linguagem natural!`;
+    }
+
     case 'list_leads': {
       const leads = await leadService.listByStatus(user.id, 'new');
       if (leads.length === 0) return 'Você não tem clientes novos no momento. 📭';
@@ -249,6 +253,120 @@ async function executeIntent(container: any, user: any, intent: { type: string; 
       const list = leads.slice(0, 10).map((l: any, i: number) => `${i + 1}. 🔥 *${l.name}*`).join('\n');
       return `🔥 Clientes quentes:\n\n${list}`;
     }
+    case 'schedule_followup': {
+      const name = intent.entities.name || '';
+      if (!name) return 'Para quem devo agendar o retorno? Me diz o nome do contato.';
+
+      const leads = await leadService.searchByName(user.id, name);
+      if (leads.length === 0) return `Não encontrei nenhum contato com o nome "${name}". Verifique e tente novamente.`;
+
+      const targetLead = leads[0];
+
+      // Calcular data do follow-up (amanhã por padrão, ou data informada)
+      let scheduledDate: Date;
+      if (intent.entities.date) {
+        scheduledDate = new Date(intent.entities.date);
+        if (isNaN(scheduledDate.getTime())) {
+          scheduledDate = new Date();
+          scheduledDate.setDate(scheduledDate.getDate() + 1);
+        }
+      } else {
+        scheduledDate = new Date();
+        scheduledDate.setDate(scheduledDate.getDate() + 1);
+      }
+
+      // Ajustar horário se informado
+      if (intent.entities.time) {
+        const timeMatch = intent.entities.time.match(/(\d{1,2}):?(\d{2})?/);
+        if (timeMatch) {
+          scheduledDate.setHours(Number(timeMatch[1]), Number(timeMatch[2] || '0'), 0, 0);
+        }
+      } else {
+        scheduledDate.setHours(9, 0, 0, 0); // Padrão: 9h da manhã
+      }
+
+      const { followUpRepo } = container;
+      await followUpRepo.schedule(targetLead.id, user.id, scheduledDate);
+
+      const dateLabel = scheduledDate.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+      const timeLabel = scheduledDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+      return `✅ Lembrete agendado!\n\n📅 *${targetLead.name}*\n🕐 ${dateLabel} às ${timeLabel}\n\nVou te avisar na hora certa.`;
+    }
+
+    case 'configure_rule': {
+      // Orientar o usuário sobre o que pode configurar via WhatsApp
+      const configText = intent.originalText || '';
+      const lower = configText.toLowerCase();
+
+      // Verificar se quer mudar horário
+      if (lower.includes('horário') || lower.includes('hora')) {
+        const timePattern = /(\d{1,2})[:h]?(\d{2})?\s*[-aàáeé]+\s*(\d{1,2})[:h]?(\d{2})?/i;
+        const match = lower.match(timePattern);
+
+        if (match) {
+          const startHour = match[1].padStart(2, '0');
+          const startMin = match[2] || '00';
+          const endHour = match[3].padStart(2, '0');
+          const endMin = match[4] || '00';
+
+          const { supabase } = await import('../../shared/config/supabase.js');
+          await supabase.from('businesses')
+            .update({
+              business_hours_start: `${startHour}:${startMin}`,
+              business_hours_end: `${endHour}:${endMin}`,
+            })
+            .eq('user_id', user.id);
+
+          return `✅ Horário atualizado!\n\n🕐 Agora atendo de *${startHour}:${startMin}* às *${endHour}:${endMin}*.\n\nMensagens fora desse horário vão receber a resposta automática.`;
+        }
+
+        return 'Me diz o novo horário no formato: "muda horário pra 8h às 20h" ou "horário 9h-18h".';
+      }
+
+      // Configuração genérica — orientar
+      return `⚙️ Posso configurar pra você:\n\n• *Horário de atendimento* — "muda horário pra 8h às 20h"\n• *Contatos ignorados* — "ignora 11999..." ou "para de ignorar"\n\nO que quer ajustar?`;
+    }
+
+    case 'lead_status': {
+      const name = intent.entities.name || '';
+      if (!name) return 'Qual cliente você quer saber? Me diz o nome.';
+
+      const leads = await leadService.searchByName(user.id, name);
+      if (leads.length === 0) return `Não encontrei nenhum contato com o nome "${name}".`;
+
+      const targetLead = leads[0];
+      const lastMsg = await messageRepo.getLastMessage(targetLead.id);
+
+      const statusLabels: Record<string, string> = {
+        new: '🆕 Novo',
+        hot: '🔥 Quente',
+        lost: '❌ Perdido',
+        closed: '✅ Fechado',
+      };
+
+      const statusLabel = statusLabels[targetLead.status] || targetLead.status;
+      const createdAt = new Date(targetLead.created_at).toLocaleDateString('pt-BR');
+
+      let response = `📋 *${targetLead.name}*\n\n📱 ${targetLead.phone}\n📊 Status: ${statusLabel}\n📅 Contato desde: ${createdAt}`;
+
+      if (targetLead.last_interaction) {
+        const lastInteraction = new Date(targetLead.last_interaction);
+        const diffHours = Math.round((Date.now() - lastInteraction.getTime()) / (1000 * 60 * 60));
+        const timeLabel = diffHours < 24
+          ? `${diffHours}h atrás`
+          : `${Math.round(diffHours / 24)} dia(s) atrás`;
+        response += `\n⏰ Última interação: ${timeLabel}`;
+      }
+
+      if (lastMsg) {
+        const direction = lastMsg.direction === 'inbound' ? '← Ele(a):' : '→ Você:';
+        response += `\n💬 Última msg: ${direction} "${lastMsg.text.slice(0, 60)}${lastMsg.text.length > 60 ? '...' : ''}"`;
+      }
+
+      return response;
+    }
+
     case 'send_material': {
       const name = intent.entities.name || '';
       if (!name) return 'Para quem devo enviar o material? Me diz o nome do contato.';

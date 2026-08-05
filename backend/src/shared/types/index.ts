@@ -29,6 +29,7 @@ export type IntentType =
   | 'stop_ignoring'
   | 'invite_user'
   | 'disconnect_user'
+  | 'help'
   | 'unknown';
 
 // === Entities ===
