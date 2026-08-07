@@ -1,5 +1,5 @@
-import { geminiModel } from '../../shared/config/gemini.js';
-import type { AiPort } from '../../shared/ports/ai.port.js';
+import { geminiModel } from '../../../shared/config/gemini.js';
+import type { AiPort } from '../../../shared/ports/ai.port.js';
 
 export class GeminiAdapter implements AiPort {
   async generateContent(prompts: string[]): Promise<string> {

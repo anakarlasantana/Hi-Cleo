@@ -3,6 +3,9 @@ import type { MessageProcessorPort } from './queue.port.js';
 import type { Logger } from '../../shared/logger/logger.js';
 import { CURRENT_TERMS_VERSION } from '../terms/constants.js';
 import { env } from '../../shared/config/env.js';
+import { transcribeAudio } from '../ai/nodes/transcribe-audio.js';
+import { interpretConfirmation } from '../ai/nodes/interpret-confirmation.js';
+import { generateClientReply, type BusinessContext } from '../ai/nodes/generate-client-reply.js';
 
 export type MessageProcessor = MessageProcessorPort;
 
@@ -58,7 +61,9 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     }
 
     const user = await activationService.activateUser(code, phone, text);
-    await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: `Opa! 🎉 Código ativado com sucesso!\n\nEu sou a Cleo, sua nova secretária virtual. Vou cuidar dos seus contatos e te ajudar a não perder nenhum cliente.\n\nPra começar, como posso te chamar?` });
+    const userName = user.name || 'parceiro(a)';
+    const introMessage = onboardingService.getIntroMessage(userName);
+    await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: introMessage });
     return;
   }
 
@@ -70,7 +75,17 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
 
   const onboardingComplete = await onboardingService.isComplete(user.id);
   if (!onboardingComplete) {
-    const response = await onboardingService.processMessage(user.id, text);
+    // Se chegou áudio durante onboarding, transcrever antes de processar
+    let messageText = text;
+    if (media?.type === 'audio' && (text === '[áudio]' || !text)) {
+      const transcribed = await transcribeAudio(phone);
+      if (!transcribed) {
+        await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: 'Não consegui entender o áudio. Pode mandar por texto? 😊' });
+        return;
+      }
+      messageText = transcribed;
+    }
+    const response = await onboardingService.processMessage(user.id, messageText);
     await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: response });
     return;
   }
@@ -78,8 +93,8 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
   // Check if user needs to re-accept terms
   const needsConsent = await termsConsentService.requiresConsent(user.id);
   if (needsConsent) {
-    const normalized = text.trim().toLowerCase();
-    if (normalized === 'aceito' || normalized === 'aceitar' || normalized === 'concordo') {
+    const accepted = await interpretConfirmation(container.ai, text);
+    if (accepted) {
       await termsConsentService.recordConsent(user.id, CURRENT_TERMS_VERSION);
       await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: '✅ Termos aceitos! Pode continuar usando normalmente.' });
       return;
@@ -88,14 +103,30 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     await messaging.sendText({
       instance: env.MONITOR_INSTANCE,
       to: phone,
-      text: `Atualizamos nossos Termos de Uso. Para continuar usando a Cleo, acesse e aceite os novos termos: ${env.SITE_URL}/termos\n\nApós aceitar, me mande qualquer mensagem para continuar.`,
+      text: `Atualizamos nossos Termos de Uso. Para continuar usando a Cleo, acesse e aceite os novos termos: ${env.SITE_URL}/termos\n\nApós ler, me mande "aceito" ou "ok" pra continuar.`,
     });
     return;
   }
 
-  // Se o professor mandou mídia (arquivo, imagem, etc.), salvar como material
+  // Se o professor mandou mídia — áudio é transcrito como comando, resto é material
   if (media) {
-    // Buscar ou criar um lead "secretária" para armazenar materiais do professor
+    if (media.type === 'audio') {
+      const transcribed = await transcribeAudio(phone);
+      if (transcribed) {
+        const intent = await assistenteService.recognize(transcribed);
+        if (intent.confidence < 0.7) {
+          await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: 'Não entendi bem o áudio. Pode reformular? 🤔\n\nExemplos:\n• "quem tá sem resposta?"\n• "agenda retorno pro João amanhã"\n• "mostra meus clientes"' });
+          return;
+        }
+        const response = await executeIntent(container, user, intent);
+        await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: response });
+        return;
+      }
+      await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: 'Não consegui entender o áudio. Pode mandar por texto? 😊' });
+      return;
+    }
+
+    // Documentos, imagens e vídeos → salvar como material
     const materialLead = await leadService.findOrCreate(user.id, 'materials', 'Materiais');
     await messageRepo.saveWithMedia({
       leadId: materialLead.id,
@@ -108,8 +139,7 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     });
 
     const mediaLabel = media.type === 'document' ? `📄 ${media.fileName || 'documento'}` :
-      media.type === 'image' ? '🖼️ imagem' :
-      media.type === 'audio' ? '🎵 áudio' : '🎬 vídeo';
+      media.type === 'image' ? '🖼️ imagem' : '🎬 vídeo';
 
     await messaging.sendText({
       instance: env.MONITOR_INSTANCE,
@@ -160,20 +190,42 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
 
   await leadService.updateLastInteraction(lead.id);
 
-  // Fetch business hours for rule evaluation
+  // Buscar dados do negócio para gerar resposta contextual
   const business = await userRepo.getBusiness(user.id);
+  if (!business) return; // Sem dados do negócio = onboarding não completo, não responde
 
-  const isNewLead = !lead.last_interaction;
-  const autoResponse = await ruleEngine.evaluate({
-    user, lead, isNewLead, messageText: text, timestamp: new Date(),
-    businessHoursStart: business?.business_hours_start,
-    businessHoursEnd: business?.business_hours_end,
-  });
+  const now = new Date();
+  const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+  const start = business.business_hours_start || '08:00';
+  const end = business.business_hours_end || '18:00';
+  const isOutsideHours = currentTime < start || currentTime > end;
 
-  if (autoResponse) {
-    await messaging.sendText({ instance, to: phone, text: autoResponse });
-    await messageRepo.save(lead.id, autoResponse, 'outbound');
+  // Verificar se tem mensagem customizada de fora do horário (regra do dono)
+  if (isOutsideHours) {
+    const customRule = await ruleEngine.evaluate({
+      user, lead, isNewLead: !lead.last_interaction, messageText: text, timestamp: now,
+      businessHoursStart: start, businessHoursEnd: end,
+    });
+    if (customRule) {
+      await messaging.sendText({ instance, to: phone, text: customRule });
+      await messageRepo.save(lead.id, customRule, 'outbound');
+      return;
+    }
   }
+
+  // Gerar resposta contextual via IA usando dados do onboarding
+  const businessContext: BusinessContext = {
+    ownerName: user.name || 'o responsável',
+    businessDescription: business.services || business.name || '',
+    targetAudience: business.target_audience || '',
+    toneOfVoice: (business.tone_of_voice as any) || 'friendly_professional',
+    businessHoursStart: start,
+    businessHoursEnd: end,
+  };
+
+  const reply = await generateClientReply(container.ai, businessContext, text, pushName, isOutsideHours);
+  await messaging.sendText({ instance, to: phone, text: reply });
+  await messageRepo.save(lead.id, reply, 'outbound');
 }
 
 async function executeIntent(container: any, user: any, intent: { type: string; entities: Record<string, string>; originalText?: string }): Promise<string> {

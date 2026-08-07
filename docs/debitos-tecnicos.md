@@ -64,6 +64,25 @@ Organizado por prioridade.
 
 ## 🟡 PENDENTES — MELHORIAS PÓS-LANÇAMENTO
 
+### 33. IA nos Fluxos Conversacionais (pré-beta)
+
+**Status:** Em implementação
+**Prioridade:** Alta (qualidade da experiência do primeiro uso)
+**Documentação:** [docs/arquitetura-ia.md](./arquitetura-ia.md)
+
+**O que está sendo feito:**
+- Criar módulo `modules/ai/` com nós, prompts e estado separados
+- Onboarding usa IA para interpretar respostas (rejeita "não sei", ".", etc.)
+- Transcrição de áudio (Whisper) funciona no onboarding E pós-onboarding
+- Aceite de termos interpreta linguagem natural
+- Estrutura preparada para migração futura a LangGraph (cada nó = função pura)
+
+**Estratégia:** Implementar IA agora com nós isolados → validar no beta → migrar para grafos pós-beta.
+
+**Estimativa:** 1 dia
+
+---
+
 ### 14. Error Tracking
 
 **O que falta:** Sentry + uptime monitoring (UptimeRobot).

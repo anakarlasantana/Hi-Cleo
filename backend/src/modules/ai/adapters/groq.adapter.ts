@@ -1,6 +1,6 @@
 import Groq from 'groq-sdk';
-import type { AiPort } from '../../shared/ports/ai.port.js';
-import { env } from '../../shared/config/env.js';
+import type { AiPort } from '../../../shared/ports/ai.port.js';
+import { env } from '../../../shared/config/env.js';
 
 export class GroqAdapter implements AiPort {
   private client: Groq;

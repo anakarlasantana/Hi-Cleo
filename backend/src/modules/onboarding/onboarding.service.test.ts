@@ -61,7 +61,7 @@ describe('OnboardingService', () => {
   beforeEach(() => {
     onboardingRepo = new InMemoryOnboardingRepository();
     ruleRepo = new InMemoryRuleRepository();
-    service = new OnboardingService(onboardingRepo, ruleRepo);
+    service = new OnboardingService(onboardingRepo, ruleRepo, { generateContent: async () => '{"valid": true, "extractedData": {"nome_confirmado": "test"}}' });
   });
 
   describe('confirm_name step', () => {

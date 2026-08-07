@@ -1,5 +1,5 @@
-import type { AiPort } from '../../shared/ports/ai.port.js';
-import type { Logger } from '../../shared/logger/logger.js';
+import type { AiPort } from '../../../shared/ports/ai.port.js';
+import type { Logger } from '../../../shared/logger/logger.js';
 
 export class AiFallbackAdapter implements AiPort {
   private providers: { name: string; adapter: AiPort }[];

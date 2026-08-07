@@ -6,6 +6,7 @@ export type FollowUpStatus = 'pending' | 'sent' | 'cancelled';
 
 export type OnboardingStep =
   | 'awaiting_activation'
+  | 'awaiting_intro_confirmation'
   | 'confirm_name'
   | 'business_type'
   | 'target_audience'

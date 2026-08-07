@@ -79,7 +79,7 @@ export class ActivationService {
       business_hours_end: parsed.horario_fim || '18:00',
     });
 
-    await this.onboardingRepo.create(user.id, 'confirm_name', parsed);
+    await this.onboardingRepo.create(user.id, 'awaiting_intro_confirmation', parsed);
 
     // Registrar consentimento após criação do usuário
     if (this.termsConsentService && termsAccepted) {

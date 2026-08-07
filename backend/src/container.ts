@@ -1,9 +1,9 @@
 import { env } from './shared/config/env.js';
 
 // Adapters
-import { GeminiAdapter } from './modules/assistente/gemini.adapter.js';
-import { GroqAdapter } from './modules/assistente/groq.adapter.js';
-import { AiFallbackAdapter } from './modules/assistente/ai-fallback.adapter.js';
+import { GeminiAdapter } from './modules/ai/adapters/gemini.adapter.js';
+import { GroqAdapter } from './modules/ai/adapters/groq.adapter.js';
+import { AiFallbackAdapter } from './modules/ai/adapters/ai-fallback.adapter.js';
 import { EvolutionApiAdapter } from './modules/evolution/evolution-api.adapter.js';
 import { EvolutionGoAdapter } from './modules/evolution/evolution-go.adapter.js';
 import { SupabaseActivationRepository, SupabaseUserRepository } from './modules/activation/activation.repository.js';
@@ -87,7 +87,7 @@ const inviteRepo = new SupabaseInviteRepository();
 
 const activationService = new ActivationService(activationRepo, userRepo, onboardingRepo, ai);
 const leadService = new LeadService(leadRepo);
-const onboardingService = new OnboardingService(onboardingRepo, ruleRepo);
+const onboardingService = new OnboardingService(onboardingRepo, ruleRepo, ai);
 const ruleEngine = new RuleEngine(ruleRepo);
 const assistenteService = new AssistenteService(ai);
 const planService = new PlanService(planRepo);
