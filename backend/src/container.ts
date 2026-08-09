@@ -58,7 +58,13 @@ if (env.GROQ_API_KEY) {
   providers.push({ name: 'Groq', adapter: new GroqAdapter() });
 }
 
-const ai = new AiFallbackAdapter(providers, logger);
+const ai = new AiFallbackAdapter(providers, logger, async (message) => {
+  if (env.MONITOR_ADMIN_PHONE) {
+    try {
+      await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: env.MONITOR_ADMIN_PHONE, text: message });
+    } catch { /* se messaging também falhou, só loga */ }
+  }
+}, env.AI_DAILY_CALL_BUDGET);
 
 const messaging = env.MESSAGING_PROVIDER === 'evolution-go'
   ? new EvolutionGoAdapter(env.EVOLUTION_API_URL, env.EVOLUTION_API_KEY)

@@ -16,6 +16,9 @@ const envSchema = z.object({
   // Groq (fallback de IA)
   GROQ_API_KEY: z.string().optional(),
 
+  // IA — Orçamento diário (alerta preventivo, não bloqueia)
+  AI_DAILY_CALL_BUDGET: z.coerce.number().default(5000),
+
   // Messaging Provider
   MESSAGING_PROVIDER: z.enum(['evolution-api', 'evolution-go']).default('evolution-api'),
 

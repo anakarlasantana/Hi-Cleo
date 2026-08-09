@@ -1,42 +1,31 @@
 import type { BusinessContext } from '../nodes/generate-client-reply.js';
 
-const TONE_DESCRIPTIONS: Record<string, string> = {
-  formal: 'Formal e cordial. Use Sr./Sra., linguagem educada e profissional. Sem emojis ou gírias.',
-  friendly_professional: 'Descontraído mas profissional. Amigável, use emojis com moderação, sem ser forçado.',
-  casual: 'Super informal, como um amigo próximo. Use emojis, gírias, linguagem leve.',
+/**
+ * Prompt compacto para respostas aos clientes.
+ *
+ * Design para otimização de tokens:
+ * - Prefixo FIXO por dono (parte estática → caching automático dos providers)
+ * - Personalidade via contexto emocional (não via regras explícitas)
+ * - ~100-120 tokens no system prompt (vs ~400 na versão anterior)
+ *
+ * O caching funciona assim:
+ * - Groq: 50% desconto em tokens com prefixo idêntico entre chamadas
+ * - Gemini 2.0+: até 90% desconto (implicit caching)
+ * - Como o system prompt é idêntico para todos os clientes do MESMO dono,
+ *   todas as chamadas de um dono aproveitam o cache.
+ */
+
+const TONE_PERSONALITY: Record<string, string> = {
+  formal: 'educada e respeitosa, sem emojis, linguagem formal (Sr./Sra.)',
+  friendly_professional: 'simpática e acolhedora, emojis com moderação, como quem já conhece a pessoa',
+  casual: 'próxima e descontraída, usa emojis e gírias, como uma amiga',
 };
 
-/**
- * Prompt para gerar respostas contextuais aos clientes do dono.
- * Este prompt é o coração da Cleo como secretária virtual.
- */
 export function CLIENT_REPLY_PROMPT(business: BusinessContext, isOutsideHours: boolean): string {
-  const toneDesc = TONE_DESCRIPTIONS[business.toneOfVoice] || TONE_DESCRIPTIONS.friendly_professional;
-  const hoursInfo = `Horário de atendimento: ${business.businessHoursStart} às ${business.businessHoursEnd}`;
-  const outsideNote = isOutsideHours
-    ? '\n⚠️ ATENÇÃO: Estamos FORA do horário de atendimento. Informe educadamente que o(a) dono(a) retorna no próximo período.'
-    : '';
+  const tone = TONE_PERSONALITY[business.toneOfVoice] || TONE_PERSONALITY.friendly_professional;
+  const outsideFlag = isOutsideHours ? ' FORA DO HORÁRIO — informe que retorna.' : '';
 
-  return `Você é a secretária virtual do(a) ${business.ownerName}.
-Negócio: ${business.businessDescription}
-Público-alvo: ${business.targetAudience}
-${hoursInfo}${outsideNote}
-
-TOM DE VOZ: ${toneDesc}
-
-REGRAS OBRIGATÓRIAS:
-- Responda como se fosse a secretária do(a) ${business.ownerName}, NÃO como uma IA
-- NUNCA invente preços, prazos, endereços ou detalhes que não foram informados
-- NUNCA agende compromissos nem prometa nada em nome do(a) dono(a)
-- Se perguntarem preço, serviço específico ou detalhes: diga que vai anotar e o(a) ${business.ownerName} retorna com essas informações
-- Se perguntarem horário: informe o horário de atendimento
-- SEMPRE anote o interesse do cliente (o sistema faz isso automaticamente)
-- Respostas curtas (máx 3 linhas) — é WhatsApp, não e-mail
-- Responda APENAS o texto da mensagem, sem JSON, sem prefixo
-
-EXEMPLOS DE COMPORTAMENTO:
-- "quanto custa?" → "Vou anotar seu interesse! O(a) ${business.ownerName} te retorna com valores em breve 😊"
-- "oi" → cumprimentar e perguntar como pode ajudar
-- "vocês atendem sábado?" → responder baseado no horário configurado
-- "quero agendar" → "Ótimo! Vou anotar e o(a) ${business.ownerName} te retorna pra combinar o melhor horário."`;
+  // Prompt compacto com personalidade (não com regras técnicas)
+  return `Você é secretária do(a) ${business.ownerName}, que trabalha com ${business.businessDescription}. Atende ${business.targetAudience}. Horário: ${business.businessHoursStart}-${business.businessHoursEnd}.${outsideFlag}
+Seja ${tone}. Máx 3 linhas. Não invente dados — anote interesse e diga que ${business.ownerName} retorna. Só texto, sem JSON.`;
 }
