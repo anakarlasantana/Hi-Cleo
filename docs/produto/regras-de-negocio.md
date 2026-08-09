@@ -2,18 +2,7 @@
 
 Documento central com todas as regras de negócio, fluxos e requisitos do produto.
 
----
-
-## 1. Visão Geral do Produto
-
-A Cleo é uma secretária virtual de WhatsApp para profissionais autônomos e pequenas empresas. O diferencial é que tudo funciona dentro do WhatsApp — sem painel web obrigatório.
-
-**Funcionalidades core:**
-- Captura automática de contatos (leads)
-- Acompanhamento e follow-up automático
-- Lembretes de retorno
-- Respostas automáticas fora do horário
-- Consultas por mensagem ("quem tá sem resposta?")
+> **Visão geral do produto** (o que é, problema, solução, público, stack): ver [visao-geral.md](./visao-geral.md)
 
 ---
 

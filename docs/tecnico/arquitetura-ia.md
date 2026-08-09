@@ -66,7 +66,7 @@ backend/src/modules/ai/
 │   ├── generate-client-reply.ts # Gera resposta contextual para cliente do dono
 │   └── interpret-confirmation.ts # Interpreta confirmação/aceite genérico
 ├── adapters/                    # Providers de IA
-│   ├── gemini.adapter.ts        # Google Gemini 1.5 Flash
+│   ├── gemini.adapter.ts        # Google Gemini 2.0 Flash
 │   ├── groq.adapter.ts          # Groq (Llama 3.1 + Whisper)
 │   └── ai-fallback.adapter.ts   # Chain de fallback (Gemini → Groq)
 └── index.ts                     # Re-exporta tudo para facilitar imports
@@ -264,3 +264,91 @@ O adapter Groq implementa via Whisper.
 | Manter AiFallbackAdapter | vs LangChain model com fallback | Manter adapter próprio (menos acoplamento) |
 | Tabela de estado | Migrar `onboarding_states` vs nova tabela | Nova tabela `conversation_checkpoints` (schema LangGraph) |
 | Observabilidade | LangSmith vs custom logging | Custom logging no beta, LangSmith quando escalar |
+
+---
+
+## Otimização de Tokens
+
+### Problema
+
+Cada mensagem de cliente gera 1 chamada de IA. Com 20 donos × 30 clientes/dia = 600 chamadas/dia.
+Se cada chamada usa ~400 tokens de prompt, isso queima tokens rápido e custa mais.
+
+### Estratégia em 2 fases
+
+#### Fase 1 — Beta: Prompt compacto + Caching automático
+
+**Princípio:** menos tokens ≠ menos qualidade. É remover redundância, não contexto útil.
+
+1. **Perfil semântico compacto** (~80-120 tokens)
+   - Em vez de prompt verboso com regras repetidas, usar perfil denso com personalidade
+   - Dados do `businesses` (já coletados no onboarding) condensados em 1-2 linhas
+
+2. **Estrutura fixa para caching**
+   - O system prompt por dono deve ter prefixo idêntico entre chamadas
+   - Providers aplicam desconto automaticamente:
+     - Groq: 50% nos tokens cacheados
+     - Gemini 2.0+: até 90% (implicit caching)
+   - Não requer código extra — só manter o prompt estável
+
+3. **Sem histórico de conversa**
+   - Cada resposta ao cliente é isolada (sem enviar mensagens anteriores)
+   - Funciona porque a Cleo é secretária (anota e repassa), não consultora
+
+**Resultado esperado:** ~150 tokens/chamada × 600 chamadas/dia = ~90K tokens/dia = **~R$0,05/dia** no Gemini Flash
+
+#### Fase 2 — Produção: Memória por lead
+
+1. **Tabela `lead_memory`**
+   ```sql
+   CREATE TABLE lead_memory (
+     id UUID PRIMARY KEY,
+     lead_id UUID REFERENCES leads(id),
+     summary TEXT,        -- "Interessada em limpeza de pele, perguntou preço dia 10/08"
+     interaction_count INT DEFAULT 0,
+     updated_at TIMESTAMPTZ
+   );
+   ```
+
+2. **Injeção contextual**
+   - Quando o mesmo cliente manda mensagem de novo, injeta o resumo (~30-50 tokens)
+   - Cleo responde de forma personalizada sem custo significativo
+
+3. **Sumarização progressiva**
+   - A cada 5 interações com o mesmo lead, IA gera novo resumo
+   - Descarta interações antigas, mantém só o resumo atualizado
+   - Custo: 1 chamada extra a cada 5 (amortizado)
+
+4. **Context caching explícito (Gemini)**
+   - Para donos com alto volume (>100 clientes/dia)
+   - Cache do perfil do dono por 1h = 90% desconto em todas as chamadas daquela hora
+
+### Comparativo de custo
+
+| Cenário | Tokens/chamada | Custo/dia (600 chamadas) | Custo/mês |
+|---------|---------------|--------------------------|-----------|
+| Sem otimização (prompt verboso) | ~500 | ~R$0,15 | ~R$4,50 |
+| Perfil compacto (Fase 1) | ~150 | ~R$0,05 | ~R$1,50 |
+| + Caching automático | ~150 (cobra 50%) | ~R$0,025 | ~R$0,75 |
+| + Memória por lead (Fase 2) | ~180 (cobra 50%) | ~R$0,03 | ~R$0,90 |
+
+**Para 100 donos em produção:** Fase 1 = ~R$15/mês | Fase 2 = ~R$9/mês
+
+### Monitoramento e Alertas
+
+- Contador de chamadas diárias por provider (Redis)
+- Alerta ao admin (via WhatsApp) quando:
+  - Provider retorna 429 (rate limit atingido)
+  - Todos os providers falham (AI_ALL_PROVIDERS_FAILED)
+  - Uso diário atinge 80% do threshold configurado
+- Dashboard simples (futuro): custo estimado por dono
+
+---
+
+## Personalidade da Cleo
+
+> Documentação completa de personalidade, tom de voz e cenários de comportamento:
+> ver [personalidade-cleo.md](../produto/personalidade-cleo.md)
+
+A personalidade é transmitida via prompts compactos com contexto emocional — não via regras explícitas longas.
+Princípio: dar à IA o **contexto do negócio + tom + público** e deixar ela adaptar naturalmente.

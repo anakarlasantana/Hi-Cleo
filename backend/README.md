@@ -3,8 +3,10 @@
 API do CRM WhatsApp-first com IA (Gemini), gestão de leads, pagamentos e envio de materiais.
 
 > **Docs complementares:**
-> - [Ideia do produto](../docs/ideia.md) — visão geral e modelo de negócio
-> - [Débitos técnicos](../docs/debitos-tecnicos.md) — roadmap e pendências
+> - [Visão do produto](../docs/produto/visao-geral.md) — o que é, problema, solução, stack
+> - [Arquitetura de IA](../docs/tecnico/arquitetura-ia.md) — módulo ai/, nós, prompts, otimização de tokens
+> - [Personalidade da Cleo](../docs/produto/personalidade-cleo.md) — como a Cleo se comporta e fala
+> - [Débitos técnicos](../docs/tecnico/debitos-tecnicos.md) — roadmap e pendências
 
 ---
 

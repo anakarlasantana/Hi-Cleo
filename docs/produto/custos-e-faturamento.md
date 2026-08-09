@@ -73,36 +73,31 @@ As taxas são por venda, com recebimento na hora:
 
 | Tier | Limite | Custo | Usuários suportados |
 |------|--------|-------|---------------------|
-| Free | ~1.500 req/dia, 15 req/min (Flash) | R$0 | ~30-50 usuários (limitado por RPM) |
-| Tier 1 (pago) | 150+ req/min | ~$0.075/1M tokens input (Flash) | 50-200 usuários |
+| Free | 15 req/min — **insuficiente para beta** | R$0 | ~5 usuários (rate limit frequente) |
+| Pay-as-you-go ($10 créditos iniciais) | 2000 req/min (Gemini 2.0 Flash) | ~$0.10/1M tokens input | 100+ usuários |
 
-> ⚠️ **Atenção:** O limite real no free tier é o RPM (15 req/min), não o RPD. Em horários de pico (manhã, noite), 15 req/min pode ser gargalo com 30+ usuários ativos simultaneamente.
+> ⚠️ **O free tier não sustenta o beta.** Com 20 donos e 600 chamadas/dia, estoura o rate limit.
+> Solução: ativar billing no Google AI Studio (pay-as-you-go). Custo: ~R$2-5/mês para 20 donos.
 
 **Uso médio por usuário/dia:** ~18 chamadas Gemini
 - Interpretar intenções (texto): ~10
-- Transcrição + intenção (áudio, camada 1): ~3
-- Resumos contextuais: ~3
-- Notificações proativas: ~2
-
-**Cálculo conservador:** 15 req/min × 60 min × 12h ativas = ~10.800 req/dia útil. Dividido por 18 req/usuário = **~50 usuários no free tier** (mas com possíveis 429 errors em picos).
+- Respostas contextuais aos clientes: ~5
+- Transcrição + intenção (áudio): ~3
 
 ### IA Fallback — Groq API
 
 | Tier | Limite | Custo | Quando usa |
 |------|--------|-------|------------|
-| Free | 30 req/min, 14.400 req/dia | R$0 | Quando Gemini falha (rate limit, erro) |
+| Free | 30 req/min | R$0 | Quando Gemini falha |
+| Developer (pay-as-you-go) | 7000 req/min | $0.05/1M tokens | Produção |
 
-O sistema usa Groq (Llama 3.1 8B) como fallback automático quando Gemini está indisponível. Custo zero no free tier, suficiente como backup.
+### Transcrição de Áudio — Groq Whisper
 
-### Transcrição de Áudio
+| Status | Custo | Limite |
+|--------|-------|--------|
+| ✅ Implementado | $0.111/hora áudio | 20 req/min (free) |
 
-| Status | Situação atual | Custo |
-|--------|---------------|-------|
-| Não implementado | Áudios são salvos como material, sem transcrição | R$0 |
-
-> ℹ️ Transcrição de áudio (Whisper ou Gemini multimodal) está planejada mas **ainda não implementada**. Quando for, o custo será:
-> - Gemini multimodal (incluído no free tier): R$0
-> - Whisper fallback (se implementar): ~$0.006/min (~R$0.03/min)
+> Transcrição funciona no onboarding e pós-onboarding. Requer `GROQ_API_KEY` configurada.
 
 ### Supabase
 

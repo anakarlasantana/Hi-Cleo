@@ -75,11 +75,63 @@ Organizado por prioridade.
 - Onboarding usa IA para interpretar respostas (rejeita "não sei", ".", etc.)
 - Transcrição de áudio (Whisper) funciona no onboarding E pós-onboarding
 - Aceite de termos interpreta linguagem natural
+- Respostas contextuais e humanas aos clientes do dono (usando dados do onboarding)
+- Prompts compactos com personalidade (eficientes + naturais)
 - Estrutura preparada para migração futura a LangGraph (cada nó = função pura)
 
 **Estratégia:** Implementar IA agora com nós isolados → validar no beta → migrar para grafos pós-beta.
 
 **Estimativa:** 1 dia
+
+---
+
+### 34. Otimização de Tokens (beta → produção)
+
+**Status:** Planejado
+**Prioridade:** Média (custo cresce com usuários)
+**Documentação:** [docs/arquitetura-ia.md](./arquitetura-ia.md#otimização-de-tokens)
+
+**Estratégia em 2 fases:**
+
+**Fase 1 — Beta (agora):**
+- Prompts compactos com perfil semântico (~120 tokens em vez de ~400)
+- Estrutura de prompt fixa por dono (aproveita caching automático: Groq 50%, Gemini 90%)
+- Sem histórico de conversa por chamada (cada resposta é isolada)
+- Monitoramento de uso + alerta ao admin quando IA falha ou quota baixa
+
+**Fase 2 — Produção:**
+- Memória por lead (`lead_memory`) — resumo semântico do que já conversou
+- Sumarização progressiva (a cada N interações, IA resume e descarta histórico)
+- Context caching explícito do Gemini para donos com alto volume
+- Resultado esperado: **70-90% menos custo** vs abordagem ingênua
+
+**Estimativa:** Fase 1 = 0.5 dia | Fase 2 = 2 dias
+
+**Referências:**
+- [Mem0 — Token Optimization Playbook](https://mem0.ai/blog/the-2026-token-optimization-playbook-cut-ai-agent-memory-costs-3–4x)
+- [Groq Prompt Caching](https://console.groq.com/docs/prompt-caching)
+- [Gemini Context Caching](https://ai.google.dev/gemini-api/docs/caching)
+
+---
+
+### 35. Memória por Lead (produção)
+
+**Status:** Planejado
+**Prioridade:** Média (qualidade + personalização)
+**Quando:** Após beta validar que clientes interagem mais de 1 vez
+
+**O que faz:**
+- Tabela `lead_memory` com resumo semântico por lead (ex: "Interessada em limpeza de pele, perguntou preço dia 10/08")
+- Injetado no prompt quando o mesmo cliente volta a mandar mensagem
+- Cleo responde de forma personalizada ("Oi de novo! A Ana já tá preparando aquela info pra você 😊")
+- Sumarização progressiva: a cada 5 interações, IA gera novo resumo
+
+**Impacto:**
+- Cliente se sente lembrado e ouvido (diferencial vs bots genéricos)
+- Custo: +30-50 tokens por chamada (compensado pela economia do caching)
+- Cleo fica mais "humana" a cada interação
+
+**Estimativa:** 2 dias
 
 ---
 
@@ -109,167 +161,23 @@ Organizado por prioridade.
 
 **Prioridade:** Média (melhoria de arquitetura, não bloqueia funcionalidade)
 **Quando:** Pós-beta — após validação com usuários reais
+**Documentação completa:** [arquitetura-ia.md — Fluxo de Migração](./arquitetura-ia.md#fluxo-de-migração-beta--langgraph)
 
 **Decisão estratégica:** Implementar APÓS o lançamento beta, não antes.
 
 **Motivos para esperar:**
-1. **Risco de regressão** — trocar o motor de conversação antes do beta pode quebrar fluxos já funcionais (onboarding, follow-up, intents) sem tempo para detectar e corrigir
-2. **Validação primeiro** — o beta vai mostrar quais fluxos realmente precisam de mais sofisticação com dados reais de uso
-3. **Escopo controlado** — a arquitetura atual (services + adapters de IA) já entrega o necessário para os primeiros clientes
-4. **Migração incremental** — com LangGraph, cada fluxo pode ser migrado isoladamente sem reescrever tudo de uma vez
+1. Risco de regressão — trocar o motor antes do beta pode quebrar fluxos funcionais
+2. Validação primeiro — o beta mostra quais fluxos precisam de grafo
+3. Escopo controlado — nós isolados já resolvem os problemas atuais
+4. Migração incremental — cada fluxo pode ser migrado isoladamente
 
-**Roadmap:**
-```
-Beta → feedback dos primeiros usuários → identifica gargalos nos fluxos → migra pro LangGraph por grafo
-```
+**Pré-requisitos já atendidos:**
+- ✅ Módulo `ai/nodes/` com funções puras (migração 1:1 para nós LangGraph)
+- ✅ Prompts separados em `ai/prompts/` (viram system prompts dos nós)
+- ✅ Estado tipado em `ai/state.ts` (vira Annotation do LangGraph)
+- ✅ AiFallbackAdapter desacoplado (funciona dentro dos nós)
 
-**Pré-requisitos já atendidos (validados para migração futura):**
-- ✅ Estado da conversa bem estruturado no banco (`onboarding_states` com step + data JSON)
-- ✅ Prompts organizados e separados da lógica (INTENT_PROMPT isolado no `assistente.service.ts`)
-- ✅ Adapter pattern para IA (AiFallbackAdapter: Gemini → Groq) desacoplado dos services
-- ✅ Steps do onboarding são funções puras que recebem state e retornam resposta (migração 1:1 para nós)
-- ✅ Intent recognition já retorna tipo + confidence + entities (compatível com router pattern do LangGraph)
-
-**O que monitorar durante o beta para priorizar a migração:**
-- Usuários travando em steps do onboarding (indica que fluxo linear é insuficiente)
-- Intents com confidence < 0.7 frequentes (indica que prompt monolítico precisa ser especializado)
-- Novos fluxos pedidos que não cabem no switch/case atual
-- Dificuldade de adicionar features conversacionais novas sem regredir as existentes
-
-**Contexto:** Hoje os fluxos conversacionais estão espalhados em switch/case e if/else:
-- `onboarding.service.ts` — switch com 7 steps hardcoded
-- `assistente.service.ts` — prompt monolítico para reconhecer 15 intents + switch gigante no `executeIntent`
-- `message.processor.ts` — orquestra com if/else sequencial (ativação → onboarding → termos → mídia → intent)
-
-Com a adição de novos fluxos (collaborator onboarding, upgrade via Cleo, cancelamento conversacional, FAQ contextual), o código fica progressivamente mais difícil de manter, testar e evoluir.
-
-**Problema adicional:** A abordagem atual de "1 prompt gigante para tudo" limita a qualidade da IA — prompts menores e especializados por nó produzem respostas melhores.
-
-**Proposta:** Substituir a lógica de orquestração por **grafos de agentes usando LangGraph** (`@langchain/langgraph`).
-
-**Por que LangGraph e não State Machine simples (XState, custom)?**
-
-| Critério | State Machine | LangGraph |
-|----------|--------------|-----------|
-| Nós podem chamar IA | Não (precisa adaptar) | Sim (nativo) |
-| Estado persistido entre mensagens | Manual (tabela) | Checkpointer embutido |
-| Edges condicionais por resposta IA | Não | Sim |
-| Mistura lógica determinística + IA | Difícil | Projetado pra isso |
-| Streaming/observabilidade | Não | Sim |
-| TypeScript nativo | XState sim, custom sim | Sim (`@langchain/langgraph`) |
-| Curva de aprendizado | Baixa | Média |
-| Overkill pra fluxos simples? | Não | Levemente (mas escala bem) |
-
-**Conclusão:** State machine resolve o problema de organização, mas LangGraph resolve organização + qualidade de IA + persistência + observabilidade. Como a Cleo é IA-driven, o ganho é substancial.
-
-**Arquitetura proposta:**
-
-```
-src/modules/graphs/
-├── graphs.port.ts              # Interface do graph engine
-├── state.ts                    # ConversationState tipado (shared entre grafos)
-├── checkpointer.adapter.ts    # Persiste estado no Supabase (implementa BaseCheckpointSaver)
-├── onboarding.graph.ts        # Grafo: owner onboarding (7 nós)
-├── assistant.graph.ts         # Grafo: interpretação de comandos (router → tool nodes)
-├── cancellation.graph.ts      # Grafo: cancelamento conversacional
-└── collaborator.graph.ts      # Grafo: onboarding leve de colaborador
-```
-
-**Exemplo — Grafo de Onboarding:**
-
-```typescript
-import { StateGraph, Annotation, END } from '@langchain/langgraph';
-
-const OnboardingState = Annotation.Root({
-  userId: Annotation<string>,
-  step: Annotation<string>,
-  messages: Annotation<string[]>,
-  data: Annotation<Record<string, string>>,
-  response: Annotation<string>,
-});
-
-const onboardingGraph = new StateGraph(OnboardingState)
-  .addNode('confirm_name', confirmNameNode)
-  .addNode('business_type', businessTypeNode)
-  .addNode('target_audience', targetAudienceNode)
-  .addNode('tone_of_voice', toneOfVoiceNode)
-  .addNode('business_hours', businessHoursNode)
-  .addNode('outside_hours', outsideHoursNode)
-  .addNode('confirm_summary', confirmSummaryNode)
-  .addNode('save_profile', saveProfileNode)
-  .addEdge('confirm_name', 'business_type')
-  .addEdge('business_type', 'target_audience')
-  .addEdge('target_audience', 'tone_of_voice')
-  .addEdge('tone_of_voice', 'business_hours')
-  .addEdge('business_hours', 'outside_hours')
-  .addEdge('outside_hours', 'confirm_summary')
-  .addConditionalEdges('confirm_summary', routeConfirmation, {
-    confirmed: 'save_profile',
-    retry: 'business_type',
-  })
-  .addEdge('save_profile', END)
-  .compile({ checkpointer }); // Persiste estado automaticamente
-```
-
-**Exemplo — Grafo do Assistente (Router Pattern):**
-
-```typescript
-const assistantGraph = new StateGraph(AssistantState)
-  .addNode('classify_intent', classifyIntentNode)   // IA: prompt pequeno e focado
-  .addNode('list_leads', listLeadsNode)             // Determinístico: query no banco
-  .addNode('schedule_followup', scheduleNode)       // Determinístico + validação
-  .addNode('send_material', sendMaterialNode)       // Determinístico: forward
-  .addNode('configure_rule', configureNode)         // Misto: IA parseia + salva
-  .addNode('fallback', fallbackNode)                // Mensagem de "não entendi"
-  .addConditionalEdges('classify_intent', routeByIntent, {
-    list_leads: 'list_leads',
-    schedule_followup: 'schedule_followup',
-    send_material: 'send_material',
-    configure_rule: 'configure_rule',
-    unknown: 'fallback',
-  })
-  .compile({ checkpointer });
-```
-
-**Benefícios concretos para o Hi Cleo:**
-
-1. **Prompts menores e melhores** — cada nó tem prompt especializado (melhor que 1 prompt gigante)
-2. **Estado persistido nativamente** — checkpointer salva/retoma conversa no Supabase (substitui `onboarding_states`)
-3. **Adicionar fluxo = criar grafo** — sem mexer no processor, sem if/else
-4. **Testabilidade** — cada nó é uma função pura testável isoladamente
-5. **Edges condicionais inteligentes** — "se confidence < 0.7, vai pro fallback" fica declarativo
-6. **Fallback chain mantido** — AiFallbackAdapter (Gemini → Groq) continua funcionando dentro dos nós
-7. **Observabilidade** — LangSmith (opcional) mostra trace de cada mensagem processada
-8. **Base para features futuras** — FAQ contextual, agendamento conversacional, upgrade via chat
-
-**Plano de migração (incremental, sem quebra):**
-
-| Fase | O que | Estimativa |
-|------|-------|-----------|
-| 1 | Instalar `@langchain/langgraph` + `@langchain/google-genai`, criar `graphs/` module e checkpointer Supabase | 0.5 dia |
-| 2 | Implementar `onboarding.graph.ts` — migrar os 7 steps para nós do grafo | 1 dia |
-| 3 | Swap no `message.processor.ts`: trocar `onboardingService.processMessage()` por `onboardingGraph.invoke()` | 0.5 dia |
-| 4 | Implementar `assistant.graph.ts` — router de intents com nós especializados | 1.5 dia |
-| 5 | Swap no processor: trocar `assistenteService.recognize()` + `executeIntent()` pelo grafo | 0.5 dia |
-| 6 | Criar grafos adicionais (cancelamento, collaborator) | 1 dia |
-| 7 | Remover código legado (switch/case antigo) e atualizar testes | 1 dia |
-
-**Estimativa total:** 5-6 dias (pode ser feito em fases, cada uma entrega valor independente)
-
-**Dependências npm:**
-```bash
-npm install @langchain/langgraph @langchain/google-genai @langchain/core
-```
-
-**Decisões a tomar antes de implementar:**
-- Checkpointer: usar Supabase (PostgreSQL) direto ou Redis? → Supabase (já é o banco, persiste entre deploys)
-- Manter `AiFallbackAdapter` ou trocar por LangChain model com fallback? → Manter adapter próprio (menos acoplamento)
-- Migração da tabela `onboarding_states` → `conversation_checkpoints` ou reusar a mesma tabela com schema novo?
-
-**Referências:**
-- [LangGraph JS/TS — Docs oficiais](https://docs.langchain.com/oss/javascript/langgraph/overview)
-- [LangGraphJS — GitHub](https://github.com/langchain-ai/langgraphjs)
-- [LangGraph v1 (stable)](https://docs.langchain.com/oss/javascript/releases/langgraph-v1)
+**Estimativa total:** 5-6 dias (incremental, cada fase entrega valor)
 
 ---
 

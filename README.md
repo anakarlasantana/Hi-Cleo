@@ -131,9 +131,8 @@ A aplicação implementa múltiplas camadas de segurança:
 
 ## Documentação
 
-- [Débitos Técnicos](docs/debitos-tecnicos.md) — pendências, roadmap e fluxos futuros
+- [Índice da Documentação](docs/README.md) — ponto de entrada para toda a documentação
 - [Backend README](backend/README.md) — arquitetura, módulos e regras de desenvolvimento
-- [Ideia do Produto](docs/ideia.md) — visão, problema e solução
 
 ---
 
