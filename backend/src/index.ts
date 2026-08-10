@@ -1,3 +1,6 @@
+import { initSentry, Sentry } from './shared/config/sentry.js';
+initSentry();
+
 import express from 'express';
 import cors from 'cors';
 import { env } from './shared/config/env.js';
@@ -39,8 +42,38 @@ app.use('/api', express.json({ limit: '50kb' }));
 app.use(express.json({ limit: '100kb' }));
 
 // --- Health check (sem rate limit) ---
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', env: env.NODE_ENV });
+app.get('/health', async (_req, res) => {
+  const checks: Record<string, 'ok' | 'error'> = { server: 'ok' };
+
+  // Verificar Supabase (DB)
+  try {
+    const { supabase } = await import('./shared/config/supabase.js');
+    const { error } = await supabase.from('plan_limits').select('id').limit(1);
+    checks.database = error ? 'error' : 'ok';
+  } catch {
+    checks.database = 'error';
+  }
+
+  // Verificar Redis
+  try {
+    const IORedis = (await import('ioredis')).default;
+    const redis = new IORedis({ host: env.REDIS_HOST, port: env.REDIS_PORT, maxRetriesPerRequest: 1, connectTimeout: 2000 });
+    await redis.ping();
+    await redis.quit();
+    checks.redis = 'ok';
+  } catch {
+    checks.redis = 'error';
+  }
+
+  const allHealthy = Object.values(checks).every((v) => v === 'ok');
+  const statusCode = allHealthy ? 200 : 503;
+
+  res.status(statusCode).json({
+    status: allHealthy ? 'healthy' : 'degraded',
+    timestamp: new Date().toISOString(),
+    env: env.NODE_ENV,
+    checks,
+  });
 });
 
 // --- Webhooks (sem rate limit, validação por origem/assinatura) ---
@@ -91,6 +124,22 @@ const shutdown = async () => {
 
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
+
+// Capturar erros não tratados no Sentry
+if (env.SENTRY_DSN) {
+  Sentry.setupExpressErrorHandler(app);
+}
+
+// Capturar unhandled rejections e uncaught exceptions
+process.on('unhandledRejection', (reason) => {
+  logger.error({ err: reason }, 'Unhandled rejection');
+  Sentry.captureException(reason);
+});
+process.on('uncaughtException', (error) => {
+  logger.fatal({ err: error }, 'Uncaught exception');
+  Sentry.captureException(error);
+  shutdown();
+});
 
 app.listen(env.PORT, () => {
   logger.info({ port: env.PORT, webhook: env.WEBHOOK_URL, provider: env.MESSAGING_PROVIDER }, '🚀 Backend rodando');

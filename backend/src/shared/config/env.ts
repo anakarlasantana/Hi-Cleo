@@ -69,6 +69,9 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
   RATE_LIMIT_GLOBAL: z.coerce.number().default(200),
   RATE_LIMIT_PAYMENTS: z.coerce.number().default(5),
+
+  // Sentry (opcional — error tracking)
+  SENTRY_DSN: z.string().url().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
