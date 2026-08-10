@@ -169,6 +169,94 @@ Organizado por prioridade.
 
 ---
 
+## 🟠 IMPORTANTES — QUALIDADE DA EXPERIÊNCIA
+
+### 36. Memória de Conversa por Lead (contexto multi-turno)
+
+**Status:** Não implementado
+**Prioridade:** Alta (experiência do cliente)
+**Quando:** Primeiras semanas do beta
+
+**Problema atual:** A IA só vê a mensagem ATUAL do cliente. Se o cliente mandou "quanto custa?" ontem e hoje manda "e o prazo?", a Cleo não sabe do que se trata — pode repetir saudação ou pedir contexto novamente.
+
+**Solução:**
+- Carregar últimas 3-5 mensagens (inbound + outbound) do lead antes de gerar resposta
+- Injetar como contexto no prompt: `"Histórico recente: [mensagens]"`
+- Alternativa avançada: tabela `lead_memory` com resumo semântico (mais econômico em tokens)
+
+**Impacto:** Cliente se sente ouvido e não precisa repetir contexto. Diferencial vs bots genéricos.
+**Estimativa:** 3-4h (básico com últimas N mensagens) | 2 dias (com sumarização semântica)
+
+---
+
+### 37. Horário de Atendimento com Timezone e Fins de Semana
+
+**Status:** Funcional mas limitado
+**Prioridade:** Média
+
+**Problema atual:** Comparação de horário é por string (`"08:00" < "18:00"`) sem considerar:
+- Timezone do servidor vs timezone do dono
+- Fins de semana (sábado/domingo sempre tratados como dia útil)
+- Feriados
+
+**Solução:**
+- Adicionar campo `timezone` e `business_days` (array: `['mon','tue',...,'sat']`) no onboarding
+- Usar `date-fns-tz` para comparação correta
+- Default: Seg-Sex, timezone America/Sao_Paulo
+
+**Estimativa:** 1-2h
+
+---
+
+### 38. Seleção de Material por Nome
+
+**Status:** Funciona mas sempre manda o último
+**Prioridade:** Média
+
+**Problema atual:** Comando "manda material pro João" sempre envia o ÚLTIMO material salvo. Dono com vários arquivos não consegue escolher qual enviar.
+
+**Solução:**
+- Listar materiais disponíveis quando há mais de 1
+- Permitir busca por nome do arquivo: "manda o portfólio pro João"
+- Se ambíguo, perguntar: "Tenho 3 materiais. Qual? 1) portfólio.pdf 2) tabela.pdf 3) contrato.pdf"
+
+**Estimativa:** 1-2h
+
+---
+
+### 39. Edição Parcial do Onboarding (sem resetar tudo)
+
+**Status:** Funciona mas UX ruim
+**Prioridade:** Média
+
+**Problema atual:** Quando o usuário rejeita o resumo final do onboarding ("não, quero mudar o tom"), o sistema reseta para o step `business_type` — obrigando a re-responder 5 perguntas ao invés de editar apenas 1 campo.
+
+**Solução:**
+- Interpretar via IA qual campo o usuário quer ajustar: "quero mudar o horário" → volta só pro step `business_hours`
+- Após editar 1 campo, re-exibe o resumo com o valor atualizado
+- Comandos: "muda nome", "muda horário", "muda tom", etc.
+
+**Estimativa:** 2-3h
+
+---
+
+### 40. Timeout de Onboarding Abandonado
+
+**Status:** Não implementado
+**Prioridade:** Média
+
+**Problema atual:** Se o usuário inicia o onboarding mas para no step 3 e nunca mais volta, o estado fica preso. Na próxima mensagem (pode ser dias depois), a Cleo continua perguntando de onde parou — sem contexto do que já perguntou.
+
+**Solução:**
+- Cron job que verifica onboardings com `updated_at > 48h` e `step != completed`
+- Opção A: Enviar lembrete amigável: "Ei, parece que ficou algo pendente no setup. Quer continuar?"
+- Opção B: Resetar automaticamente e permitir re-início
+- Adicionar comando "recomeçar" para reset manual
+
+**Estimativa:** 1h
+
+---
+
 ## ⚪ FUTURO — FLUXOS AVANÇADOS
 
 ### 32. Conversation Flows Engine (LangGraph — Grafos de Agentes)
@@ -251,9 +339,10 @@ Organizado por prioridade.
 
 | Status | Itens |
 |--------|-------|
-| ✅ Concluídos | #1-11, #13, #17, #18, #20, #21, #30, #31, #33-37 |
+| ✅ Concluídos | #1-11, #13, #14 (código), #17, #18, #20, #21, #30, #31, #33-35 |
 | 🔴 Bloqueante | #22 (deploy) |
-| 🟡 Pós-lançamento | #14, #16, #19 |
+| 🟠 Importantes | #36 (memória conversa), #37 (timezone), #38 (material por nome), #39 (edição onboarding), #40 (timeout onboarding) |
+| 🟡 Pós-lançamento | #14 (config), #16, #19 |
 | ⚪ Futuro | #15, #23-29, #32 (LangGraph) |
 
 ---

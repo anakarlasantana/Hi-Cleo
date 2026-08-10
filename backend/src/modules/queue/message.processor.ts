@@ -208,8 +208,14 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
     const transcribed = await transcribeAudio(phone, media.rawMessage, webhookKey, media.durationSeconds);
     if (transcribed) {
       messageText = transcribed;
+    } else {
+      // Transcrição falhou — enviar mensagem genérica ao invés de passar '[áudio]' pra IA
+      const ownerName = user.name || 'o responsável';
+      const fallbackReply = `Olá! Recebi seu áudio 🎙️ Vou repassar para ${ownerName} e te retornamos em breve!`;
+      await messaging.sendText({ instance, to: phone, text: fallbackReply });
+      await messageRepo.save(lead.id, fallbackReply, 'outbound');
+      return;
     }
-    // Se não transcreveu, messageText fica como '[áudio]' — fallback genérico é aceitável
   }
 
   // Buscar dados do negócio para gerar resposta contextual

@@ -38,6 +38,8 @@ export interface CardPaymentResponse {
 export interface PaymentStatusResponse {
   status: string
   statusDetail: string
+  activationCode?: string
+  isRenewal?: boolean
 }
 
 export async function createPixPayment(params: CreatePixPaymentParams): Promise<PixPaymentResponse> {

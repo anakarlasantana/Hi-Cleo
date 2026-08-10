@@ -57,7 +57,7 @@ function fallbackRecognize(text: string): RecognizedIntent {
 
   for (const pattern of patterns) {
     if (pattern.keywords.some(kw => lower.includes(kw))) {
-      return { type: pattern.type, confidence: 0.6, entities: {}, originalText: text };
+      return { type: pattern.type, confidence: 0.75, entities: {}, originalText: text };
     }
   }
 

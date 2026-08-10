@@ -63,7 +63,14 @@ export function CheckoutContent() {
         if (statusData.status === "processed") {
           clearInterval(interval)
           setPixConfirmed(true)
-          setTimeout(() => router.push(`/ativacao`), 2000)
+          if (statusData.isRenewal) {
+            setTimeout(() => router.push("/"), 2000)
+          } else {
+            const redirectUrl = statusData.activationCode
+              ? `/ativacao?code=${statusData.activationCode}`
+              : `/ativacao`
+            setTimeout(() => router.push(redirectUrl), 2000)
+          }
         }
       } catch { /* continua polling */ }
     }, 3000)

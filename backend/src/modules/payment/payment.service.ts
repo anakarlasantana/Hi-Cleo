@@ -127,7 +127,7 @@ export class PaymentService {
                 record.amount_cents,
                 record.id
               );
-              return { status: details.status, statusDetail: details.statusDetail, isRenewal: result.isRenewal };
+              return { status: details.status, statusDetail: details.statusDetail, isRenewal: result.isRenewal, activationCode: result.activationCode };
             } catch { /* fallback: retorna sem isRenewal */ }
           }
 
@@ -136,7 +136,18 @@ export class PaymentService {
       } catch { /* fallback: retorna status do banco */ }
     }
 
-    // Para pagamentos já processados, verificar se é renovação (sem activation_code_id)
+    // Para pagamentos já processados, buscar activationCode se existir
+    if (record.status === 'processed' && record.activation_code_id) {
+      const { supabase } = await import('../../shared/config/supabase.js');
+      const { data: codeRecord } = await supabase
+        .from('activation_codes')
+        .select('code')
+        .eq('id', record.activation_code_id)
+        .single();
+      return { status: record.status, statusDetail: record.status, isRenewal: false, activationCode: codeRecord?.code };
+    }
+
+    // Renovação: sem código novo
     const isRenewal = record.status === 'processed' && !record.activation_code_id;
     return { status: record.status, statusDetail: record.status, isRenewal };
   }
