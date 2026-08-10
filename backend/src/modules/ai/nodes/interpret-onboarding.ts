@@ -29,7 +29,9 @@ export async function interpretOnboardingResponse(
       `Resposta do usuário: "${sanitized}"`,
     ]);
 
-    return JSON.parse(response) as InterpretedResponse;
+    // Limpar markdown backticks que o modelo pode adicionar
+    const cleaned = response.replace(/```(?:json)?\s*/g, '').trim();
+    return JSON.parse(cleaned) as InterpretedResponse;
   } catch {
     return fallbackInterpret(step, message);
   }

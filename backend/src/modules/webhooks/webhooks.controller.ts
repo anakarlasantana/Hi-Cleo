@@ -45,6 +45,8 @@ function extractMessageContent(message: WebhookPayload['data']['message']) {
         mimeType: message.audioMessage.mimetype,
         fileName: null as string | null,
         key: null as string | null,
+        rawMessage: message,
+        durationSeconds: message.audioMessage.seconds || undefined,
       },
     };
   }
@@ -135,6 +137,7 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
       timestamp: Date.now(),
       remoteJid,
       messageKey: data.key.id,
+      webhookKey: data.key,
       media: media || undefined,
     };
 

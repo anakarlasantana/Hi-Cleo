@@ -14,13 +14,13 @@ export function createMessageProcessor(container: any, logger: Logger): MessageP
 
   return async (data: MessageJobData) => {
     const startTime = Date.now();
-    const { phone, text, instance, isSecretaryInstance, pushName, media, messageKey } = data;
+    const { phone, text, instance, isSecretaryInstance, pushName, media, messageKey, webhookKey } = data;
 
     try {
       if (isSecretaryInstance) {
-        await handleSecretaryMessage(container, phone, text, media, messageKey);
+        await handleSecretaryMessage(container, phone, text, media, messageKey, webhookKey);
       } else {
-        await handleUserWhatsAppMessage(container, instance, phone, text, pushName, media, messageKey);
+        await handleUserWhatsAppMessage(container, instance, phone, text, pushName, media, messageKey, webhookKey);
       }
 
       const durationMs = Date.now() - startTime;
@@ -47,7 +47,7 @@ export function createMessageProcessor(container: any, logger: Logger): MessageP
   };
 }
 
-async function handleSecretaryMessage(container: any, phone: string, text: string, media?: any, messageKey?: string): Promise<void> {
+async function handleSecretaryMessage(container: any, phone: string, text: string, media?: any, messageKey?: string, webhookKey?: { remoteJid: string; fromMe: boolean; id: string }): Promise<void> {
   const { messaging, activationService, onboardingService, assistenteService, userRepo, termsConsentService, messageRepo, leadService } = container;
 
   const activationMatch = text.match(/ATIVAR-[A-Z0-9]{4}/i);
@@ -78,7 +78,11 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     // Se chegou áudio durante onboarding, transcrever antes de processar
     let messageText = text;
     if (media?.type === 'audio' && (text === '[áudio]' || !text)) {
-      const transcribed = await transcribeAudio(phone);
+      // Aviso de áudio longo (>5 min)
+      if (media.durationSeconds && media.durationSeconds > 300) {
+        await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: '⏳ Recebi um áudio longo, pode demorar alguns segundos pra eu processar...' });
+      }
+      const transcribed = await transcribeAudio(phone, media.rawMessage, webhookKey, media.durationSeconds);
       if (!transcribed) {
         await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: 'Não consegui entender o áudio. Pode mandar por texto? 😊' });
         return;
@@ -111,7 +115,11 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
   // Se o professor mandou mídia — áudio é transcrito como comando, resto é material
   if (media) {
     if (media.type === 'audio') {
-      const transcribed = await transcribeAudio(phone);
+      // Aviso de áudio longo (>5 min)
+      if (media.durationSeconds && media.durationSeconds > 300) {
+        await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: '⏳ Recebi um áudio longo, pode demorar alguns segundos pra eu processar...' });
+      }
+      const transcribed = await transcribeAudio(phone, media.rawMessage, webhookKey, media.durationSeconds);
       if (transcribed) {
         const intent = await assistenteService.recognize(transcribed);
         if (intent.confidence < 0.7) {
@@ -159,7 +167,7 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
   await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: response });
 }
 
-async function handleUserWhatsAppMessage(container: any, instance: string, phone: string, text: string, pushName?: string, media?: any, messageKey?: string): Promise<void> {
+async function handleUserWhatsAppMessage(container: any, instance: string, phone: string, text: string, pushName?: string, media?: any, messageKey?: string, webhookKey?: { remoteJid: string; fromMe: boolean; id: string }): Promise<void> {
   const { messaging, sessionRepo, userRepo, exclusionRepo, leadService, messageRepo, ruleEngine } = container;
 
   const session = await sessionRepo.findByInstance(instance);
@@ -190,6 +198,20 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
 
   await leadService.updateLastInteraction(lead.id);
 
+  // Se o cliente mandou áudio, transcrever antes de gerar resposta
+  let messageText = text;
+  if (media?.type === 'audio' && (text === '[áudio]' || !text)) {
+    // Aviso de áudio longo (>5 min)
+    if (media.durationSeconds && media.durationSeconds > 300) {
+      await messaging.sendText({ instance, to: phone, text: '⏳ Recebi seu áudio! Pode demorar alguns segundos pra processar...' });
+    }
+    const transcribed = await transcribeAudio(phone, media.rawMessage, webhookKey, media.durationSeconds);
+    if (transcribed) {
+      messageText = transcribed;
+    }
+    // Se não transcreveu, messageText fica como '[áudio]' — fallback genérico é aceitável
+  }
+
   // Buscar dados do negócio para gerar resposta contextual
   const business = await userRepo.getBusiness(user.id);
   if (!business) return; // Sem dados do negócio = onboarding não completo, não responde
@@ -203,7 +225,7 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
   // Verificar se tem mensagem customizada de fora do horário (regra do dono)
   if (isOutsideHours) {
     const customRule = await ruleEngine.evaluate({
-      user, lead, isNewLead: !lead.last_interaction, messageText: text, timestamp: now,
+      user, lead, isNewLead: !lead.last_interaction, messageText, timestamp: now,
       businessHoursStart: start, businessHoursEnd: end,
     });
     if (customRule) {
@@ -223,7 +245,7 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
     businessHoursEnd: end,
   };
 
-  const reply = await generateClientReply(container.ai, businessContext, text, pushName, isOutsideHours);
+  const reply = await generateClientReply(container.ai, businessContext, messageText, pushName, isOutsideHours);
   await messaging.sendText({ instance, to: phone, text: reply });
   await messageRepo.save(lead.id, reply, 'outbound');
 }

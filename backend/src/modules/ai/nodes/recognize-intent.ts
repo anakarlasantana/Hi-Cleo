@@ -18,7 +18,8 @@ export async function recognizeIntent(ai: AiPort, text: string): Promise<Recogni
       `Mensagem do usuário: "${sanitized}"`,
     ]);
 
-    const parsed = JSON.parse(response);
+    const cleaned = response.replace(/```(?:json)?\s*/g, '').trim();
+    const parsed = JSON.parse(cleaned);
 
     return {
       type: parsed.type as IntentType,

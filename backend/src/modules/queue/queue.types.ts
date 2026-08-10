@@ -5,6 +5,8 @@ export interface MediaJobData {
   mimeType: string;
   fileName: string | null;
   key: string | null;
+  rawMessage?: Record<string, unknown>;
+  durationSeconds?: number;
 }
 
 export interface MessageJobData {
@@ -16,6 +18,8 @@ export interface MessageJobData {
   timestamp: number;
   remoteJid: string;
   messageKey?: string;
+  /** Key completo do webhook (remoteJid + fromMe + id) para transcrição de áudio */
+  webhookKey?: { remoteJid: string; fromMe: boolean; id: string };
   media?: MediaJobData;
 }
 
