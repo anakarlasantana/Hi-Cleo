@@ -135,11 +135,25 @@ Organizado por prioridade.
 
 ---
 
-### 14. Error Tracking
+### 14. Error Tracking & Uptime Monitoring
 
-**O que falta:** Sentry + uptime monitoring (UptimeRobot).
-**Quando:** Primeira semana após deploy.
-**Estimativa:** 0.5 dia
+**Status:** Código implementado ✅ — falta configurar contas (grátis)
+**Prioridade:** Alta (primeira semana após deploy)
+
+**O que já foi feito:**
+- ✅ `@sentry/node` integrado no backend (error handler, unhandled rejections, sanitização de headers)
+- ✅ `@sentry/nextjs` integrado no frontend (client/server/edge configs, global-error.tsx)
+- ✅ Endpoint `/health` verifica DB (Supabase) + Redis — retorna 200 ou 503
+- ✅ Variáveis `SENTRY_DSN` e `NEXT_PUBLIC_SENTRY_DSN` no schema e `.env.example`
+
+**O que falta (configuração externa, zero código):**
+
+| Serviço | Ação | Custo | Tempo |
+|---------|------|-------|-------|
+| Sentry | Criar conta em sentry.io (login c/ GitHub), criar projeto Node.js, copiar DSN pro `.env` | Grátis (5k erros/mês) | 10 min |
+| UptimeRobot | Criar conta, adicionar monitor HTTP p/ `https://dominio/health`, configurar alerta email | Grátis (50 monitores, check 5min) | 10 min |
+
+**Estimativa restante:** 20 min de configuração pós-deploy
 
 ### 19. CI/CD Pipeline
 
