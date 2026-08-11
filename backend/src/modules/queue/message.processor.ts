@@ -6,6 +6,7 @@ import { env } from '../../shared/config/env.js';
 import { transcribeAudio } from '../ai/nodes/transcribe-audio.js';
 import { interpretConfirmation } from '../ai/nodes/interpret-confirmation.js';
 import { generateClientReply, type BusinessContext } from '../ai/nodes/generate-client-reply.js';
+import { checkBusinessHours } from '../../shared/utils/business-hours.js';
 
 export type MessageProcessor = MessageProcessorPort;
 
@@ -223,10 +224,12 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
   if (!business) return; // Sem dados do negócio = onboarding não completo, não responde
 
   const now = new Date();
-  const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-  const start = business.business_hours_start || '08:00';
-  const end = business.business_hours_end || '18:00';
-  const isOutsideHours = currentTime < start || currentTime > end;
+  const { isOutsideHours, start, end } = checkBusinessHours({
+    businessHoursStart: business.business_hours_start,
+    businessHoursEnd: business.business_hours_end,
+    timezone: business.timezone,
+    businessDays: business.business_days,
+  });
 
   // Verificar se tem mensagem customizada de fora do horário (regra do dono)
   if (isOutsideHours) {
@@ -251,7 +254,10 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
     businessHoursEnd: end,
   };
 
-  const reply = await generateClientReply(container.ai, businessContext, messageText, pushName, isOutsideHours);
+  // Buscar últimas mensagens do lead para contexto multi-turno
+  const recentMessages = await messageRepo.getByLead(lead.id, 5);
+
+  const reply = await generateClientReply(container.ai, businessContext, messageText, pushName, isOutsideHours, recentMessages);
   await messaging.sendText({ instance, to: phone, text: reply });
   await messageRepo.save(lead.id, reply, 'outbound');
 }
@@ -457,17 +463,45 @@ async function executeIntent(container: any, user: any, intent: { type: string; 
 
       const targetLead = leads[0];
 
-      // Buscar último material enviado pelo professor
+      // Buscar materiais disponíveis
       const materialLead = await leadService.findByPhone(user.id, 'materials');
       if (!materialLead) return 'Você ainda não me enviou nenhum material. Mande o arquivo aqui primeiro!';
 
       const materials = await messageRepo.getMediaMessages(materialLead.id);
       if (materials.length === 0) return 'Você ainda não me enviou nenhum material. Mande o arquivo aqui primeiro!';
 
-      const lastMaterial = materials[0];
+      // Selecionar material: por nome se especificado na intent, senão por lógica de seleção
+      let selectedMaterial = materials[0]; // Padrão: último material
 
-      if (!lastMaterial.media_key) {
-        return 'Não consegui reenviar o último material. Tente mandar o arquivo de novo.';
+      const materialName = intent.entities.material || '';
+      if (materialName && materials.length > 1) {
+        // Buscar por nome do arquivo (match parcial, case-insensitive)
+        const searchLower = materialName.toLowerCase();
+        const found = materials.find((m: any) => {
+          const fileName = (m.media_file_name || m.text || '').toLowerCase();
+          return fileName.includes(searchLower);
+        });
+        if (found) {
+          selectedMaterial = found;
+        } else {
+          // Não encontrou pelo nome — listar disponíveis
+          const list = materials.slice(0, 10).map((m: any, i: number) => {
+            const label = m.media_file_name || m.text || `material ${i + 1}`;
+            return `${i + 1}) ${label}`;
+          }).join('\n');
+          return `Não encontrei "${materialName}". Tenho estes materiais:\n\n${list}\n\nDiga o nome ou número do material que quer enviar.`;
+        }
+      } else if (!materialName && materials.length > 1) {
+        // Sem nome especificado e há múltiplos — listar para escolha
+        const list = materials.slice(0, 10).map((m: any, i: number) => {
+          const label = m.media_file_name || m.text || `material ${i + 1}`;
+          return `${i + 1}) ${label}`;
+        }).join('\n');
+        return `Tenho ${materials.length} materiais salvos. Qual quer enviar pro(a) *${targetLead.name}*?\n\n${list}\n\nDiga: "manda o [nome] pro ${targetLead.name}" ou o número da lista.`;
+      }
+
+      if (!selectedMaterial.media_key) {
+        return 'Não consegui reenviar esse material. Tente mandar o arquivo de novo.';
       }
 
       // Buscar sessão do usuário para enviar pela instância correta
@@ -478,10 +512,11 @@ async function executeIntent(container: any, user: any, intent: { type: string; 
       await messaging.forwardMessage({
         instance: session.instance_name,
         to: targetLead.phone,
-        messageId: lastMaterial.media_key,
+        messageId: selectedMaterial.media_key,
       });
 
-      return `✅ Material enviado para *${targetLead.name}*!`;
+      const materialLabel = selectedMaterial.media_file_name || 'material';
+      return `✅ *${materialLabel}* enviado para *${targetLead.name}*!`;
     }
     case 'ignore_contact': {
       const name = intent.entities.name || '';
