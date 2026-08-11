@@ -23,6 +23,7 @@ import { startConnectionMonitor } from './modules/connection-monitor/connection-
 import { startContactMonitorCron } from './modules/contact-monitor/contact-monitor.cron.js';
 import { startCancellationCron } from './modules/cancellation/cancellation.cron.js';
 import { startSubscriptionCron } from './modules/subscription/subscription.cron.js';
+import { startOnboardingTimeoutCron } from './modules/onboarding/onboarding-timeout.cron.js';
 import { ensureEvolutionInstance } from './modules/evolution/evolution-setup.js';
 
 const app = express();
@@ -90,6 +91,7 @@ startFollowUpCron();
 startContactMonitorCron();
 startCancellationCron();
 startSubscriptionCron();
+startOnboardingTimeoutCron();
 startConnectionMonitor({
   messaging: container.messaging,
   logger: container.logger,
