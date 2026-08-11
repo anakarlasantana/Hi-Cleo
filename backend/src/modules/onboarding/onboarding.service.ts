@@ -32,19 +32,22 @@ export class OnboardingService {
     const state = await this.onboardingRepo.getState(userId);
     if (!state) return 'Ops, algo deu errado aqui. Me manda uma mensagem de novo?';
 
+    // Detectar se é edição parcial (voltou de confirm_summary para ajustar 1 campo)
+    const isPartialEdit = state.data._editing === 'true';
+
     switch (state.step) {
       case 'awaiting_intro_confirmation':
         return this.handleIntroConfirmation(userId, state);
       case 'confirm_name':
-        return this.handleStep(userId, state, message, 'confirm_name', 'business_type');
+        return this.handleStep(userId, state, message, 'confirm_name', isPartialEdit ? 'confirm_summary' : 'business_type');
       case 'business_type':
-        return this.handleStep(userId, state, message, 'business_type', 'target_audience');
+        return this.handleStep(userId, state, message, 'business_type', isPartialEdit ? 'confirm_summary' : 'target_audience');
       case 'target_audience':
-        return this.handleStep(userId, state, message, 'target_audience', 'tone_of_voice');
+        return this.handleStep(userId, state, message, 'target_audience', isPartialEdit ? 'confirm_summary' : 'tone_of_voice');
       case 'tone_of_voice':
-        return this.handleStep(userId, state, message, 'tone_of_voice', 'business_hours');
+        return this.handleStep(userId, state, message, 'tone_of_voice', isPartialEdit ? 'confirm_summary' : 'business_hours');
       case 'business_hours':
-        return this.handleStep(userId, state, message, 'business_hours', 'outside_hours_behavior');
+        return this.handleStep(userId, state, message, 'business_hours', isPartialEdit ? 'confirm_summary' : 'outside_hours_behavior');
       case 'outside_hours_behavior':
         return this.handleStep(userId, state, message, 'outside_hours_behavior', 'confirm_summary');
       case 'confirm_summary':
@@ -74,6 +77,10 @@ export class OnboardingService {
     }
 
     const newData = { ...state.data, ...result.extractedData };
+    // Limpar flag de edição ao voltar para confirm_summary
+    if (nextStep === 'confirm_summary' && newData._editing) {
+      delete newData._editing;
+    }
     await this.onboardingRepo.updateStep(userId, nextStep as any, newData);
     return this.getNextStepMessage(nextStep, newData);
   }
@@ -88,13 +95,82 @@ export class OnboardingService {
     const confirmed = result.extractedData?.confirmed === 'true';
 
     if (!confirmed) {
-      await this.onboardingRepo.updateStep(userId, 'business_type', { nome_confirmado: state.data.nome_confirmado });
-      return 'Sem problemas! Vamos refazer 🔄\n\nMe conta de novo o que você faz:';
+      // Verificar se quer recomeçar do zero
+      const lower = message.toLowerCase();
+      if (lower.includes('recomeçar') || lower.includes('recomecar') || lower.includes('refazer tudo') || lower.includes('começar de novo') || lower.includes('comecar de novo')) {
+        await this.onboardingRepo.updateStep(userId, 'business_type', { nome_confirmado: state.data.nome_confirmado });
+        return 'Sem problemas! Vamos refazer 🔄\n\nMe conta de novo o que você faz:';
+      }
+
+      // Edição parcial: interpretar qual campo o usuário quer ajustar
+      const fieldToEdit = this.detectFieldToEdit(message);
+      if (fieldToEdit) {
+        const editData = { ...state.data, _editing: 'true' };
+        await this.onboardingRepo.updateStep(userId, fieldToEdit as any, editData);
+        return this.getEditFieldMessage(fieldToEdit, state.data);
+      }
+
+      // Não identificou o campo — perguntar qual quer mudar
+      return 'O que você quer ajustar? Pode me dizer:\n\n• "muda o nome"\n• "muda o negócio"\n• "muda o público"\n• "muda o tom"\n• "muda o horário"\n• "muda a mensagem de fora do horário"\n\nOu diga "recomeçar" pra refazer tudo.';
     }
 
     await this.onboardingRepo.updateStep(userId, 'completed', state.data);
     await this.saveBusinessProfileAndRules(userId, state.data);
     return `Tudo configurado! 🎉\n\nA partir de agora eu cuido da organização dos seus contatos e respondo seus clientes do jeito que combinamos.\n\n📱 *Último passo:* volta pra tela no computador — o QR Code já tá te esperando lá.\n\nÉ igual ao WhatsApp Web: vai em Dispositivos Vinculados no celular e escaneie. Quando conectar, eu começo a trabalhar automaticamente!\n\n📌 Dica: fixa a Cleo no topo do WhatsApp pra não perder nenhuma mensagem minha!`;
+  }
+
+  /**
+   * Detecta qual campo o usuário quer editar com base na mensagem.
+   * Retorna o step correspondente ou null se não identificar.
+   */
+  private detectFieldToEdit(message: string): string | null {
+    const lower = message.toLowerCase();
+
+    // Mapeia palavras-chave para o step correspondente
+    const fieldMap: Array<{ keywords: string[]; step: string }> = [
+      { keywords: ['nome', 'chamar', 'chamado'], step: 'confirm_name' },
+      { keywords: ['negócio', 'negocio', 'faço', 'faz', 'trabalho', 'profissão', 'profissao'], step: 'business_type' },
+      { keywords: ['público', 'publico', 'cliente', 'audiência', 'audiencia', 'atende'], step: 'target_audience' },
+      { keywords: ['tom', 'comunicação', 'comunicacao', 'falar', 'linguagem', 'informal', 'formal'], step: 'tone_of_voice' },
+      { keywords: ['horário', 'horario', 'hora', 'expediente', 'atendimento'], step: 'business_hours' },
+      { keywords: ['fora', 'mensagem automática', 'mensagem automatica', 'resposta automática', 'resposta automatica'], step: 'outside_hours_behavior' },
+    ];
+
+    // "recomeçar" = reset total (mantém apenas o nome)
+    if (lower.includes('recomeçar') || lower.includes('recomecar') || lower.includes('refazer tudo') || lower.includes('começar de novo') || lower.includes('comecar de novo')) {
+      return null; // retorna null para sinalizar reset total
+    }
+
+    for (const { keywords, step } of fieldMap) {
+      if (keywords.some((kw) => lower.includes(kw))) {
+        return step;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Retorna a mensagem de edição para um campo específico.
+   * Mantém os dados anteriores — após a edição, volta ao confirm_summary.
+   */
+  private getEditFieldMessage(step: string, data: Record<string, string>): string {
+    switch (step) {
+      case 'confirm_name':
+        return `Atualmente tá como *${data.nome_confirmado}*. Como quer que eu te chame?`;
+      case 'business_type':
+        return `Atualmente: *${data.negocio}*. Me conta de novo o que você faz:`;
+      case 'target_audience':
+        return `Atualmente: *${data.publico_alvo}*. Quem são seus clientes geralmente?`;
+      case 'tone_of_voice':
+        return `Atualmente: *${this.getToneLabel(data.tom_de_voz || 'friendly_professional')}*.\n\nComo quer que eu fale?\n1️⃣ Profissional e cordial\n2️⃣ Descontraído mas profissional\n3️⃣ Super informal`;
+      case 'business_hours':
+        return `Atualmente: *${data.horario_descricao || `${data.horario_inicio}-${data.horario_fim}`}*.\n\nQual o novo horário?`;
+      case 'outside_hours_behavior':
+        return 'O que faço quando chegar mensagem fora do horário?\n\n1️⃣ Aviso que retorna no próximo dia útil\n2️⃣ Não respondo nada, só anoto\n\nOu me diz a mensagem que quer:';
+      default:
+        return 'Me diz o que quer mudar:';
+    }
   }
 
   private getNextStepMessage(step: string, data: Record<string, string>): string {
