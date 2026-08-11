@@ -61,6 +61,8 @@ export interface Business {
   tone_of_voice?: string;
   business_hours_start?: string;
   business_hours_end?: string;
+  timezone?: string;
+  business_days?: string[];
   created_at: string;
 }
 
