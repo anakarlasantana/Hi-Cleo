@@ -58,10 +58,93 @@ describe('OnboardingService', () => {
   let ruleRepo: InMemoryRuleRepository;
   let service: OnboardingService;
 
+  /**
+   * Mock de IA que simula o comportamento real: retorna JSON correto por step.
+   * O prompt enviado para generateContent contém o step name, então usamos isso
+   * para retornar a resposta adequada baseada na mensagem do usuário.
+   */
+  const aiMock = {
+    generateContent: async (prompts: string[]) => {
+      const systemPrompt = prompts[0] || '';
+      const userMessage = prompts[1] || '';
+
+      // Extrair a mensagem real do usuário (remove o wrapper "Resposta do usuário: ")
+      const msgMatch = userMessage.match(/Resposta do usuário: "(.+)"/);
+      const msg = msgMatch ? msgMatch[1] : userMessage;
+      const lower = msg.toLowerCase();
+
+      // confirm_name
+      if (systemPrompt.includes('Step: nome/apelido')) {
+        if (msg.length < 2) return JSON.stringify({ valid: false, extractedData: {}, retryMessage: 'Me diz seu nome!' });
+        return JSON.stringify({ valid: true, extractedData: { nome_confirmado: msg.trim() } });
+      }
+
+      // business_type
+      if (systemPrompt.includes('Step: profissão/negócio')) {
+        if (msg.length < 3) return JSON.stringify({ valid: false, extractedData: {}, retryMessage: 'Me conta o que você faz!' });
+        return JSON.stringify({ valid: true, extractedData: { negocio: msg.trim() } });
+      }
+
+      // target_audience
+      if (systemPrompt.includes('Step: público-alvo')) {
+        return JSON.stringify({ valid: true, extractedData: { publico_alvo: msg.trim() } });
+      }
+
+      // tone_of_voice
+      if (systemPrompt.includes('Step: tom de comunicação')) {
+        if (lower === '1' || lower.includes('formal')) {
+          return JSON.stringify({ valid: true, extractedData: { tom_de_voz: 'formal' } });
+        }
+        if (lower === '2' || lower.includes('descontraíd') || lower.includes('profissional')) {
+          return JSON.stringify({ valid: true, extractedData: { tom_de_voz: 'friendly_professional' } });
+        }
+        if (lower === '3' || lower.includes('informal')) {
+          return JSON.stringify({ valid: true, extractedData: { tom_de_voz: 'casual' } });
+        }
+        return JSON.stringify({ valid: false, extractedData: {}, retryMessage: 'Escolhe 1, 2 ou 3!' });
+      }
+
+      // business_hours
+      if (systemPrompt.includes('Step: horário de atendimento')) {
+        const timePattern = /(\d{1,2})[:h]?(\d{2})?\s*[-aàáeé]+\s*(\d{1,2})[:h]?(\d{2})?/i;
+        const match = msg.match(timePattern);
+        if (match) {
+          return JSON.stringify({
+            valid: true,
+            extractedData: {
+              horario_inicio: `${match[1].padStart(2, '0')}:${match[2] || '00'}`,
+              horario_fim: `${match[3].padStart(2, '0')}:${match[4] || '00'}`,
+              horario_descricao: msg.trim(),
+            },
+          });
+        }
+        return JSON.stringify({ valid: false, extractedData: {}, retryMessage: 'Me diz o horário!' });
+      }
+
+      // outside_hours_behavior
+      if (systemPrompt.includes('Step: comportamento fora do horário')) {
+        if (lower === '2' || lower.includes('não respond')) {
+          return JSON.stringify({ valid: true, extractedData: { fora_horario: 'silent' } });
+        }
+        return JSON.stringify({ valid: true, extractedData: { fora_horario: 'notify', fora_horario_mensagem: '' } });
+      }
+
+      // confirm_summary
+      if (systemPrompt.includes('Step: confirmação de resumo')) {
+        const confirms = ['ok', 'sim', 'confirma', 'perfeito', 'bom', 'isso'];
+        const isConfirm = confirms.some(w => lower.includes(w));
+        return JSON.stringify({ valid: true, extractedData: { confirmed: isConfirm ? 'true' : 'false' } });
+      }
+
+      // Default
+      return JSON.stringify({ valid: true, extractedData: {} });
+    },
+  };
+
   beforeEach(() => {
     onboardingRepo = new InMemoryOnboardingRepository();
     ruleRepo = new InMemoryRuleRepository();
-    service = new OnboardingService(onboardingRepo, ruleRepo, { generateContent: async () => '{"valid": true, "extractedData": {"nome_confirmado": "test"}}' });
+    service = new OnboardingService(onboardingRepo, ruleRepo, aiMock);
   });
 
   describe('confirm_name step', () => {
@@ -74,7 +157,7 @@ describe('OnboardingService', () => {
       const response = await service.processMessage('user-1', 'João');
 
       expect(response).toContain('João');
-      expect(response).toContain('me conta o que você faz');
+      expect(response.toLowerCase()).toContain('me conta o que você faz');
       const state = await onboardingRepo.getState('user-1');
       expect(state?.step).toBe('business_type');
     });
@@ -89,7 +172,7 @@ describe('OnboardingService', () => {
 
       const response = await service.processMessage('user-1', 'Corretor de imóveis, venda e aluguel');
 
-      expect(response).toContain('quem são seus clientes');
+      expect(response.toLowerCase()).toContain('quem são seus clientes');
       const state = await onboardingRepo.getState('user-1');
       expect(state?.step).toBe('target_audience');
       expect(state?.data.negocio).toBe('Corretor de imóveis, venda e aluguel');
@@ -170,9 +253,14 @@ describe('OnboardingService', () => {
 
       const response = await service.processMessage('user-1', 'quero mudar o horário');
 
-      expect(response).toContain('refazer');
+      // Edição parcial: volta apenas para o step do horário, não reseta tudo
+      expect(response).toContain('horário');
       const state = await onboardingRepo.getState('user-1');
-      expect(state?.step).toBe('business_type');
+      expect(state?.step).toBe('business_hours');
+      expect(state?.data._editing).toBe('true');
+      // Dados anteriores preservados
+      expect(state?.data.negocio).toBe('Corretor');
+      expect(state?.data.publico_alvo).toBe('Casais');
     });
   });
 });

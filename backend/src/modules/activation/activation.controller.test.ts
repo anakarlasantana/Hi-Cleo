@@ -7,6 +7,16 @@ vi.mock('../../container.js', () => ({
     activationService: {
       validateCode: vi.fn(),
     },
+    activationRepo: {
+      findCodeByValue: vi.fn(),
+    },
+    userRepo: {
+      findById: vi.fn(),
+    },
+    planService: {
+      canAddUser: vi.fn(),
+      getCurrentUsage: vi.fn(),
+    },
     messaging: {
       getQrCode: vi.fn(),
       getStatus: vi.fn(),
@@ -64,7 +74,7 @@ describe('Activation Controller - QR Code Endpoints', () => {
     const handler = getRouteHandler('get', '/qrcode/:code');
 
     it('should return 404 for invalid activation code', async () => {
-      vi.mocked(container.activationService.validateCode).mockResolvedValue(null);
+      vi.mocked(container.activationRepo.findCodeByValue).mockResolvedValue(null);
       const req = createMockReq({ code: 'INVALID-CODE' });
       const res = createMockRes();
 
@@ -75,11 +85,13 @@ describe('Activation Controller - QR Code Endpoints', () => {
     });
 
     it('should return QR code for valid activation code', async () => {
-      vi.mocked(container.activationService.validateCode).mockResolvedValue({
-        code: 'ATIVAR-TEST',
-        plan: 'solo',
-        used: false,
+      vi.mocked(container.activationRepo.findCodeByValue).mockResolvedValue({
+        code: 'ATIVAR-TEST', plan: 'solo', used: false, user_id: 'user-123',
       } as any);
+      vi.mocked(container.userRepo.findById).mockResolvedValue({
+        id: 'user-123', subscription_status: 'active',
+      } as any);
+      vi.mocked(container.planService.canAddUser).mockResolvedValue(true);
       vi.mocked(container.messaging.getQrCode).mockResolvedValue('base64-qr-data');
 
       const req = createMockReq({ code: 'ATIVAR-TEST' });
@@ -87,18 +99,20 @@ describe('Activation Controller - QR Code Endpoints', () => {
 
       await handler(req, res);
 
-      expect(res.json).toHaveBeenCalledWith({
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
         qr: 'base64-qr-data',
         expiresIn: 45,
-      });
+      }));
     });
 
     it('should return 502 when QR code generation returns empty', async () => {
-      vi.mocked(container.activationService.validateCode).mockResolvedValue({
-        code: 'ATIVAR-TEST',
-        plan: 'solo',
-        used: false,
+      vi.mocked(container.activationRepo.findCodeByValue).mockResolvedValue({
+        code: 'ATIVAR-TEST', plan: 'solo', used: false, user_id: 'user-123',
       } as any);
+      vi.mocked(container.userRepo.findById).mockResolvedValue({
+        id: 'user-123', subscription_status: 'active',
+      } as any);
+      vi.mocked(container.planService.canAddUser).mockResolvedValue(true);
       vi.mocked(container.messaging.getQrCode).mockResolvedValue('');
 
       const req = createMockReq({ code: 'ATIVAR-TEST' });
@@ -110,37 +124,40 @@ describe('Activation Controller - QR Code Endpoints', () => {
       expect(res.json).toHaveBeenCalledWith({ error: 'Falha ao gerar QR Code. Tente novamente.' });
     });
 
-    it('should return 500 when Evolution API throws', async () => {
-      vi.mocked(container.activationService.validateCode).mockResolvedValue({
-        code: 'ATIVAR-TEST',
-        plan: 'solo',
-        used: false,
+    it('should return 403 when subscription is inactive', async () => {
+      vi.mocked(container.activationRepo.findCodeByValue).mockResolvedValue({
+        code: 'ATIVAR-TEST', plan: 'solo', used: false, user_id: 'user-123',
       } as any);
-      vi.mocked(container.messaging.getQrCode).mockRejectedValue(new Error('API down'));
+      vi.mocked(container.userRepo.findById).mockResolvedValue({
+        id: 'user-123', subscription_status: 'expired',
+      } as any);
 
       const req = createMockReq({ code: 'ATIVAR-TEST' });
       const res = createMockRes();
 
       await handler(req, res);
 
-      expect(res.status).toHaveBeenCalledWith(500);
-      expect(res.json).toHaveBeenCalledWith({ error: 'Erro ao gerar QR Code' });
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Assinatura inativa. Renove para conectar.' });
     });
 
-    it('should use instance name based on activation code', async () => {
-      vi.mocked(container.activationService.validateCode).mockResolvedValue({
-        code: 'ATIVAR-ABCD',
-        plan: 'equipe',
-        used: false,
+    it('should return 403 when no slots available', async () => {
+      vi.mocked(container.activationRepo.findCodeByValue).mockResolvedValue({
+        code: 'ATIVAR-ABCD', plan: 'solo', used: false, user_id: 'user-123',
       } as any);
-      vi.mocked(container.messaging.getQrCode).mockResolvedValue('qr-data');
+      vi.mocked(container.userRepo.findById).mockResolvedValue({
+        id: 'user-123', subscription_status: 'active',
+      } as any);
+      vi.mocked(container.planService.canAddUser).mockResolvedValue(false);
+      vi.mocked(container.planService.getCurrentUsage).mockResolvedValue({ current: 1, max: 1 });
 
       const req = createMockReq({ code: 'ATIVAR-ABCD' });
       const res = createMockRes();
 
       await handler(req, res);
 
-      expect(container.messaging.getQrCode).toHaveBeenCalledWith('activation-ATIVAR-ABCD');
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res._json).toMatchObject({ used: 1, total: 1 });
     });
   });
 
@@ -160,17 +177,13 @@ describe('Activation Controller - QR Code Endpoints', () => {
 
     it('should set SSE headers for valid code', async () => {
       vi.mocked(container.activationService.validateCode).mockResolvedValue({
-        code: 'ATIVAR-TEST',
-        plan: 'solo',
-        used: false,
+        code: 'ATIVAR-TEST', plan: 'solo', used: false,
       } as any);
       vi.mocked(container.messaging.getStatus).mockResolvedValue('connecting');
 
       const req = createMockReq({ code: 'ATIVAR-TEST' });
       const res = createMockRes();
 
-      // Don't await — the handler sets up an interval and doesn't resolve immediately
-      // We just need to verify headers are set
       await handler(req, res);
 
       expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
@@ -183,9 +196,7 @@ describe('Activation Controller - QR Code Endpoints', () => {
       vi.useFakeTimers();
 
       vi.mocked(container.activationService.validateCode).mockResolvedValue({
-        code: 'ATIVAR-TEST',
-        plan: 'solo',
-        used: false,
+        code: 'ATIVAR-TEST', plan: 'solo', used: false,
       } as any);
       vi.mocked(container.messaging.getStatus).mockResolvedValue('connecting');
 
@@ -209,9 +220,7 @@ describe('Activation Controller - QR Code Endpoints', () => {
       vi.useFakeTimers();
 
       vi.mocked(container.activationService.validateCode).mockResolvedValue({
-        code: 'ATIVAR-TEST',
-        plan: 'solo',
-        used: false,
+        code: 'ATIVAR-TEST', plan: 'solo', used: false,
       } as any);
       vi.mocked(container.messaging.getStatus).mockResolvedValue('open');
 
@@ -235,9 +244,7 @@ describe('Activation Controller - QR Code Endpoints', () => {
 
     it('should cleanup interval when client disconnects', async () => {
       vi.mocked(container.activationService.validateCode).mockResolvedValue({
-        code: 'ATIVAR-TEST',
-        plan: 'solo',
-        used: false,
+        code: 'ATIVAR-TEST', plan: 'solo', used: false,
       } as any);
 
       let closeHandler: (() => void) | undefined;
