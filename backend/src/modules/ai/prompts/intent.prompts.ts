@@ -30,4 +30,5 @@ Intenções possíveis:
 - unknown: não conseguiu identificar
 
 Extraia entidades quando possível (name do cliente, phone, date, time).
+Para send_material, extraia também "material" (nome do arquivo/documento que quer enviar, se mencionado).
 Se a data for relativa ("amanhã", "segunda"), converta para formato ISO.`;
