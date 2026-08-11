@@ -238,7 +238,7 @@ describe('OnboardingService', () => {
       const response = await service.processMessage('user-1', 'ok');
 
       expect(response).toContain('configurado');
-      expect(response).toContain('QR Code');
+      expect(response).toContain('/conectar');
       expect(response).toContain('Dispositivos Vinculados');
       const state = await onboardingRepo.getState('user-1');
       expect(state?.step).toBe('completed');

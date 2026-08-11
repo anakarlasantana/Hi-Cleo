@@ -4,6 +4,7 @@ import type { AiPort } from '../../shared/ports/ai.port.js';
 import type { OnboardingState } from '../../shared/types/index.js';
 import { interpretOnboardingResponse } from '../ai/nodes/interpret-onboarding.js';
 import { ONBOARDING_RETRY_MESSAGES } from '../ai/prompts/onboarding.prompts.js';
+import { env } from '../../shared/config/env.js';
 
 /**
  * Orquestra o onboarding conversacional.
@@ -73,7 +74,10 @@ export class OnboardingService {
     const result = await interpretOnboardingResponse(this.ai, currentStep, message, state.data);
 
     if (!result.valid) {
-      return result.retryMessage || ONBOARDING_RETRY_MESSAGES[currentStep] || 'Não entendi. Pode tentar de novo?';
+      // Usar retryMessage da IA apenas se for útil (>20 chars e não genérico)
+      const aiRetry = result.retryMessage?.trim();
+      const isUsefulRetry = aiRetry && aiRetry.length > 20 && !this.isGenericRetry(aiRetry);
+      return isUsefulRetry ? aiRetry : (ONBOARDING_RETRY_MESSAGES[currentStep] || 'Não entendi. Pode tentar de novo?');
     }
 
     const newData = { ...state.data, ...result.extractedData };
@@ -116,7 +120,7 @@ export class OnboardingService {
 
     await this.onboardingRepo.updateStep(userId, 'completed', state.data);
     await this.saveBusinessProfileAndRules(userId, state.data);
-    return `Tudo configurado! 🎉\n\nA partir de agora eu cuido da organização dos seus contatos e respondo seus clientes do jeito que combinamos.\n\n📱 *Último passo:* volta pra tela no computador — o QR Code já tá te esperando lá.\n\nÉ igual ao WhatsApp Web: vai em Dispositivos Vinculados no celular e escaneie. Quando conectar, eu começo a trabalhar automaticamente!\n\n📌 Dica: fixa a Cleo no topo do WhatsApp pra não perder nenhuma mensagem minha!`;
+    return `Tudo configurado! 🎉\n\nA partir de agora eu cuido da organização dos seus contatos e respondo seus clientes do jeito que combinamos.\n\n📱 *Último passo:* conecte seu WhatsApp pra eu começar a monitorar suas conversas.\n\nAcesse o link abaixo no computador e escaneie o QR Code:\n${env.SITE_URL}/conectar\n\nÉ igual ao WhatsApp Web: vai em *Dispositivos Vinculados* no celular e escaneie. Quando conectar, eu começo a trabalhar automaticamente!\n\n📌 Dica: fixa a Cleo no topo do WhatsApp pra não perder nenhuma mensagem minha!`;
   }
 
   /**
@@ -226,5 +230,23 @@ export class OnboardingService {
       case 'casual': return 'super informal';
       default: return 'descontraído mas profissional';
     }
+  }
+
+  /**
+   * Detecta se o retryMessage da IA é genérico demais para usar.
+   * Exemplos ruins: "msg curta", "tente novamente", "por favor forneça".
+   */
+  private isGenericRetry(text: string): boolean {
+    const lower = text.toLowerCase();
+    const genericPatterns = [
+      'por favor',
+      'forneça',
+      'tente novamente',
+      'msg curta',
+      'informação inválida',
+      'resposta inválida',
+      'não entendi',
+    ];
+    return genericPatterns.some((p) => lower.includes(p));
   }
 }
