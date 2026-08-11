@@ -31,6 +31,12 @@ Organizado por prioridade.
 - ~~#11 Padronizar banco para inglês~~ ✅
 - ~~#20 Migrations versionadas~~ ✅ (Supabase CLI)
 - ~~Limpeza de código~~ ✅ (37 UI components, 23 deps Radix, LeadStatus cold)
+- ~~#36 Memória de Conversa por Lead~~ ✅ (últimas 5 mensagens como contexto no prompt, backward-compatible)
+- ~~#37 Horário de Atendimento com Timezone~~ ✅ (Intl nativo, business_days, migration)
+- ~~#38 Seleção de Material por Nome~~ ✅ (busca parcial, lista múltiplos)
+- ~~#39 Edição Parcial do Onboarding~~ ✅ (detectFieldToEdit, flag _editing, recomeçar)
+- ~~#40 Timeout de Onboarding~~ ✅ (cron 48h, lembrete WhatsApp)
+- ~~Correção de testes~~ ✅ (69/69 passando — onboarding mock corrigido, activation controller alinhado com implementação)
 
 ---
 
@@ -163,97 +169,105 @@ Organizado por prioridade.
 
 ### 16. Testes Payment
 
+**Cobertura atual:** 69 testes passando (onboarding, activation, cancellation, rules, terms)
 **O que falta:** Testes unitários para price calculator e subscription.
 **Quando:** Após fluxo validado com clientes reais.
 **Estimativa:** 1-2 dias
 
 ---
 
-## 🟠 IMPORTANTES — QUALIDADE DA EXPERIÊNCIA
+## 🟠 CONCLUÍDOS — QUALIDADE DA EXPERIÊNCIA (implementados 2026-08-11)
 
 ### 36. Memória de Conversa por Lead (contexto multi-turno)
 
-**Status:** Não implementado
+**Status:** ✅ Implementado (básico com últimas N mensagens)
 **Prioridade:** Alta (experiência do cliente)
-**Quando:** Primeiras semanas do beta
+**Implementado em:** 2026-08-11
 
-**Problema atual:** A IA só vê a mensagem ATUAL do cliente. Se o cliente mandou "quanto custa?" ontem e hoje manda "e o prazo?", a Cleo não sabe do que se trata — pode repetir saudação ou pedir contexto novamente.
+**Problema resolvido:** A IA só via a mensagem ATUAL do cliente. Se o cliente mandou "quanto custa?" ontem e hoje manda "e o prazo?", a Cleo não sabia do que se tratava — repetia saudação ou pedia contexto novamente.
 
-**Solução:**
-- Carregar últimas 3-5 mensagens (inbound + outbound) do lead antes de gerar resposta
-- Injetar como contexto no prompt: `"Histórico recente: [mensagens]"`
-- Alternativa avançada: tabela `lead_memory` com resumo semântico (mais econômico em tokens)
+**O que foi feito:**
+- ✅ Busca últimas 5 mensagens (inbound + outbound) do lead antes de gerar resposta
+- ✅ Formata como contexto compacto: `Cliente: "msg"` / `Cleo: "msg"` (max 100 chars/msg)
+- ✅ Injeta no prompt APÓS o prefixo fixo (preserva caching automático: Groq 50%, Gemini 90%)
+- ✅ Parâmetro opcional — backward-compatible, sem quebra de interface
+- ✅ Zero migrations — usa query `getByLead()` já existente
 
-**Impacto:** Cliente se sente ouvido e não precisa repetir contexto. Diferencial vs bots genéricos.
-**Estimativa:** 3-4h (básico com últimas N mensagens) | 2 dias (com sumarização semântica)
+**Arquivos alterados:**
+- `modules/ai/nodes/generate-client-reply.ts` — nova função `formatConversationHistory()` + parâmetro `recentMessages`
+- `modules/ai/prompts/client-reply.prompts.ts` — aceita `conversationHistory` opcional
+- `modules/queue/message.processor.ts` — busca mensagens recentes antes de gerar resposta
+
+**Custo:** ~30-80 tokens extras por chamada (~R$0,01-0,02/dia adicional)
+**Evolução futura:** Sumarização semântica (item #35 — tabela `lead_memory`) para leads com muitas interações
 
 ---
 
 ### 37. Horário de Atendimento com Timezone e Fins de Semana
 
-**Status:** Funcional mas limitado
+**Status:** ✅ Implementado
 **Prioridade:** Média
+**Implementado em:** 2026-08-11
 
-**Problema atual:** Comparação de horário é por string (`"08:00" < "18:00"`) sem considerar:
-- Timezone do servidor vs timezone do dono
-- Fins de semana (sábado/domingo sempre tratados como dia útil)
-- Feriados
+**Problema resolvido:** Comparação de horário era por string sem considerar timezone do dono nem fins de semana.
 
-**Solução:**
-- Adicionar campo `timezone` e `business_days` (array: `['mon','tue',...,'sat']`) no onboarding
-- Usar `date-fns-tz` para comparação correta
-- Default: Seg-Sex, timezone America/Sao_Paulo
-
-**Estimativa:** 1-2h
+**O que foi feito:**
+- ✅ Utilitário `shared/utils/business-hours.ts` com `checkBusinessHours()` usando `Intl.DateTimeFormat` nativo (zero dependências)
+- ✅ Suporta timezone IANA (ex: America/Sao_Paulo, America/Manaus) e business_days (array: mon-sun)
+- ✅ Campos `timezone` e `business_days` adicionados à interface `Business`
+- ✅ Migration SQL para novas colunas (defaults: America/Sao_Paulo, seg-sex)
+- ✅ `message.processor.ts` usa o novo utilitário ao invés de comparação de strings
 
 ---
 
 ### 38. Seleção de Material por Nome
 
-**Status:** Funciona mas sempre manda o último
+**Status:** ✅ Implementado
 **Prioridade:** Média
+**Implementado em:** 2026-08-11
 
-**Problema atual:** Comando "manda material pro João" sempre envia o ÚLTIMO material salvo. Dono com vários arquivos não consegue escolher qual enviar.
+**Problema resolvido:** Comando "manda material pro João" sempre enviava o ÚLTIMO material salvo.
 
-**Solução:**
-- Listar materiais disponíveis quando há mais de 1
-- Permitir busca por nome do arquivo: "manda o portfólio pro João"
-- Se ambíguo, perguntar: "Tenho 3 materiais. Qual? 1) portfólio.pdf 2) tabela.pdf 3) contrato.pdf"
-
-**Estimativa:** 1-2h
+**O que foi feito:**
+- ✅ Intent reconhece entidade `material` (nome do arquivo mencionado pelo dono)
+- ✅ Busca parcial case-insensitive pelo nome do arquivo
+- ✅ Se não encontra → lista materiais disponíveis para escolha
+- ✅ Se múltiplos e sem nome → lista numerada para o dono escolher
+- ✅ Resposta confirma qual material foi enviado (nome do arquivo)
 
 ---
 
 ### 39. Edição Parcial do Onboarding (sem resetar tudo)
 
-**Status:** Funciona mas UX ruim
+**Status:** ✅ Implementado
 **Prioridade:** Média
+**Implementado em:** 2026-08-11
 
-**Problema atual:** Quando o usuário rejeita o resumo final do onboarding ("não, quero mudar o tom"), o sistema reseta para o step `business_type` — obrigando a re-responder 5 perguntas ao invés de editar apenas 1 campo.
+**Problema resolvido:** Quando o usuário rejeitava o resumo final, o sistema resetava para `business_type` obrigando a re-responder 5 perguntas.
 
-**Solução:**
-- Interpretar via IA qual campo o usuário quer ajustar: "quero mudar o horário" → volta só pro step `business_hours`
-- Após editar 1 campo, re-exibe o resumo com o valor atualizado
-- Comandos: "muda nome", "muda horário", "muda tom", etc.
-
-**Estimativa:** 2-3h
+**O que foi feito:**
+- ✅ `detectFieldToEdit()` mapeia palavras-chave do usuário ao step correto
+- ✅ Flag `_editing=true` nos dados sinaliza modo edição parcial
+- ✅ `processMessage()` detecta flag e redireciona nextStep para `confirm_summary` após editar 1 campo
+- ✅ `handleStep()` limpa flag ao voltar ao resumo
+- ✅ Comando "recomeçar" faz reset total (mantém apenas nome)
+- ✅ Se não identifica o campo, pergunta qual quer mudar (com lista de opções)
 
 ---
 
 ### 40. Timeout de Onboarding Abandonado
 
-**Status:** Não implementado
+**Status:** ✅ Implementado
 **Prioridade:** Média
+**Implementado em:** 2026-08-11
 
-**Problema atual:** Se o usuário inicia o onboarding mas para no step 3 e nunca mais volta, o estado fica preso. Na próxima mensagem (pode ser dias depois), a Cleo continua perguntando de onde parou — sem contexto do que já perguntou.
+**Problema resolvido:** Se o usuário iniciava o onboarding e parava, o estado ficava preso indefinidamente.
 
-**Solução:**
-- Cron job que verifica onboardings com `updated_at > 48h` e `step != completed`
-- Opção A: Enviar lembrete amigável: "Ei, parece que ficou algo pendente no setup. Quer continuar?"
-- Opção B: Resetar automaticamente e permitir re-início
-- Adicionar comando "recomeçar" para reset manual
-
-**Estimativa:** 1h
+**O que foi feito:**
+- ✅ Cron diário às 10h verifica onboardings com `updated_at > 48h` e `step != completed`
+- ✅ Envia lembrete amigável via WhatsApp ("Quer continuar? É rapidinho!")
+- ✅ Informa que pode mandar qualquer mensagem para retomar ou "recomeçar" para reset
+- ✅ Registrado no `index.ts` com os outros crons
 
 ---
 
@@ -339,9 +353,8 @@ Organizado por prioridade.
 
 | Status | Itens |
 |--------|-------|
-| ✅ Concluídos | #1-11, #13, #14 (código), #17, #18, #20, #21, #30, #31, #33-35 |
+| ✅ Concluídos | #1-11, #13, #14 (código), #17, #18, #20, #21, #30, #31, #33-40 |
 | 🔴 Bloqueante | #22 (deploy) |
-| 🟠 Importantes | #36 (memória conversa), #37 (timezone), #38 (material por nome), #39 (edição onboarding), #40 (timeout onboarding) |
 | 🟡 Pós-lançamento | #14 (config), #16, #19 |
 | ⚪ Futuro | #15, #23-29, #32 (LangGraph) |
 

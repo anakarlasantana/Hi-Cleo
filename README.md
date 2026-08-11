@@ -126,6 +126,8 @@ A aplicação implementa múltiplas camadas de segurança:
 | `docker compose down` | Para tudo |
 | `docker compose down -v` | Para tudo e limpa volumes |
 | `docker compose logs -f backend` | Logs do backend |
+| `cd backend && npm test` | Roda testes unitários (69 testes) |
+| `cd backend && npx tsc --noEmit` | Verifica tipagem TypeScript |
 
 ---
 

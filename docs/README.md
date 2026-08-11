@@ -18,7 +18,7 @@
 | Documento | Descrição |
 |-----------|-----------|
 | [Arquitetura de IA](tecnico/arquitetura-ia.md) | Módulo ai/, nós, prompts, tokens, LangGraph |
-| [Débitos Técnicos](tecnico/debitos-tecnicos.md) | Roadmap, pendências e melhorias planejadas |
+| [Débitos Técnicos](tecnico/debitos-tecnicos.md) | Roadmap, histórico de concluídos e melhorias futuras |
 
 ## Marketing
 

@@ -78,7 +78,7 @@ backend/src/shared/ports/
 ### Módulos que CONSOMEM a IA (não contêm lógica de IA)
 
 ```
-modules/onboarding/   → usa nodes/interpret-onboarding.ts
+modules/onboarding/   → usa nodes/interpret-onboarding.ts (com fallback local regex)
 modules/queue/        → usa nodes/transcribe-audio.ts, nodes/recognize-intent.ts, nodes/generate-client-reply.ts
 modules/terms/        → usa nodes/interpret-confirmation.ts
 ```
@@ -143,6 +143,9 @@ Futuro: grafo LangGraph com edges condicionais.
 
 ```
 HOJE:  switch(step) → chama nó → atualiza estado → retorna resposta
+       Se _editing=true: nextStep = confirm_summary (edição parcial)
+       Se rejeita resumo: detectFieldToEdit() → volta só ao step relevante
+       Fallback local (regex) garante onboarding funciona sem IA
 FUTURO: grafo.invoke(state) → nó executa → edge decide próximo → checkpointer salva
 ```
 
@@ -167,9 +170,12 @@ export async function generateClientReply(
   ai: AiPort,
   businessContext: BusinessContext,
   clientMessage: string,
+  clientName: string | undefined,
   isOutsideHours: boolean,
+  recentMessages?: Message[],  // Últimas 5 msgs do lead (contexto multi-turno)
 ): Promise<string> {
-  const prompt = buildClientReplyPrompt(businessContext, isOutsideHours);
+  const conversationHistory = formatConversationHistory(recentMessages || [], clientName);
+  const prompt = buildClientReplyPrompt(businessContext, isOutsideHours, conversationHistory);
   return ai.generateContent([prompt, clientMessage]);
 }
 ```
@@ -229,7 +235,8 @@ export async function generateClientReply(
 | Transcrição de áudio (pós-onboarding) | ❌ Salva como material | ✅ Whisper + intent | Nó `transcribe` → router |
 | Reconhecimento de intents | ✅ IA | ✅ IA | Nó router no grafo |
 | Aceite de termos | ❌ 3 palavras fixas | ✅ IA via nó | Nó no grafo |
-| Respostas aos clientes | ❌ Template fixo | ✅ IA contextual (negócio + tom) | Nó especializado no grafo |
+| Respostas aos clientes | ✅ IA contextual | ✅ IA contextual + histórico | Nó especializado no grafo |
+| Memória de conversa (multi-turno) | ✅ Últimas 5 msgs | ✅ Últimas 5 msgs | Nó + lead_memory |
 | Classificação de leads | ❌ Não existe | ❌ Não existe | Nó classificador |
 
 ---
@@ -292,7 +299,10 @@ Se cada chamada usa ~400 tokens de prompt, isso queima tokens rápido e custa ma
    - Não requer código extra — só manter o prompt estável
 
 3. **Sem histórico de conversa**
-   - Cada resposta ao cliente é isolada (sem enviar mensagens anteriores)
+   - ~~Cada resposta ao cliente é isolada (sem enviar mensagens anteriores)~~
+   - **ATUALIZADO:** Histórico básico implementado (últimas 5 mensagens do lead)
+   - Injetado APÓS o prefixo fixo do dono para preservar caching
+   - Custo adicional: ~30-80 tokens/chamada (compensado pelo ganho de experiência)
    - Funciona porque a Cleo é secretária (anota e repassa), não consultora
 
 **Resultado esperado:** ~150 tokens/chamada × 600 chamadas/dia = ~90K tokens/dia = **~R$0,05/dia** no Gemini Flash
