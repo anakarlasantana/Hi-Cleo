@@ -120,7 +120,7 @@ export class OnboardingService {
 
     await this.onboardingRepo.updateStep(userId, 'completed', state.data);
     await this.saveBusinessProfileAndRules(userId, state.data);
-    return `Tudo configurado! 🎉\n\nA partir de agora eu cuido da organização dos seus contatos e respondo seus clientes do jeito que combinamos.\n\n📱 *Último passo:* conecte seu WhatsApp pra eu começar a monitorar suas conversas.\n\nAcesse o link abaixo no computador e escaneie o QR Code:\n${env.SITE_URL}/conectar\n\nÉ igual ao WhatsApp Web: vai em *Dispositivos Vinculados* no celular e escaneie. Quando conectar, eu começo a trabalhar automaticamente!\n\n📌 Dica: fixa a Cleo no topo do WhatsApp pra não perder nenhuma mensagem minha!`;
+    return `Tudo configurado! 🎉\n\nA partir de agora eu cuido da organização dos seus contatos e respondo seus clientes do jeito que combinamos.\n\n📱 *Último passo:* conecte seu WhatsApp pra eu começar a acompanhar suas conversas.\n\nAcesse o link abaixo no computador e escaneie o QR Code:\n${env.SITE_URL}/conectar\n\nÉ igual ao WhatsApp Web: vai em *Dispositivos Vinculados* no celular e escaneie. Quando conectar, eu começo a trabalhar automaticamente!\n\n📌 Dica: fixa a Cleo no topo do WhatsApp pra não perder nenhuma mensagem minha!`;
   }
 
   /**
