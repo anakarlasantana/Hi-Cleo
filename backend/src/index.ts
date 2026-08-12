@@ -82,7 +82,11 @@ app.use('/webhooks/evolution', validateInternalOrigin, webhookRouter);
 app.use('/webhooks', paymentWebhookRouter); // MP já valida assinatura no controller
 
 // --- API pública (com rate limit) ---
-app.use('/api/payments', apiRateLimit, paymentRateLimit, paymentRouter);
+// Rate limit de pagamentos: POST e GET /price usam paymentRateLimit (5/min),
+// GET /:orderId/status usa apenas apiRateLimit global (polling frequente do frontend)
+app.post('/api/payments', apiRateLimit, paymentRateLimit, paymentRouter);
+app.get('/api/payments/price', apiRateLimit, paymentRateLimit, paymentRouter);
+app.get('/api/payments/:orderId/status', apiRateLimit, paymentRouter);
 app.use('/api/activation', apiRateLimit, activationRouter);
 app.use('/api/invites', apiRateLimit, invitesRouter);
 app.use('/api/cancellation', apiRateLimit, cancellationRouter);

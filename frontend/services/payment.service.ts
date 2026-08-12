@@ -4,12 +4,14 @@ export interface CreatePixPaymentParams {
   planName: string
   billingPeriod: "monthly" | "yearly"
   email: string
+  name?: string
 }
 
 export interface CreateCardPaymentParams {
   planName: string
   billingPeriod: "monthly" | "yearly"
   email: string
+  name?: string
   cardToken: string
   cardBrand: string
   installments: number

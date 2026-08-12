@@ -9,6 +9,7 @@ const createPaymentSchema = z.object({
   planName: z.enum(['solo', 'equipe', 'empresa']),
   billingPeriod: z.enum(['monthly', 'yearly']),
   email: z.string().email('E-mail inválido'),
+  name: z.string().min(1).optional(),
   method: z.enum(['pix', 'credit_card']),
   cardToken: z.string().min(1).optional(),
   cardBrand: z.string().min(1).optional(),
@@ -43,7 +44,7 @@ paymentRouter.post('/', async (req: Request, res: Response) => {
       return;
     }
 
-    const { planName, billingPeriod, email, method, cardToken, cardBrand, installments, cpf } = parsed.data;
+    const { planName, billingPeriod, email, name, method, cardToken, cardBrand, installments, cpf } = parsed.data;
 
     if (method === 'credit_card' && (!cardToken || !cardBrand)) {
       res.status(400).json({ error: 'Cartão requer: cardToken, cardBrand' });
@@ -51,7 +52,7 @@ paymentRouter.post('/', async (req: Request, res: Response) => {
     }
 
     const result = await container.paymentService.createPayment({
-      planName: planName as PlanName, billingPeriod, email, method, cardToken, cardBrand, installments, cpf,
+      planName: planName as PlanName, billingPeriod, email, name, method, cardToken, cardBrand, installments, cpf,
     });
 
     res.status(201).json(result);

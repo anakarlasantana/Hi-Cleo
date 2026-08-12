@@ -7,6 +7,7 @@ interface CreatePaymentParams {
   planName: PlanName;
   billingPeriod: BillingPeriod;
   email: string;
+  name?: string;
   method: 'pix' | 'credit_card';
   cardToken?: string;
   cardBrand?: string;
@@ -37,7 +38,7 @@ export class PaymentService {
   }
 
   async createPayment(params: CreatePaymentParams) {
-    const { planName, billingPeriod, email, method, cardToken, cardBrand, installments = 1, cpf } = params;
+    const { planName, billingPeriod, email, name, method, cardToken, cardBrand, installments = 1, cpf } = params;
 
     const plan = await this.planRepo.getPlanLimit(planName);
     if (!plan) throw new Error(`Plano "${planName}" não encontrado`);
@@ -61,6 +62,7 @@ export class PaymentService {
       amount: price.mpAmount,
       paymentMethod,
       payerEmail: email,
+      payerFirstName: name?.split(' ')[0],
       payerIdentification: cpf ? { type: 'CPF', number: cpf } : undefined,
       externalReference,
       idempotencyKey: randomUUID(),

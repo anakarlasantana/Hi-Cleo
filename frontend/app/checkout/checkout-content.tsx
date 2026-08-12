@@ -96,6 +96,7 @@ export function CheckoutContent() {
           planName: selectedPlan,
           billingPeriod,
           email: formData.email,
+          name: formData.name,
         })
 
         if (!paymentData.qrCode && !paymentData.qrCodeBase64) {
@@ -119,6 +120,7 @@ export function CheckoutContent() {
           planName: selectedPlan,
           billingPeriod,
           email: formData.email,
+          name: formData.name,
           cardToken,
           cardBrand: detectedCardBrand,
           installments: selectedInstallments,

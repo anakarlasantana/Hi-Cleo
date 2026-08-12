@@ -35,6 +35,7 @@ export interface CreateOrderParams {
   amount: string;
   paymentMethod: { id: string; type: string; token?: string; installments?: number };
   payerEmail: string;
+  payerFirstName?: string;
   payerIdentification?: { type: string; number: string };
   externalReference: string;
   idempotencyKey: string;

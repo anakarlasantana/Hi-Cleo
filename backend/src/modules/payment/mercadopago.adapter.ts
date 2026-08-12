@@ -11,9 +11,12 @@ export class MercadoPagoAdapter implements MercadoPagoPort {
   }
 
   async createOrder(params: CreateOrderParams): Promise<OrderResult> {
-    const { amount, paymentMethod, payerEmail, payerIdentification, externalReference, idempotencyKey, description } = params;
+    const { amount, paymentMethod, payerEmail, payerFirstName, payerIdentification, externalReference, idempotencyKey, description } = params;
 
     const payer: Record<string, unknown> = { email: payerEmail };
+    if (payerFirstName) {
+      payer.first_name = payerFirstName;
+    }
     if (payerIdentification) {
       payer.identification = payerIdentification;
     }
