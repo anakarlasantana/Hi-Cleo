@@ -19,13 +19,16 @@ interface PaymentFormProps {
   selectedInstallments: number
   planName: string
   billingPeriod: "monthly" | "yearly"
+  cardBin: string
+  amount: number
   onMethodChange: (method: "pix" | "card") => void
   onInstallmentsChange: (installments: number) => void
   onCardBrandDetected: (brand: string) => void
+  onCardBinChange: (bin: string) => void
   onSubmit: (data: CardFormData) => void
 }
 
-export function PaymentForm({ paymentMethod, isProcessing, selectedInstallments, planName, billingPeriod, onMethodChange, onInstallmentsChange, onCardBrandDetected, onSubmit }: PaymentFormProps) {
+export function PaymentForm({ paymentMethod, isProcessing, selectedInstallments, planName, billingPeriod, cardBin, amount, onMethodChange, onInstallmentsChange, onCardBrandDetected, onCardBinChange, onSubmit }: PaymentFormProps) {
   const schema = paymentMethod === "card" ? cardSchema : baseSchema
 
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<CardFormData>({
@@ -42,10 +45,11 @@ export function PaymentForm({ paymentMethod, isProcessing, selectedInstallments,
   const handleCardBinChange = useCallback(async (arg: { bin?: string }) => {
     const bin = arg.bin
     if (bin && bin.length >= 6) {
+      onCardBinChange(bin)
       const brand = await detectCardBrand(bin)
       if (brand) onCardBrandDetected(brand)
     }
-  }, [onCardBrandDetected])
+  }, [onCardBrandDetected, onCardBinChange])
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -129,8 +133,8 @@ export function PaymentForm({ paymentMethod, isProcessing, selectedInstallments,
             </div>
             {billingPeriod === "yearly" && (
               <InstallmentSelector
-                planName={planName}
-                billingPeriod={billingPeriod}
+                bin={cardBin}
+                amount={amount}
                 selectedInstallments={selectedInstallments}
                 onSelect={onInstallmentsChange}
               />

@@ -34,6 +34,7 @@ export function CheckoutContent() {
   const [paymentMethod, setPaymentMethod] = useState<"pix" | "card">("pix")
   const [selectedInstallments, setSelectedInstallments] = useState(1)
   const [detectedCardBrand, setDetectedCardBrand] = useState<string>("visa")
+  const [cardBin, setCardBin] = useState<string>("")
   const [isProcessing, setIsProcessing] = useState(false)
   const [showPixModal, setShowPixModal] = useState(false)
   const [pixConfirmed, setPixConfirmed] = useState(false)
@@ -224,9 +225,12 @@ export function CheckoutContent() {
               selectedInstallments={selectedInstallments}
               planName={selectedPlan}
               billingPeriod={isYearly ? "yearly" : "monthly"}
+              cardBin={cardBin}
+              amount={plan ? (isYearly ? plan.yearlyTotal / 100 : plan.priceMonthly / 100) : 0}
               onMethodChange={setPaymentMethod}
               onInstallmentsChange={setSelectedInstallments}
               onCardBrandDetected={setDetectedCardBrand}
+              onCardBinChange={setCardBin}
               onSubmit={handlePaymentSubmit}
             />
           </div>
