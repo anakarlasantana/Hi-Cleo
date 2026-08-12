@@ -102,16 +102,13 @@ function PlanCard({ plan, isYearly, index }: { plan: typeof plans[0]; isYearly: 
           {isYearly ? (
             <>
               <div className="flex items-baseline gap-1">
-                <span className={cn("text-sm", plan.highlighted ? "text-white/70" : "text-muted-foreground")}>12x de</span>
-              </div>
-              <div className="flex items-baseline gap-1 mt-1">
                 <span className={cn("text-sm", plan.highlighted ? "text-white/70" : "text-muted-foreground")}>R$</span>
                 <span className={cn("text-5xl font-bold tracking-tight", plan.highlighted ? "text-white" : "text-foreground")}>
-                  {plan.yearlyInstallment.toFixed(2).replace(".", ",")}
+                  {plan.yearlyTotal.toFixed(2).replace(".", ",")}
                 </span>
               </div>
-              <p className={cn("text-xs mt-2", plan.highlighted ? "text-white/50" : "text-muted-foreground")}>
-                ou R$ {plan.yearlyTotal.toFixed(2).replace(".", ",")} à vista
+              <p className={cn("text-sm mt-2", plan.highlighted ? "text-white/70" : "text-muted-foreground")}>
+                à vista ou até 12x de R$ {plan.yearlyInstallment.toFixed(2).replace(".", ",")}
               </p>
             </>
           ) : (

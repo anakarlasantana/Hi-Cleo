@@ -32,8 +32,8 @@ export function CheckoutSummary({ plans, selectedPlan, isYearly, onSelectPlan, o
               <p className="text-xs text-muted-foreground">{plans[key].users}</p>
             </div>
             <div className="text-right">
-              <p className="font-bold text-foreground text-sm">R${formatCentsToBRL(isYearly ? plans[key].priceYearly : plans[key].priceMonthly)}</p>
-              <p className="text-xs text-muted-foreground">/mês</p>
+              <p className="font-bold text-foreground text-sm">R${formatCentsToBRL(isYearly ? plans[key].yearlyTotal : plans[key].priceMonthly)}</p>
+              <p className="text-xs text-muted-foreground">{isYearly ? "/ano" : "/mês"}</p>
             </div>
           </button>
         ))}
@@ -67,10 +67,18 @@ export function CheckoutSummary({ plans, selectedPlan, isYearly, onSelectPlan, o
         <div className="flex items-baseline justify-between">
           <span className="text-foreground font-medium">Total</span>
           <div className="text-right">
-            <p className="text-2xl font-bold text-foreground">
-              R${formatCentsToBRL(price)}<span className="text-sm font-normal text-muted-foreground">/mês</span>
-            </p>
-            {isYearly && <p className="text-xs text-muted-foreground">R${formatCentsToBRL(plan.yearlyTotal)} cobrado anualmente</p>}
+            {isYearly ? (
+              <>
+                <p className="text-2xl font-bold text-foreground">
+                  R${formatCentsToBRL(plan.yearlyTotal)}
+                </p>
+                <p className="text-xs text-muted-foreground">à vista ou até 12x no cartão</p>
+              </>
+            ) : (
+              <p className="text-2xl font-bold text-foreground">
+                R${formatCentsToBRL(price)}<span className="text-sm font-normal text-muted-foreground">/mês</span>
+              </p>
+            )}
           </div>
         </div>
       </div>
