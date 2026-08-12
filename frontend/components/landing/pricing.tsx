@@ -6,6 +6,10 @@ import { Check, ArrowRight } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 
+function formatBRL(value: number): string {
+  return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 const plans = [
   {
     name: "Solo",
@@ -104,11 +108,11 @@ function PlanCard({ plan, isYearly, index }: { plan: typeof plans[0]; isYearly: 
               <div className="flex items-baseline gap-1">
                 <span className={cn("text-sm", plan.highlighted ? "text-white/70" : "text-muted-foreground")}>R$</span>
                 <span className={cn("text-5xl font-bold tracking-tight", plan.highlighted ? "text-white" : "text-foreground")}>
-                  {plan.yearlyTotal.toFixed(2).replace(".", ",")}
+                  {formatBRL(plan.yearlyTotal)}
                 </span>
               </div>
               <p className={cn("text-sm mt-2", plan.highlighted ? "text-white/70" : "text-muted-foreground")}>
-                à vista ou até 12x de R$ {plan.yearlyInstallment.toFixed(2).replace(".", ",")}
+                à vista ou até 12x de R$ {formatBRL(plan.yearlyInstallment)}
               </p>
             </>
           ) : (
@@ -116,7 +120,7 @@ function PlanCard({ plan, isYearly, index }: { plan: typeof plans[0]; isYearly: 
               <div className="flex items-baseline gap-1">
                 <span className={cn("text-sm", plan.highlighted ? "text-white/70" : "text-muted-foreground")}>R$</span>
                 <span className={cn("text-5xl font-bold tracking-tight", plan.highlighted ? "text-white" : "text-foreground")}>
-                  {plan.monthlyPrice.toFixed(2).replace(".", ",")}
+                  {formatBRL(plan.monthlyPrice)}
                 </span>
                 <span className={cn("text-sm", plan.highlighted ? "text-white/70" : "text-muted-foreground")}>/mês</span>
               </div>
