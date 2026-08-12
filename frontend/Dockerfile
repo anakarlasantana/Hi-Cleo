@@ -6,7 +6,7 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
 # Etapa 2: Build — compila Next.js com variáveis de ambiente
 FROM node:20-alpine AS builder

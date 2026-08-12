@@ -15,7 +15,7 @@ export function Footer() {
           </Link>
 
           {/* Links */}
-          <div className="flex items-center gap-8 text-sm">
+          <div className="flex flex-wrap justify-center items-center gap-4 md:gap-8 text-sm">
             <Link href="#beneficios" className="text-slate-400 hover:text-white transition-colors">
               Benefícios
             </Link>

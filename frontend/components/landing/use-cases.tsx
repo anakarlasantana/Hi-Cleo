@@ -109,7 +109,7 @@ export function UseCases() {
         {/* Layout: tabs à esquerda + conteúdo à direita */}
         <div className="max-w-5xl mx-auto grid md:grid-cols-[240px_1fr] gap-8 items-start">
           {/* Tabs verticais (desktop) / horizontais (mobile) */}
-          <div className="flex md:flex-col gap-2 overflow-x-auto md:overflow-visible pb-2 md:pb-0">
+          <div className="flex md:flex-col gap-2 overflow-x-auto md:overflow-visible pb-2 md:pb-0 -mx-4 px-4 md:mx-0 md:px-0 max-w-[100vw] md:max-w-none">
             {useCases.map((useCase, index) => {
               const Icon = useCase.icon
               return (

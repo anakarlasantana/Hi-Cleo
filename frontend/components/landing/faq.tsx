@@ -95,7 +95,7 @@ export function FAQ() {
                 )}
                 style={{ transitionDelay: `${(index + 1) * 100}ms` }}
               >
-                <AccordionTrigger className="text-left text-foreground font-semibold hover:no-underline py-5 text-base">
+                <AccordionTrigger className="text-left text-foreground font-semibold hover:no-underline py-5 text-base cursor-pointer">
                   {faq.question}
                 </AccordionTrigger>
                 <AccordionContent className="text-muted-foreground pb-5 leading-relaxed text-sm">
