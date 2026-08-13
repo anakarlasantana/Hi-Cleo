@@ -271,6 +271,564 @@ Organizado por prioridade.
 
 ---
 
+---
+
+## 🟡 PENDENTES — OTIMIZAÇÕES DE IA E TRIAL (pós-lançamento beta)
+
+### 41. Cache de System Prompt (estabilidade do prefixo)
+
+**Status:** Planejado
+**Prioridade:** Alta (reduz custo de IA em 50-98%)
+**Estimativa:** 0.5 dia
+
+**O que fazer:**
+- Garantir que system prompt por dono tem prefixo estável (determinístico entre chamadas)
+- Histórico de conversa e mensagem do lead vêm DEPOIS do prefixo fixo
+- DeepSeek, Groq e Gemini aplicam cache automaticamente quando primeiros tokens são idênticos
+- Criar helper `buildStableSystemPrompt(business)` que retorna string determinística
+
+**Impacto:** DeepSeek cobra $0.0028/1M (cache hit) vs $0.14/1M (normal) = 98% de desconto no input.
+
+---
+
+### 42. Cache Local de Respostas (Redis)
+
+**Status:** Planejado
+**Prioridade:** Média (evita chamadas repetidas)
+**Estimativa:** 0.5 dia
+
+**O que fazer:**
+- Antes de chamar IA, checar Redis: `ai:response:{hash(system+user_msg)}`
+- Se existe e tem <1h: retornar cached
+- NÃO cachear msgs do dono (intents são contextuais)
+- Cachear apenas respostas genéricas a leads (saudação, fora horário, "vou anotar")
+
+**Arquivos:** novo `modules/ai/cache/response-cache.ts`, alterar `generate-client-reply.ts`
+
+---
+
+### 43. Métricas de Uso de IA (por provider, por dia)
+
+**Status:** Planejado
+**Prioridade:** Média (visibilidade de custo e saúde)
+**Estimativa:** 0.5 dia
+
+**O que fazer:**
+- Counter no Redis: `ai:calls:{provider}:{date}` → increment a cada chamada
+- Counter de tokens: `ai:tokens:{provider}:{date}:input` e `:output`
+- Endpoint `/health` expandido: retorna counts do dia
+- Alerta ao admin quando: `calls > 80% do budget diário`
+
+**Arquivos:** alterar `ai-fallback.adapter.ts`, expandir `/health`
+
+---
+
+### 44. Trial de 7 Dias (aquisição + anti-abuso + prospecção)
+
+**Status:** Planejado
+**Prioridade:** Alta (conversão e validação do produto)
+**Estimativa:** 2 dias
+**Dependência:** Deploy (#22) precisa estar concluído
+
+---
+
+#### Fluxo do Trial
+
+```
+Landing page ("Teste 7 dias grátis")
+  → Formulário MÍNIMO: nome + telefone + checkbox termos/comunicações
+  → POST /api/trial/start
+    → Validações anti-abuso (5 camadas automáticas, zero fricção)
+    → Cria user com subscription_status = 'trial', expires_at = +7d
+    → Gera código ATIVAR-XXXX
+    → Retorna código + link wa.me direto pra Cleo
+  → Usuário manda código no WhatsApp da Cleo
+  → Cleo ativa → onboarding conversacional (coleta email, negócio, público, etc.)
+  → Conectar WhatsApp → funcionando
+
+Tempo do formulário até ativação: ~30 segundos
+Campos no formulário: 3 (nome, telefone, checkbox)
+Dados enriquecidos via onboarding: email, tipo de negócio, público, tom, horário
+```
+
+**Princípio:** Coletar o mínimo para funcionar. Enriquecer progressivamente via conversa.
+
+| Dado | Quando é coletado | Como |
+|---|---|---|
+| Nome | Formulário (obrigatório) | Input |
+| Telefone | Formulário (obrigatório) | Input com máscara |
+| Consentimento | Formulário (obrigatório) | Checkbox |
+| Email | Onboarding — Cleo pergunta | "Qual seu email pra eu te avisar sobre o plano?" |
+| Tipo de negócio | Onboarding (já existe) | Cleo pergunta no chat |
+| Público-alvo | Onboarding (já existe) | Cleo pergunta no chat |
+| Horário | Onboarding (já existe) | Cleo pergunta no chat |
+| Como conheceu | Pós-ativação (1ª interação) | "Aliás, como você conheceu a Cleo? 😊" |
+| CPF | **Só no checkout** (se converter) | Não pedir no trial |
+| IP / Device / User-Agent | Automático no request | Transparente pro usuário |
+
+#### Limites do Trial
+
+- **Funcionalidade completa** — não limita features (usuário precisa ver valor real)
+- **Limite de 30 respostas automáticas** — controla custo IA
+- Contador visível nas respostas: "Você usou 20 de 30 respostas do teste"
+- Após atingir 30: Cleo informa que o limite foi atingido e direciona pro checkout
+
+#### Custos projetados (cenário sem pagantes)
+
+| Trials simultâneos | Custo IA/mês | Custo total/mês (VPS + IA) |
+|---|---|---|
+| 10-20 | R$0 (Groq free) | R$36 |
+| 30 | R$3-8 (DeepSeek) | R$39-44 |
+| 50 | R$5-11 | R$50-56 |
+
+---
+
+#### Anti-Abuso — 5 Camadas Automáticas (zero fricção pro usuário)
+
+| Camada | Verificação | Como funciona | Dificuldade de burlar |
+|---|---|---|---|
+| 1. Telefone | 1 trial por número (cooldown 90 dias) | Query no banco | Alta (chip é custo real) |
+| 2. Rate limit IP | Max 3 trials por IP em 24h | Redis counter | Média |
+| 3. Telefone BR | Só +55, DDD válido, 9 dígitos celular | Validação regex | Baixa mas filtra bots |
+| 4. Device fingerprint | Hash do device ID via webhook Evolution | Capturado na ativação | Alta |
+| 5. Delay anti-bot | 60s entre tentativas do mesmo IP | Redis TTL | Alta contra automação |
+
+**Não pede CPF nem email no formulário** — zero burocracia. Se identificar abuso em produção,
+adicionar camadas extras (CPF, email normalizado) na Fase 5.
+
+**Por que funciona sem CPF:**
+- O principal anti-abuso é o **telefone** — trocar de chip custa dinheiro e tempo
+- O **device fingerprint** pega quem troca chip mas usa o mesmo aparelho
+- O **rate limit por IP** pega quem tenta criar vários trials de uma vez
+- O custo real de burlar todas as camadas (chip novo + VPN + aparelho novo) > R$49 (preço do plano)
+
+---
+
+#### Tabela `trial_attempts` (registro completo para anti-abuso + prospecção)
+
+```sql
+CREATE TABLE trial_attempts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- Dados do formulário (mínimo obrigatório)
+  name VARCHAR(255) NOT NULL,
+  phone VARCHAR(20) NOT NULL,
+  
+  -- Dados enriquecidos via onboarding (preenchidos progressivamente)
+  email VARCHAR(255),
+  email_normalized VARCHAR(255),
+  business_type VARCHAR(255),
+  city VARCHAR(100),
+  state VARCHAR(2),
+  referral_source VARCHAR(100),  -- 'instagram', 'google', 'indicacao', 'tiktok', etc.
+  
+  -- Dados técnicos (anti-abuso — coletados automaticamente)
+  ip_address INET,
+  device_fingerprint VARCHAR(255),
+  user_agent TEXT,
+  
+  -- Estado do trial
+  status VARCHAR(20) DEFAULT 'started',
+    -- started: registrou mas não ativou
+    -- activated: ativou código e conectou
+    -- expired: 7 dias passaram
+    -- converted: pagou após trial
+    -- blocked: tentativa bloqueada por anti-abuso
+  blocked_reason VARCHAR(100),  -- 'duplicate_phone', 'rate_limit_ip', 'invalid_phone', 'duplicate_device'
+  
+  -- Métricas de uso (preenchidas durante o trial)
+  trial_user_id UUID REFERENCES users(id),
+  responses_used INTEGER DEFAULT 0,
+  leads_captured INTEGER DEFAULT 0,
+  whatsapp_connected BOOLEAN DEFAULT FALSE,
+  onboarding_completed BOOLEAN DEFAULT FALSE,
+  last_activity_at TIMESTAMPTZ,
+  
+  -- Prospecção pós-trial
+  prospection_attempts INTEGER DEFAULT 0,
+  last_prospection_at TIMESTAMPTZ,
+  prospection_status VARCHAR(20) DEFAULT 'pending',
+    -- pending: ainda não contactado
+    -- contacted: já recebeu msg
+    -- interested: respondeu positivamente
+    -- not_interested: respondeu negativamente
+    -- converted: pagou
+  
+  -- Timestamps
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  activated_at TIMESTAMPTZ,
+  expired_at TIMESTAMPTZ,
+  converted_at TIMESTAMPTZ
+);
+
+-- Índices para anti-abuso
+CREATE INDEX idx_trial_phone_90d ON trial_attempts(phone, created_at DESC);
+CREATE INDEX idx_trial_device ON trial_attempts(device_fingerprint) WHERE device_fingerprint IS NOT NULL;
+CREATE INDEX idx_trial_ip_24h ON trial_attempts(ip_address, created_at DESC);
+
+-- Índices para prospecção
+CREATE INDEX idx_trial_prospection ON trial_attempts(status, prospection_status) WHERE status IN ('expired', 'started');
+CREATE INDEX idx_trial_hot_leads ON trial_attempts(responses_used DESC) WHERE status = 'expired' AND prospection_status = 'pending';
+```
+
+---
+
+#### Campos adicionais na tabela `users` (para trials)
+
+```sql
+ALTER TABLE users ADD COLUMN trial_started_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN trial_responses_used INTEGER DEFAULT 0;
+ALTER TABLE users ADD COLUMN trial_responses_limit INTEGER DEFAULT 30;
+ALTER TABLE users ADD COLUMN trial_attempt_id UUID REFERENCES trial_attempts(id);
+```
+
+---
+
+#### Guard no `message.processor.ts`
+
+Antes de chamar a IA para responder um lead, verificar:
+
+```ts
+// Pseudo-código do guard
+if (user.subscription_status === 'trial') {
+  if (new Date() > user.subscription_expires_at) {
+    // Trial expirou — redirecionar pro checkout
+    await sendText(lead.phone, "O período de teste acabou! Pra continuar com a Cleo: {CHECKOUT_URL}")
+    return
+  }
+  if (user.trial_responses_used >= user.trial_responses_limit) {
+    // Atingiu limite — informar
+    await sendText(lead.phone, "O dono vai te responder em breve 😊")
+    await sendText(owner.phone, "⚠️ Limite de respostas do teste atingido (30/30). Assine pra continuar: {CHECKOUT_URL}")
+    return
+  }
+  // Incrementar contador
+  user.trial_responses_used++
+}
+```
+
+---
+
+#### Cron de Lembretes do Trial
+
+Integrado no `subscription.cron.ts` existente:
+
+| Dia | Ação | Mensagem |
+|---|---|---|
+| 5 | Lembrete amigável | "Seu teste acaba em 2 dias! Você já usou X de 30 respostas. Quer continuar? {CHECKOUT_URL}" |
+| 7 | Lembrete urgente | "🚨 Último dia do teste! A Cleo atendeu X clientes pra você. Assine agora: {CHECKOUT_URL}" |
+| 8 | Expiração | Marca `subscription_status = 'expired'`, desconecta sessões |
+
+---
+
+#### Cron de Prospecção Pós-Trial
+
+Novo cron dedicado: `trial-prospection.cron.ts`
+**Schedule:** Diário às 10h (horário comercial — melhor taxa de abertura no WhatsApp)
+
+**Lógica de execução:**
+
+```
+1. Buscar trial_attempts WHERE:
+   - status IN ('expired', 'started')
+   - prospection_status = 'pending' OR (prospection_status = 'contacted' AND last_prospection_at < agora - intervalo)
+   - prospection_attempts < 2 (máximo 2 tentativas)
+   
+2. Para cada attempt, classificar por "temperatura":
+   
+   🔥 QUENTE (prioridade 1 — contactar dia 8):
+     - responses_used >= 20
+     - whatsapp_connected = true
+     - leads_captured > 0
+   
+   🟡 MORNO (prioridade 2 — contactar dia 10):
+     - onboarding_completed = true
+     - responses_used entre 5 e 19
+   
+   ❄️ FRIO (prioridade 3 — contactar dia 14):
+     - status = 'started' (nunca ativou)
+     - OU responses_used < 5
+
+3. Enviar mensagem personalizada por WhatsApp
+4. Atualizar prospection_attempts++ e last_prospection_at
+5. Se attempt 2 e sem resposta → marcar prospection_status = 'not_interested'
+```
+
+**Cadência — 2 tentativas em 21 dias (validada com práticas de mercado):**
+
+O WhatsApp não é email. Cada msg é push notification intrusiva com 98% de taxa de abertura.
+A Meta recomenda max 1-2 msgs de marketing por semana. Mais que isso = risco de ban + percepção de spam.
+
+```
+Dia 0-7:   Trial ativo
+Dia 5:     Lembrete interno: "Seu teste acaba em 2 dias"
+Dia 7:     Lembrete urgente: "Último dia"
+Dia 8:     Trial expira → desconecta imediatamente → notifica dono
+
+--- PROSPECÇÃO (max 2 msgs por WhatsApp) ---
+1ª tentativa:
+  🔥 Quentes → dia 8 (urgência real — clientes sem resposta)
+  🟡 Mornos  → dia 10
+  ❄️ Frios   → dia 14 (só 1 msg, tom de ajuda)
+
+2ª e última tentativa (só se não respondeu):
+  🔥 Quentes → dia 21 (oferta com desconto)
+  🟡 Mornos  → dia 24
+  ❄️ Frios   → NÃO ENVIA (1 tentativa é o máximo)
+
+Dia 30:    Purga dados operacionais (leads, messages, business, sessions)
+
+--- REENGAJAMENTO PASSIVO (sem WhatsApp) ---
+Dia 30+:   Só via email — newsletters mensais, ofertas sazonais (Black Friday, etc.)
+Dia 180:   Anonimiza dados de prospecção ou deleta se solicitado
+```
+
+**Por que 2 tentativas (não 3):**
+- WhatsApp ≠ email — 3 msgs sem resposta = sensação de assédio
+- Risco de ban: 5+ reports = número da secretária bloqueado pela Meta
+- 3ª tentativa tem conversão <2% (não justifica o risco)
+- Preserva reputação da marca ("Cleo é simpática, não insistente")
+- Mercado brasileiro: max 1-2 msgs marketing/semana (recomendação Meta)
+
+**Mensagens por temperatura e tentativa:**
+
+| Temperatura | 1ª tentativa | 2ª tentativa (13 dias depois) |
+|---|---|---|
+| 🔥 Quente | "Oi {nome}! A Cleo atendeu {leads_captured} clientes pra você no teste. Seus clientes tão sem resposta desde dia {data_expiração}. Quer reativar? {CHECKOUT_URL}" | "Oi {nome}! Oferta especial: primeiro mês com 15% off pra você voltar. Válido até {data+7d}: {CHECKOUT_URL_DESCONTO}" |
+| 🟡 Morno | "Oi {nome}! Como foi o teste da Cleo? Vi que você configurou tudo certinho. Alguma dúvida? Quer continuar? {CHECKOUT_URL}" | "Oi {nome}! A Cleo tá com saudade 😊 Primeiro mês com desconto especial: {CHECKOUT_URL_DESCONTO}" |
+| ❄️ Frio | "Oi {nome}! Vi que você se cadastrou pra testar a Cleo mas não conseguiu configurar. Posso ajudar? É rapidinho, menos de 5 minutos!" | _(não envia — marca como not_interested)_ |
+
+**Regras do cron:**
+- Respeita horário comercial (só envia entre 9h-18h no timezone do usuário)
+- Intervalo mínimo entre tentativas: **13 dias** (quentes: dia 8 → dia 21)
+- Max 2 tentativas por WhatsApp (frios: apenas 1)
+- Se responde "não" / "para" / bloqueia → `not_interested`, nunca mais contacta
+- Se responde positivamente → `interested`, envia link com oferta
+- Se paga → `converted` automaticamente (webhook MP detecta email)
+- Rate limit: max 20 envios/hora (evitar ban por volume)
+
+**Detecção de resposta no message.processor:**
+```ts
+// Quando recebe msg de número em trial_attempts com status 'contacted'
+if (trialAttempt && trialAttempt.prospection_status === 'contacted') {
+  const text = message.toLowerCase()
+  if (/não|para|cancela|remove|sai|chega/.test(text)) {
+    await updateProspectionStatus(trialAttempt.id, 'not_interested')
+    await sendText(phone, "Entendido! Não vou mais entrar em contato. Se mudar de ideia: hicleo.com.br 😊")
+    return
+  }
+  if (/sim|quero|como|quanto|assinar|plano|continuar/.test(text)) {
+    await updateProspectionStatus(trialAttempt.id, 'interested')
+    await sendText(phone, "Ótimo! Acesse {CHECKOUT_URL} pra escolher seu plano. Qualquer dúvida, manda aqui!")
+    return
+  }
+}
+```
+
+---
+
+#### Retenção de Dados e LGPD
+
+| Dado | Tabela | Retenção | Justificativa |
+|---|---|---|---|
+| Dados operacionais (leads, mensagens, business, sessions) | `users`, `leads`, `messages` | 30 dias após expirar | LGPD — mesma regra do cancelamento |
+| Dados de prospecção (nome, email, telefone, negócio) | `trial_attempts` | 6 meses | Legítimo interesse + consentimento explícito |
+| Métricas anonimizadas | `trial_attempts` (sem PII) | Indefinido | Análise de produto |
+
+**Consentimento no formulário de trial (1 checkbox):**
+```
+☐ Aceito os Termos de Uso e concordo em receber comunicações da Hi Cleo por WhatsApp
+```
+Um único checkbox cobre termos + base legal para prospecção.
+Simples, sem assustar. Termos completos acessíveis via link no texto.
+
+---
+
+#### Métricas de Conversão
+
+O cron registra eventos na tabela `subscription_events` com `event_type`:
+- `trial_prospection_sent` — tentativa de prospecção enviada
+- `trial_prospection_responded` — usuário respondeu
+- `trial_converted` — trial virou pagante
+
+Permite calcular:
+- Taxa de conversão trial → pagante (meta: 10-20%)
+- Taxa de resposta à prospecção (meta: 30-50%)
+- Tempo médio de conversão (quantos dias após expirar)
+- Canal de aquisição com melhor ROI (`referral_source`)
+
+---
+
+#### Fases de Implementação (do mais importante ao menos)
+
+**Fase 1 — Trial funcional (bloqueante para aquisição de clientes)**
+_Estimativa: 1 dia_
+
+| # | Item | Prioridade | Motivo |
+|---|---|---|---|
+| 1 | Migration: tabela `trial_attempts` + campos `users` | Máxima | Base de tudo |
+| 2 | Rota `POST /api/trial/start` com validações anti-abuso | Máxima | Sem ela não existe trial |
+| 3 | Guard no `message.processor.ts` (verificar trial expirado + limite 30 respostas) | Máxima | Sem isso, trial é plano grátis infinito |
+| 4 | Adaptar `SubscriptionService.checkExpirations()` para tratar `trial` | Máxima | Expirar e desconectar no dia 8 |
+| 5 | Tipo `trial` no `SubscriptionStatus` + interface `User` | Máxima | Tipagem necessária para tudo funcionar |
+
+**Fase 2 — Frontend de entrada (bloqueante para trial funcionar)**
+_Estimativa: 0.5 dia_
+
+| # | Item | Prioridade | Motivo |
+|---|---|---|---|
+| 6 | Formulário de trial no frontend (nome + telefone + checkbox) | Alta | 3 campos, 15 segundos |
+| 7 | CTA na landing page ("Teste 7 dias grátis") | Alta | Ponto de entrada |
+| 8 | Tela de sucesso com código + link wa.me direto pra Cleo | Alta | Reduz fricção (1 clique pra ativar) |
+
+**Fase 3 — Lembretes durante o trial (importante para conversão)**
+_Estimativa: 0.25 dia_
+
+| # | Item | Prioridade | Motivo |
+|---|---|---|---|
+| 9 | Lembrete dia 5: "Seu teste acaba em 2 dias" | Média-Alta | Aumenta conversão em ~20% |
+| 10 | Lembrete dia 7: "Último dia" + link checkout | Média-Alta | Urgência final |
+| 11 | Notificação dia 8: "Teste encerrado, clientes sem resposta" | Média-Alta | Cria dor imediata |
+
+**Fase 4 — Prospecção pós-trial (importante para recuperar leads perdidos)**
+_Estimativa: 0.5 dia_
+
+| # | Item | Prioridade | Motivo |
+|---|---|---|---|
+| 12 | Cron `trial-prospection.cron.ts` com classificação por temperatura | Média | Recupera 10-15% dos expirados |
+| 13 | Detecção de resposta no message.processor (opt-out / interesse) | Média | Respeitar "não" e capturar "sim" |
+| 14 | Atualização automática de métricas durante o trial (responses_used, leads_captured) | Média | Alimenta classificação por temperatura |
+
+**Fase 5 — Refinamento e anti-abuso avançado (PENDENTE FUTURO — só se identificar abuso real)**
+_Status: Movido para pendentes futuros. Implementar sob demanda._
+_Estimativa: 0.75 dia_
+
+| # | Item | Prioridade | Quando implementar |
+|---|---|---|---|
+| 15 | Validação de CPF como camada extra | Baixa | Se identificar abuso repetido |
+| 16 | Normalização de email (anti-alias Gmail/Outlook) | Baixa | Se identificar abuso via aliases |
+| 17 | Device fingerprint via Evolution API | Baixa | Se mesmo aparelho criar múltiplos trials |
+| 18 | Cron de purga (dia 30: dados operacionais, dia 180: anonimização) | Baixa | Quando tiver +100 trials ou exigência legal |
+| 19 | Reengajamento por email (newsletters pós dia 30) | Baixa | Quando tiver ferramenta de email (Brevo/Resend) |
+| 20 | Coleta de "como conheceu" no onboarding | Baixa | Quando quiser medir ROI de canais |
+
+---
+
+#### Resumo de estimativas
+
+| Fase | Escopo | Estimativa | Acumulado |
+|---|---|---|---|
+| 1 | Backend core (trial funciona) | 1 dia | 1 dia |
+| 2 | Frontend (usuário consegue iniciar) | 0.5 dia | 1.5 dias |
+| 3 | Lembretes durante trial | 0.25 dia | 1.75 dias |
+| 4 | Prospecção pós-trial | 0.5 dia | 2.25 dias |
+| 5 | Refinamento anti-abuso + LGPD | 0.75 dia | 3 dias |
+| **MVP (Fases 1-3)** | **Trial funcional com lembretes** | **1.75 dias** | |
+| **Completo (Fases 1-5)** | **Tudo incluindo prospecção e compliance** | **3 dias** | |
+
+---
+
+#### O que já existe e é reutilizado (sem mudanças)
+
+- `ActivationService.generateCode()` — aceita `paymentId = 'trial_free'`
+- `ActivationService.activateUser()` — mesmo fluxo
+- Onboarding conversacional completo
+- Conexão WhatsApp (Evolution API)
+- `SubscriptionService.checkExpirations()` — reconhece `trial` como expirável
+- Frontend `/ativacao` e `/conectar`
+
+---
+
+### 45. MistralAdapter (4º provider de fallback)
+
+**Status:** Planejado
+**Prioridade:** Baixa (diversidade geográfica — UE)
+**Estimativa:** 0.5 dia
+
+**O que fazer:**
+- Criar adapter OpenAI-compatible (mesmo padrão do DeepSeek)
+- Usar Mistral Small 4 ($0.10/1M input, $0.30/1M output)
+- Free tier: ~1B tokens/mês no tier Experiment
+- Adiciona diversidade geográfica (servidores na UE)
+
+---
+
+### 46. Roteamento por Complexidade de Mensagem
+
+**Status:** Planejado
+**Prioridade:** Média (otimização de custo com dados reais)
+**Estimativa:** 1-2 dias
+**Quando:** Após ter dados reais de uso no beta
+
+**O que fazer:**
+- Classificar mensagem por "dificuldade" antes de escolher modelo
+- Saudações → template local (R$0) — já implementado em 1.4
+- Perguntas simples → modelo leve (Groq 8B)
+- Respostas contextuais → modelo médio (DeepSeek V4 Flash)
+- Interpretação complexa → modelo forte (Groq 70B ou Gemini Pro)
+- Requer dados reais pra calibrar thresholds
+
+---
+
+### 47. Batch de Mensagens (agrupar antes de chamar IA)
+
+**Status:** Planejado
+**Prioridade:** Baixa (otimização de escala)
+**Estimativa:** 1 dia
+**Quando:** Volume > 100 users ativos
+
+**O que fazer:**
+- Delay de 2-3s quando múltiplos leads mandam msg pro mesmo dono
+- Enviar batch único pra IA com múltiplas mensagens
+- Economia: N system prompts → 1
+- Trade-off: aumenta latência em 2-3s
+
+---
+
+### 48. Self-Host de Modelo Leve (eliminação de dependência)
+
+**Status:** Planejado
+**Prioridade:** Baixa (escala avançada)
+**Estimativa:** 2-3 dias
+**Quando:** Receita > R$2.000/mês E custo de IA > R$100/mês
+
+**O que fazer:**
+- Rodar Llama 3.1 8B na VPS (com GPU alugada) para mensagens simples
+- Elimina dependência de terceiros para ~50% das chamadas
+- Requer VPS com GPU (custo ~R$150-300/mês)
+- Só faz sentido quando custo de APIs supera custo da GPU
+
+---
+
+### 49. Audit Log de IA Completo
+
+**Status:** Planejado
+**Prioridade:** Média (compliance e otimização)
+**Estimativa:** 1 dia
+**Quando:** Após estabilizar providers no beta
+
+**O que fazer:**
+- Tabela `ai_audit_log`: provider, tokens in/out, latência, se usou fallback, hash da msg
+- Sem dados pessoais no log (só hash)
+- Dashboard futuro: custo por dono, provider mais usado, falhas por dia
+- Necessário para: LGPD (rastreabilidade), otimização de custos, SLA
+
+---
+
+### 50. Trial com Fila de Espera (controle de volume)
+
+**Status:** Planejado
+**Prioridade:** Baixa (quando trial escalar)
+**Estimativa:** 1 dia
+**Quando:** Trials simultâneos > 30
+
+**O que fazer:**
+- Se trials simultâneos > limite configurável: "Seu teste começa em X dias"
+- Cria antecipação (escassez psicológica)
+- Controla infra (nunca excede capacidade da VPS)
+- Notifica quando vaga abrir
+
+---
+
 ## ⚪ FUTURO — FLUXOS AVANÇADOS
 
 ### 32. Conversation Flows Engine (LangGraph — Grafos de Agentes)

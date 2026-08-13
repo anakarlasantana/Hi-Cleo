@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { ArrowRight, Check } from "lucide-react"
-import Link from "next/link"
 import { PhoneMockup } from "./phone-mockup"
+import { scrollToCenter } from "@/lib/scroll"
 
 const ROTATING_WORDS = ["clientes", "alunos", "pacientes", "leads", "contatos"]
 const ROTATION_INTERVAL_MS = 3000
@@ -78,12 +78,12 @@ export function Hero() {
             {/* CTA */}
             <div className="space-y-2">
               <Button asChild size="lg" className="text-lg px-8 py-7 group shadow-lg shadow-primary/25">
-                <Link href="#planos">
-                  Quero a Cleo no meu WhatsApp
+                <a href="#trial" onClick={(e) => { e.preventDefault(); scrollToCenter('trial') }}>
+                  Testar grátis por 7 dias
                   <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                </Link>
+                </a>
               </Button>
-              <p className="text-sm text-muted-foreground">A partir de R$49/mês</p>
+              <p className="text-sm text-muted-foreground">Sem cartão de crédito • Cancela quando quiser</p>
             </div>
           </div>
 

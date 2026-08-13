@@ -47,6 +47,10 @@ export interface User {
   payment_provider_id?: string;
   max_connections_override?: number | null;
   owner_user_id?: string | null;
+  trial_started_at?: string | null;
+  trial_responses_used?: number;
+  trial_responses_limit?: number;
+  trial_attempt_id?: string | null;
   created_at: string;
 }
 

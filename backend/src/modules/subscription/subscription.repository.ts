@@ -43,11 +43,34 @@ export class SupabaseSubscriptionRepository implements SubscriptionRepository {
     }));
   }
 
+  async getTrialExpiringIn(days: number): Promise<ExpiringSubscription[]> {
+    const now = new Date();
+    const future = new Date(now);
+    future.setDate(future.getDate() + days);
+
+    const { data } = await supabase
+      .from('users')
+      .select('id, phone, plan, subscription_expires_at, billing_period, trial_responses_used, trial_responses_limit')
+      .eq('subscription_status', 'trial')
+      .gte('subscription_expires_at', now.toISOString())
+      .lte('subscription_expires_at', future.toISOString());
+
+    return (data || []).map((r: any) => ({
+      user_id: r.id,
+      phone: r.phone,
+      plan_name: r.plan,
+      subscription_expires_at: r.subscription_expires_at,
+      billing_period: r.billing_period,
+      trial_responses_used: r.trial_responses_used,
+      trial_responses_limit: r.trial_responses_limit,
+    }));
+  }
+
   async getExpired(): Promise<ExpiredSubscription[]> {
     const { data } = await supabase
       .from('users')
       .select('id, payment_provider_id, subscription_status')
-      .eq('subscription_status', 'active')
+      .in('subscription_status', ['active', 'trial'])
       .lt('subscription_expires_at', new Date().toISOString());
 
     return (data || []).map((r: any) => ({
@@ -60,6 +83,23 @@ export class SupabaseSubscriptionRepository implements SubscriptionRepository {
   async createEvent(event: SubscriptionEvent): Promise<void> {
     const { error } = await supabase.from('subscription_events').insert(event);
     if (error) throw new Error(`Erro ao criar evento: ${error.message}`);
+  }
+
+  async getJustExpiredTrials(): Promise<{ user_id: string; phone: string }[]> {
+    // Trials que expiraram nas últimas 24h (para notificar uma única vez)
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const { data } = await supabase
+      .from('users')
+      .select('id, phone')
+      .eq('subscription_status', 'expired')
+      .not('phone', 'is', null)
+      .not('trial_started_at', 'is', null)
+      .gte('subscription_expires_at', yesterday.toISOString())
+      .lte('subscription_expires_at', new Date().toISOString());
+
+    return (data || []).map((r: any) => ({ user_id: r.id, phone: r.phone }));
   }
 
   async disconnectAllSessionsByOwner(userId: string): Promise<number> {

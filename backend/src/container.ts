@@ -3,6 +3,7 @@ import { env } from './shared/config/env.js';
 // Adapters
 import { GeminiAdapter } from './modules/ai/adapters/gemini.adapter.js';
 import { GroqAdapter } from './modules/ai/adapters/groq.adapter.js';
+import { DeepSeekAdapter } from './modules/ai/adapters/deepseek.adapter.js';
 import { AiFallbackAdapter } from './modules/ai/adapters/ai-fallback.adapter.js';
 import { EvolutionApiAdapter } from './modules/evolution/evolution-api.adapter.js';
 import { EvolutionGoAdapter } from './modules/evolution/evolution-go.adapter.js';
@@ -21,6 +22,10 @@ import { SupabaseContactMonitorRepository } from './modules/contact-monitor/cont
 import { SupabasePaymentRepository } from './modules/payment/payment.repository.js';
 import { SupabaseSubscriptionRepository } from './modules/subscription/subscription.repository.js';
 import { SupabaseInviteRepository } from './modules/invites/invites.repository.js';
+
+// Trial
+import { SupabaseTrialRepository } from './modules/trial/trial.repository.js';
+import { TrialService } from './modules/trial/trial.service.js';
 
 // Services
 import { ActivationService } from './modules/activation/activation.service.js';
@@ -51,12 +56,21 @@ import type { QueuePort, WorkerPort, MessageProcessorPort } from './modules/queu
 // --- Adapters ---
 
 const logger = createLogger();
-const gemini = new GeminiAdapter();
-const providers: { name: string; adapter: any }[] = [{ name: 'Gemini', adapter: gemini }];
+const providers: { name: string; adapter: any }[] = [];
 
+// 1º DeepSeek (primário — barato, sem rate limit restritivo, bom em PT-BR)
+if (env.DEEPSEEK_API_KEY) {
+  providers.push({ name: 'DeepSeek', adapter: new DeepSeekAdapter() });
+}
+
+// 2º Groq (fallback gratuito, rápido)
 if (env.GROQ_API_KEY) {
   providers.push({ name: 'Groq', adapter: new GroqAdapter() });
 }
+
+// 3º Gemini (último recurso — rate limit restritivo no free tier)
+const gemini = new GeminiAdapter();
+providers.push({ name: 'Gemini', adapter: gemini });
 
 const ai = new AiFallbackAdapter(providers, logger, async (message) => {
   if (env.MONITOR_ADMIN_PHONE) {
@@ -88,6 +102,7 @@ const contactMonitorRepo = new SupabaseContactMonitorRepository();
 const paymentRepo = new SupabasePaymentRepository();
 const subscriptionRepo = new SupabaseSubscriptionRepository();
 const inviteRepo = new SupabaseInviteRepository();
+const trialRepo = new SupabaseTrialRepository();
 
 // --- Services ---
 
@@ -106,6 +121,7 @@ const mercadoPagoAdapter = new MercadoPagoAdapter(env.MERCADO_PAGO_ACCESS_TOKEN)
 const paymentService = new PaymentService(mercadoPagoAdapter, paymentRepo, planRepo);
 const subscriptionService = new SubscriptionService(subscriptionRepo);
 const inviteService = new InviteService(inviteRepo, planService, userRepo);
+const trialService = new TrialService(trialRepo, userRepo, activationService);
 
 // Configurar dependências do webhook (referência circular resolvida aqui)
 paymentService.setWebhookDeps({ subscriptionService, activationService, userRepo, messaging, monitorInstance: env.MONITOR_INSTANCE });
@@ -149,6 +165,7 @@ export const container = {
   contactMonitorRepo,
   paymentRepo,
   subscriptionRepo,
+  trialRepo,
 
   activationService,
   leadService,
@@ -162,6 +179,7 @@ export const container = {
   paymentService,
   subscriptionService,
   inviteService,
+  trialService,
   mercadoPagoAdapter,
 
   queueService,

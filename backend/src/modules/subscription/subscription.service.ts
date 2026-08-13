@@ -53,6 +53,7 @@ export class SubscriptionService {
   /**
    * Marca assinaturas vencidas como "expired" e desconecta TODAS as sessões.
    * Requirement 8.1: desconectar owner + colaboradores ao expirar.
+   * Trata tanto 'active' quanto 'trial' como expiráveis.
    */
   async checkExpirations(): Promise<number> {
     const expired = await this.repo.getExpired();

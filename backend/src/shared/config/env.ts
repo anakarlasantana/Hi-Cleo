@@ -13,6 +13,10 @@ const envSchema = z.object({
   // Gemini
   GEMINI_API_KEY: z.string().min(1),
 
+  // DeepSeek (provider primário de IA)
+  DEEPSEEK_API_KEY: z.string().optional(),
+  DEEPSEEK_MODEL: z.string().default('deepseek-v4-flash'),
+
   // Groq (fallback de IA)
   GROQ_API_KEY: z.string().optional(),
 

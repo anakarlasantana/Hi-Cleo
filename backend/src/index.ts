@@ -18,12 +18,14 @@ import { cancellationRouter } from './modules/cancellation/cancellation.controll
 import { paymentRouter } from './modules/payment/payment.controller.js';
 import { paymentWebhookRouter } from './modules/payment/payment-webhook.controller.js';
 import { invitesRouter } from './modules/invites/invites.controller.js';
+import trialRouter from './modules/trial/trial.controller.js';
 import { startFollowUpCron } from './modules/follow-up/follow-up.cron.js';
 import { startConnectionMonitor } from './modules/connection-monitor/connection-monitor.cron.js';
 import { startContactMonitorCron } from './modules/contact-monitor/contact-monitor.cron.js';
 import { startCancellationCron } from './modules/cancellation/cancellation.cron.js';
 import { startSubscriptionCron } from './modules/subscription/subscription.cron.js';
 import { startOnboardingTimeoutCron } from './modules/onboarding/onboarding-timeout.cron.js';
+import { startTrialProspectionCron } from './modules/trial/trial-prospection.cron.js';
 import { ensureEvolutionInstance } from './modules/evolution/evolution-setup.js';
 
 const app = express();
@@ -93,12 +95,14 @@ app.use('/api/payments', apiRateLimit, (req, res, next) => {
 app.use('/api/activation', apiRateLimit, activationRouter);
 app.use('/api/invites', apiRateLimit, invitesRouter);
 app.use('/api/cancellation', apiRateLimit, cancellationRouter);
+app.use('/api/trial', apiRateLimit, trialRouter);
 
 startFollowUpCron();
 startContactMonitorCron();
 startCancellationCron();
 startSubscriptionCron();
 startOnboardingTimeoutCron();
+startTrialProspectionCron();
 startConnectionMonitor({
   messaging: container.messaging,
   logger: container.logger,

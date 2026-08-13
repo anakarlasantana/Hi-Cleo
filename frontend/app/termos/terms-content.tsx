@@ -4,7 +4,7 @@ export function TermsContent() {
       <h1 className="text-3xl sm:text-4xl font-bold text-foreground mb-2">
         Termos de Uso e Política de Privacidade
       </h1>
-      <p className="text-sm text-muted-foreground mb-10">Última atualização: Janeiro de 2025</p>
+      <p className="text-sm text-muted-foreground mb-10">Última atualização: Agosto de 2026</p>
 
       <section className="mb-12">
         <h2 className="text-2xl font-semibold text-foreground mb-6">Termos de Uso</h2>
@@ -77,7 +77,20 @@ export function TermsContent() {
             <ul className="list-disc list-inside mt-2 space-y-1 ml-2">
               <li>Processadores de pagamento (para cobrança da assinatura)</li>
               <li>Infraestrutura de hospedagem (para funcionamento do serviço)</li>
+              <li>Serviços de inteligência artificial (para processamento de linguagem natural, com dados anonimizados)</li>
               <li>Autoridades competentes (quando exigido por lei)</li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="text-lg font-medium text-foreground mb-2">5.1. Processamento por Inteligência Artificial</h3>
+            <p>Para oferecer respostas automáticas e organização inteligente dos seus contatos, a Cleo utiliza serviços de Inteligência Artificial de terceiros. Informamos que:</p>
+            <ul className="list-disc list-inside mt-2 space-y-1 ml-2">
+              <li>As mensagens dos seus clientes são processadas por modelos de IA para gerar respostas contextuais</li>
+              <li>Dados pessoais (telefones, e-mails, documentos) são anonimizados antes do envio aos serviços de IA</li>
+              <li>Nenhum dado enviado é utilizado para treinamento de modelos de inteligência artificial</li>
+              <li>Os serviços de IA utilizados podem estar hospedados em servidores fora do Brasil</li>
+              <li>A Cleo mantém registros de qual serviço processou cada interação para fins de auditoria</li>
+              <li>Em caso de indisponibilidade dos serviços de IA, respostas automáticas pré-configuradas são utilizadas</li>
             </ul>
           </div>
           <div>

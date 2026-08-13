@@ -1,5 +1,6 @@
 import { Navbar } from "@/components/landing/navbar"
 import { Hero } from "@/components/landing/hero"
+import { TrialSection } from "@/components/landing/trial-section"
 import { Comparison } from "@/components/landing/comparison"
 import { PainPoints } from "@/components/landing/pain-points"
 import { Benefits } from "@/components/landing/benefits"
@@ -20,6 +21,7 @@ export default function Home() {
       <HowItWorks />
       <Benefits />
       <Pricing />
+      <TrialSection />
       <FAQ />
       <Footer />
     </main>

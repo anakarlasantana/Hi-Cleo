@@ -39,11 +39,41 @@ export function sanitizeMessageText(text: string): string {
 }
 
 /**
+ * Mascara dados pessoais sensíveis antes de enviar texto para a IA.
+ * Protege telefones, emails, CPFs e CNPJs (LGPD).
+ * NÃO remove primeiro nome — necessário para personalização.
+ */
+export function sanitizePersonalDataForAi(text: string): string {
+  if (!text) return '';
+
+  let sanitized = text;
+
+  // Telefones brasileiros em vários formatos:
+  // 55XXXXXXXXXXX (E.164), (XX)XXXXX-XXXX, XX XXXXX-XXXX, XXXXX-XXXX
+  sanitized = sanitized.replace(/55\d{10,11}/g, '[TELEFONE]');
+  sanitized = sanitized.replace(/\(\d{2}\)\s?\d{4,5}-?\d{4}/g, '[TELEFONE]');
+  sanitized = sanitized.replace(/\d{2}\s\d{4,5}-?\d{4}/g, '[TELEFONE]');
+  sanitized = sanitized.replace(/\d{5}-\d{4}/g, '[TELEFONE]');
+
+  // Emails
+  sanitized = sanitized.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[EMAIL]');
+
+  // CPF: XXX.XXX.XXX-XX ou XXXXXXXXXXX (11 dígitos soltos)
+  sanitized = sanitized.replace(/\d{3}\.\d{3}\.\d{3}-\d{2}/g, '[CPF]');
+  sanitized = sanitized.replace(/\b\d{11}\b/g, '[CPF]');
+
+  // CNPJ: XX.XXX.XXX/XXXX-XX
+  sanitized = sanitized.replace(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/g, '[CNPJ]');
+
+  return sanitized;
+}
+
+/**
  * Sanitiza texto antes de enviar para a IA.
  * Camada adicional sobre sanitizeMessageText para prevenir prompt injection.
  */
 export function sanitizeForAiPrompt(text: string): string {
-  const base = sanitizeMessageText(text).slice(0, 1000);
+  const base = sanitizePersonalDataForAi(sanitizeMessageText(text).slice(0, 1000));
 
   // Remover padrões de prompt injection
   const injectionPatterns = [

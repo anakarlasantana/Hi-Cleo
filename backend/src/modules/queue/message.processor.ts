@@ -7,6 +7,8 @@ import { transcribeAudio } from '../ai/nodes/transcribe-audio.js';
 import { interpretConfirmation } from '../ai/nodes/interpret-confirmation.js';
 import { generateClientReply, type BusinessContext } from '../ai/nodes/generate-client-reply.js';
 import { checkBusinessHours } from '../../shared/utils/business-hours.js';
+import { getDegradedReplyForClient, getDegradedReplyForOwner, type FallbackContext } from '../../shared/utils/fallback-templates.js';
+import { classifyClientMessage, classifyOwnerMessage } from '../ai/nodes/local-classifier.js';
 
 export type MessageProcessor = MessageProcessorPort;
 
@@ -33,10 +35,13 @@ export function createMessageProcessor(container: any, logger: Logger): MessageP
       // Se todos os providers de IA falharam, envia mensagem de fallback ao usuário
       if (error?.message === 'AI_ALL_PROVIDERS_FAILED') {
         try {
+          const fallbackText = isSecretaryInstance
+            ? getDegradedReplyForOwner()
+            : '⚠️ Estou com dificuldade pra processar agora. Vou te responder em breve!\n\nCaso esteja demorando, entre em contato com o suporte.';
           await container.messaging.sendText({
             instance,
             to: phone,
-            text: '⚠️ Estou com dificuldade pra processar agora. Vou te responder em breve!\n\nCaso esteja demorando, entre em contato com o suporte.',
+            text: fallbackText,
           });
         } catch {
           // Se nem o envio funcionar, apenas loga
@@ -49,7 +54,38 @@ export function createMessageProcessor(container: any, logger: Logger): MessageP
 }
 
 async function handleSecretaryMessage(container: any, phone: string, text: string, media?: any, messageKey?: string, webhookKey?: { remoteJid: string; fromMe: boolean; id: string }): Promise<void> {
-  const { messaging, activationService, onboardingService, assistenteService, userRepo, termsConsentService, messageRepo, leadService } = container;
+  const { messaging, activationService, onboardingService, assistenteService, userRepo, termsConsentService, messageRepo, leadService, trialRepo } = container;
+
+  // === Detecção de resposta de prospecção pós-trial ===
+  const trialAttempt = await trialRepo.findByPhone(phone);
+  if (trialAttempt && trialAttempt.prospection_status === 'contacted') {
+    const lowerText = text.toLowerCase();
+
+    // Opt-out: resposta negativa
+    if (/\b(não|nao|para|cancela|remove|sai|chega|pare)\b/.test(lowerText)) {
+      await trialRepo.updateProspectionStatus(trialAttempt.id, 'not_interested');
+      await messaging.sendText({
+        instance: env.MONITOR_INSTANCE,
+        to: phone,
+        text: 'Entendido! Não vou mais entrar em contato. Se mudar de ideia: hicleo.com.br 😊',
+      });
+      return;
+    }
+
+    // Interesse: resposta positiva
+    if (/\b(sim|quero|como|quanto|assinar|plano|continuar|voltar|reativar)\b/.test(lowerText)) {
+      await trialRepo.updateProspectionStatus(trialAttempt.id, 'interested');
+      const checkoutUrl = env.CHECKOUT_URL || 'https://hicleo.com.br/checkout';
+      await messaging.sendText({
+        instance: env.MONITOR_INSTANCE,
+        to: phone,
+        text: `Ótimo! 🎉 Acesse aqui pra escolher seu plano: ${checkoutUrl}\n\nQualquer dúvida, manda aqui que eu ajudo!`,
+      });
+      return;
+    }
+
+    // Resposta ambígua — não intercepta, deixa seguir o fluxo normal
+  }
 
   const activationMatch = text.match(/ATIVAR-[A-Z0-9]{4}/i);
   if (activationMatch) {
@@ -158,6 +194,14 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     return;
   }
 
+  // Classificador local — resolve intents simples sem chamar IA
+  const localIntent = classifyOwnerMessage(text);
+  if (localIntent.resolved && localIntent.intent) {
+    const response = await executeIntent(container, user, { type: localIntent.intent, entities: {}, originalText: text });
+    await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: response });
+    return;
+  }
+
   const intent = await assistenteService.recognize(text);
   if (intent.confidence < 0.7) {
     await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: 'Não entendi bem. Pode reformular? 🤔\n\nExemplos:\n• "quem tá sem resposta?"\n• "agenda retorno pro João amanhã"\n• "mostra meus clientes"' });
@@ -181,6 +225,26 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
   if (isExcluded) return;
 
   const lead = await leadService.findOrCreate(user.id, phone, pushName);
+
+  // Atualizar métrica leads_captured se é trial e lead acabou de ser criado
+  if (user.subscription_status === 'trial' && lead.created_at) {
+    const createdAt = new Date(lead.created_at);
+    const isNewLead = (Date.now() - createdAt.getTime()) < 5000; // criado há menos de 5s = novo
+    if (isNewLead) {
+      const { supabase } = await import('../../shared/config/supabase.js');
+      await supabase
+        .from('trial_attempts')
+        .update({ leads_captured: (await supabase.from('trial_attempts').select('leads_captured').eq('trial_user_id', user.id).single()).data?.leads_captured + 1 || 1 })
+        .eq('trial_user_id', user.id);
+    }
+    // Marcar whatsapp_connected na primeira mensagem de cliente processada
+    const { supabase } = await import('../../shared/config/supabase.js');
+    await supabase
+      .from('trial_attempts')
+      .update({ whatsapp_connected: true, last_activity_at: new Date().toISOString() })
+      .eq('trial_user_id', user.id)
+      .eq('whatsapp_connected', false); // só atualiza se ainda era false
+  }
 
   // Salvar mensagem com ou sem mídia
   if (media) {
@@ -223,6 +287,40 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
   const business = await userRepo.getBusiness(user.id);
   if (!business) return; // Sem dados do negócio = onboarding não completo, não responde
 
+  // === GUARD: Trial — verificar se expirou ou atingiu limite de respostas ===
+  if (user.subscription_status === 'trial') {
+    const trialCheck = container.trialService.checkTrialStatus(user);
+
+    if (!trialCheck.isValid) {
+      if (trialCheck.reason === 'expired') {
+        // Trial expirou — mensagem genérica pro cliente, aviso pro dono
+        await messaging.sendText({ instance, to: phone, text: `Olá! O responsável vai te responder em breve 😊` });
+        await messageRepo.save(lead.id, `Olá! O responsável vai te responder em breve 😊`, 'outbound');
+        return;
+      }
+
+      if (trialCheck.reason === 'limit_reached') {
+        // Limite de respostas atingido
+        await messaging.sendText({ instance, to: phone, text: `Olá! O responsável vai te responder em breve 😊` });
+        await messageRepo.save(lead.id, `Olá! O responsável vai te responder em breve 😊`, 'outbound');
+
+        // Avisar o dono (uma vez — só se ainda não avisou)
+        if (user.phone && trialCheck.responsesUsed === trialCheck.responsesLimit) {
+          const checkoutUrl = env.CHECKOUT_URL || 'https://hicleo.com.br/checkout';
+          await messaging.sendText({
+            instance: env.MONITOR_INSTANCE,
+            to: user.phone,
+            text: `⚠️ Limite do teste atingido (${trialCheck.responsesLimit}/${trialCheck.responsesLimit} respostas).\n\nSeus clientes não estão mais recebendo resposta automática.\n\nAssine pra continuar: ${checkoutUrl}`,
+          });
+        }
+        return;
+      }
+    }
+
+    // Trial válido — incrementar contador de respostas
+    await container.trialRepo.incrementResponses(user.id);
+  }
+
   const now = new Date();
   const { isOutsideHours, start, end } = checkBusinessHours({
     businessHoursStart: business.business_hours_start,
@@ -244,6 +342,15 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
     }
   }
 
+  // Classificador local — saudações simples usam template direto (sem IA)
+  const localClassification = classifyClientMessage(messageText);
+  if (localClassification.resolved && localClassification.intent === 'greeting') {
+    const greetingReply = buildGreetingReply(business, user.name, pushName);
+    await messaging.sendText({ instance, to: phone, text: greetingReply });
+    await messageRepo.save(lead.id, greetingReply, 'outbound');
+    return;
+  }
+
   // Gerar resposta contextual via IA usando dados do onboarding
   const businessContext: BusinessContext = {
     ownerName: user.name || 'o responsável',
@@ -257,9 +364,39 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
   // Buscar últimas mensagens do lead para contexto multi-turno
   const recentMessages = await messageRepo.getByLead(lead.id, 5);
 
-  const reply = await generateClientReply(container.ai, businessContext, messageText, pushName, isOutsideHours, recentMessages);
+  let reply: string;
+  try {
+    reply = await generateClientReply(container.ai, businessContext, messageText, pushName, isOutsideHours, recentMessages);
+  } catch (error: any) {
+    if (error?.message === 'AI_ALL_PROVIDERS_FAILED') {
+      const fallbackCtx: FallbackContext = {
+        ownerName: user.name,
+        toneOfVoice: business.tone_of_voice as any,
+        isOutsideHours,
+      };
+      reply = getDegradedReplyForClient(fallbackCtx);
+      container.logger.warn({ phone: phone.slice(0, 4) + '****' }, 'IA indisponível — usando resposta degradada para cliente');
+    } else {
+      throw error;
+    }
+  }
   await messaging.sendText({ instance, to: phone, text: reply });
   await messageRepo.save(lead.id, reply, 'outbound');
+}
+
+function buildGreetingReply(business: any, ownerName: string, clientName?: string): string {
+  const name = clientName ? `, ${clientName}` : '';
+  const owner = ownerName || 'o responsável';
+  const tone = business?.tone_of_voice || 'friendly_professional';
+
+  switch (tone) {
+    case 'formal':
+      return `Boa tarde${name}! Sou assistente do(a) ${owner}. Em que posso ajudá-lo(a)?`;
+    case 'casual':
+      return `E aí${name}! 👋 Tô aqui pelo(a) ${owner}. Como posso te ajudar?`;
+    default:
+      return `Olá${name}! 😊 Sou assistente do(a) ${owner}. Como posso te ajudar?`;
+  }
 }
 
 async function executeIntent(container: any, user: any, intent: { type: string; entities: Record<string, string>; originalText?: string }): Promise<string> {

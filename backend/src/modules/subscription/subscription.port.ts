@@ -1,4 +1,4 @@
-export type SubscriptionStatus = 'active' | 'expired' | 'cancelled';
+export type SubscriptionStatus = 'active' | 'trial' | 'expired' | 'cancelled';
 
 export interface SubscriptionRepository {
   updateFields(userId: string, fields: Record<string, unknown>): Promise<void>;
