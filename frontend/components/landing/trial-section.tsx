@@ -260,8 +260,18 @@ export function TrialSection() {
                 </div>
 
                 {error && (
-                  <div className="flex items-center gap-2 text-sm text-red-300 bg-red-950/50 rounded-xl p-3 border border-red-800">
-                    <span>⚠️</span> {error}
+                  <div className="flex flex-col gap-3 text-sm bg-red-950/50 rounded-xl p-4 border border-red-800">
+                    <p className="text-red-200 font-medium flex items-center gap-2">
+                      <span>⚠️</span> {error}
+                    </p>
+                    {error.includes("teste") || error.includes("conta") ? (
+                      <a
+                        href="#pricing"
+                        className="text-center text-primary hover:text-primary/80 underline underline-offset-2 font-medium transition-colors"
+                      >
+                        Ver planos disponíveis →
+                      </a>
+                    ) : null}
                   </div>
                 )}
 

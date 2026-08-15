@@ -56,7 +56,8 @@ src/
 │   └── webhooks/            # Recebe eventos da Evolution API
 │
 ├── shared/
-│   ├── config/              # Env vars (Zod validation)
+│   ├── config/              # Env vars (Zod validation) + database.ts (pool pg.Pool, max 20)
+│   ├── schema.ts            # Schema do banco (Drizzle ORM — tabelas, relações, tipos)
 │   ├── logger/              # Pino (rotação diária em prod)
 │   ├── middleware/          # Segurança (helmet, rate-limit, sanitize)
 │   ├── ports/               # Ports globais (AiPort)
@@ -71,7 +72,7 @@ src/
 | Quer trocar... | O que fazer |
 |---|---|
 | Evolution API → Evolution Go | `MESSAGING_PROVIDER=evolution-go` no `.env` |
-| Supabase → outro banco | Criar novo `.repository.ts` implementando o `.port.ts` |
+| Drizzle → outro ORM | Criar novo `.repository.ts` implementando o `.port.ts`, trocar driver em `shared/config/database.ts` |
 | Gemini → OpenAI | Criar novo adapter implementando `AiPort` |
 | BullMQ → RabbitMQ/SQS | Criar novo adapter implementando `QueuePort` e `WorkerPort` |
 | Pino → Winston | Criar novo `logger.ts` exportando `createLogger()` |
@@ -229,6 +230,12 @@ Sobe todos os serviços numa VPS limpa com Docker. Ver [checklist completo](../d
 | `npm run start` | Roda build de produção |
 | `npm run test` | Roda testes (vitest) |
 | `npm run lint` | Lint (eslint) |
+| `npm run db:generate` | Gera migrations a partir do schema (Drizzle Kit) |
+| `npm run db:migrate` | Aplica migrations pendentes no banco |
+| `npm run db:push` | Sincroniza schema direto no banco (dev, sem migration) |
+| `npm run db:studio` | Abre Drizzle Studio (GUI visual do banco) |
+
+> **Pool de conexões:** O backend usa `pg.Pool` com `max: 20` conexões. Configuração em `shared/config/database.ts`.
 
 ---
 
@@ -239,7 +246,7 @@ Sobe todos os serviços numa VPS limpa com Docker. Ver [checklist completo](../d
 | Runtime | Node.js 22 + TypeScript | Tipagem forte, ecossistema, WebSocket nativo |
 | Framework | Express | Simples, maduro |
 | IA | Gemini (fallback Groq) | Free tier generoso |
-| Banco | Supabase (PostgreSQL) | Managed, RLS, realtime |
+| Banco | PostgreSQL 16 + Drizzle ORM | Self-hosted via Docker, type-safe queries |
 | WhatsApp | Evolution API/Go | Open-source, gratuito |
 | Fila | BullMQ + Redis | Retry, backoff, DLQ |
 | Pagamento | Mercado Pago | PIX + cartão, SDK oficial |

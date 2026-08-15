@@ -209,7 +209,7 @@ export async function generateClientReply(
 ### Fase 2 — Pós-beta (com dados reais)
 - Instalar `@langchain/langgraph`
 - Criar `graphs/onboarding.graph.ts` — compila nós em grafo
-- Implementar checkpointer Supabase (substitui `onboarding_states`)
+- Implementar checkpointer PostgreSQL (substitui `onboarding_states`)
 - Swap no processor: trocar `onboardingService.processMessage()` por `graph.invoke()`
 
 ### Fase 3 — Expansão
@@ -267,7 +267,7 @@ O adapter Groq implementa via Whisper.
 
 | Decisão | Opções | Recomendação |
 |---------|--------|--------------|
-| Checkpointer | Supabase (Postgres) vs Redis | Supabase (já é o banco, persiste entre deploys) |
+| Checkpointer | PostgreSQL vs Redis | PostgreSQL (já é o banco, persiste entre deploys) |
 | Manter AiFallbackAdapter | vs LangChain model com fallback | Manter adapter próprio (menos acoplamento) |
 | Tabela de estado | Migrar `onboarding_states` vs nova tabela | Nova tabela `conversation_checkpoints` (schema LangGraph) |
 | Observabilidade | LangSmith vs custom logging | Custom logging no beta, LangSmith quando escalar |

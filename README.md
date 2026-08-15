@@ -21,8 +21,7 @@ Acesse:
 
 ### Pré-requisitos
 
-- Docker e Docker Compose v2+
-- Conta no [Supabase](https://supabase.com) (banco de dados)
+- Docker e Docker Compose v2+ (o PostgreSQL sobe automaticamente via Docker)
 - API Key do [Google AI Studio](https://aistudio.google.com/apikey) (Gemini)
 
 ---
@@ -42,7 +41,7 @@ Acesse:
 │   │   ├── shared/             # Config, logger, middleware, types
 │   │   ├── container.ts        # DI container
 │   │   └── index.ts            # Entry point
-│   └── supabase/migrations/    # Migrations versionadas
+│   └── drizzle/                # Migrations versionadas (Drizzle Kit)
 ├── frontend/                   # Next.js 16 + Tailwind
 │   ├── Dockerfile              # Multi-stage build (standalone)
 │   ├── app/                    # Pages (checkout, ativação, conexão)
@@ -80,7 +79,7 @@ Um único `.env` na raiz governa tudo (symlinked para backend/ e frontend/).
 
 | Seção | Variáveis principais |
 |-------|---------------------|
-| Backend | `SUPABASE_URL`, `GEMINI_API_KEY`, `MERCADO_PAGO_ACCESS_TOKEN` |
+| Backend | `DATABASE_URL`, `GEMINI_API_KEY`, `MERCADO_PAGO_ACCESS_TOKEN` |
 | Messaging | `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `SECRETARY_PHONE` |
 | Redis | `REDIS_HOST=redis`, `REDIS_PORT=6379` |
 | Segurança | `CORS_ORIGIN`, `RATE_LIMIT_GLOBAL`, `RATE_LIMIT_PAYMENTS` |
@@ -128,6 +127,10 @@ A aplicação implementa múltiplas camadas de segurança:
 | `docker compose logs -f backend` | Logs do backend |
 | `cd backend && npm test` | Roda testes unitários (69 testes) |
 | `cd backend && npx tsc --noEmit` | Verifica tipagem TypeScript |
+| `cd backend && npm run db:generate` | Gera migrations a partir do schema |
+| `cd backend && npm run db:migrate` | Aplica migrations pendentes |
+| `cd backend && npm run db:push` | Sincroniza schema direto no banco (dev) |
+| `cd backend && npm run db:studio` | Abre Drizzle Studio (GUI do banco) |
 
 ---
 
@@ -145,7 +148,7 @@ A aplicação implementa múltiplas camadas de segurança:
 | Backend | Express.js + TypeScript |
 | Frontend | Next.js 16 + Tailwind + Radix UI |
 | IA | Google Gemini (fallback Groq) |
-| Banco | Supabase (PostgreSQL) |
+| Banco | PostgreSQL 16 + Drizzle ORM |
 | WhatsApp | Evolution API/Go (Baileys) |
 | Fila | BullMQ + Redis |
 | Pagamento | Mercado Pago (PIX + cartão) |

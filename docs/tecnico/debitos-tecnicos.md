@@ -29,8 +29,9 @@ Organizado por prioridade.
 
 ### Outros concluídos
 - ~~#11 Padronizar banco para inglês~~ ✅
-- ~~#20 Migrations versionadas~~ ✅ (Supabase CLI)
+- ~~#20 Migrations versionadas~~ ✅ (Drizzle Kit)
 - ~~Limpeza de código~~ ✅ (37 UI components, 23 deps Radix, LeadStatus cold)
+- ~~Migração Supabase → PostgreSQL + Drizzle ORM~~ ✅ (self-hosted via Docker, type-safe queries, pool pg.Pool max 20)
 - ~~#36 Memória de Conversa por Lead~~ ✅ (últimas 5 mensagens como contexto no prompt, backward-compatible)
 - ~~#37 Horário de Atendimento com Timezone~~ ✅ (Intl nativo, business_days, migration)
 - ~~#38 Seleção de Material por Nome~~ ✅ (busca parcial, lista múltiplos)
@@ -58,13 +59,86 @@ Organizado por prioridade.
 | 5 | Instalar Docker no servidor | `apt install docker.io docker-compose-plugin` (se não vier instalado) |
 | 6 | Clonar repo no servidor | `git clone` + copiar `.env` com valores de produção |
 | 7 | Configurar `.env` produção | `NODE_ENV=production`, domínio real, token MP real, CORS_ORIGIN, SITE_URL |
-| 8 | Rodar migration multi-user | `supabase db push` ou executar `20260601000001_multi_user_activation.sql` |
+| 8 | Rodar migrations | As migrations rodam automaticamente na inicialização do container (`npm run db:migrate`) |
 | 9 | Build e subir containers | `docker compose -f docker-compose.prod.yml up -d --build` |
 | 10 | Mercado Pago produção | Trocar `TEST-xxx` por token real, configurar webhook apontando pra URL pública |
 | 11 | Conectar WhatsApp | Acessar Evolution API → criar instância → escanear QR com chip novo |
 | 12 | Teste end-to-end | Pagamento real (R$1) → código → ativação → onboarding → resposta automática |
 
 **Estimativa:** 1 dia (+ tempo de espera do chip e propagação DNS)
+
+---
+
+### 51. Hardening de Segurança para Produção
+
+**Status:** Planejado
+**Prioridade:** Alta (executar junto com o deploy #22)
+**Estimativa:** 0.5 dia
+
+**Contexto:** A aplicação já implementa segurança no código (helmet, CORS, rate limit, prepared statements, sanitização, LGPD). O que falta é configuração de infraestrutura no servidor de produção.
+
+**Checklist:**
+
+| # | Item | Risco sem corrigir | Como resolver |
+|---|------|-------------------|---------------|
+| 1 | **Nginx reverse proxy + SSL** | Tráfego sem criptografia, portas expostas direto | Nginx na frente com Cloudflare ou Let's Encrypt. Remover `ports` do backend/frontend no compose prod |
+| 2 | **Senha forte no banco** | Se invadir o servidor, banco acessível com senha trivial | Gerar senha 32+ chars alfanumérica para `DB_PASSWORD` no `.env` de prod |
+| 3 | **Redis com senha** | Qualquer processo na rede Docker lê/escreve filas e cache | Adicionar `--requirepass` no Redis, atualizar backend com `REDIS_PASSWORD` |
+| 4 | **Backup automatizado do banco** | Perda total se volume corromper ou servidor morrer | Cron diário `pg_dump` → arquivo compactado. Idealmente enviar pra S3 ou storage externo |
+| 5 | **Permissões do .env** | Senhas e tokens legíveis por qualquer processo | `chmod 600 .env` — apenas root e o user do deploy leem |
+| 6 | **Firewall (UFW/iptables)** | Todas as portas do servidor expostas à internet | Liberar apenas 80, 443, 22 (SSH). Bloquear 3001, 5432, 6379, 8080 externamente |
+| 7 | **Reduzir pool de conexões** | 20 conexões pode esgotar RAM do Postgres com 256MB | Reduzir `max` para 10 no pool ou aumentar RAM do container Postgres |
+| 8 | **Rotação de logs** | Disco enche com o tempo | Confirmar `pino-roll` ativo com rotação diária e retenção de 7-14 dias |
+| 9 | **Docker user não-root** | Se container for comprometido, atacante tem root | Backend já roda com `appuser` (Dockerfile) ✅ — verificar demais containers |
+
+**Nginx exemplo (produção):**
+```nginx
+server {
+    listen 443 ssl;
+    server_name hicleo.com.br;
+
+    ssl_certificate     /etc/ssl/certs/hicleo.pem;
+    ssl_certificate_key /etc/ssl/private/hicleo.key;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /api/ {
+        proxy_pass http://localhost:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location /webhooks/ {
+        proxy_pass http://localhost:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+
+server {
+    listen 80;
+    server_name hicleo.com.br;
+    return 301 https://$host$request_uri;
+}
+```
+
+**Redis com senha (docker-compose.prod.yml):**
+```yaml
+redis:
+  image: redis:7-alpine
+  command: redis-server --requirepass ${REDIS_PASSWORD}
+```
+
+**Backup cron (no servidor):**
+```bash
+# /etc/cron.d/hicleo-backup — todo dia às 3h
+0 3 * * * root docker exec hicleo-app-db pg_dump -U ${DB_USER} ${DB_NAME} | gzip > /opt/backups/hicleo_$(date +\%Y\%m\%d).sql.gz && find /opt/backups -mtime +7 -delete
+```
 
 ---
 
@@ -149,7 +223,7 @@ Organizado por prioridade.
 **O que já foi feito:**
 - ✅ `@sentry/node` integrado no backend (error handler, unhandled rejections, sanitização de headers)
 - ✅ `@sentry/nextjs` integrado no frontend (client/server/edge configs, global-error.tsx)
-- ✅ Endpoint `/health` verifica DB (Supabase) + Redis — retorna 200 ou 503
+- ✅ Endpoint `/health` verifica DB (PostgreSQL) + Redis — retorna 200 ou 503
 - ✅ Variáveis `SENTRY_DSN` e `NEXT_PUBLIC_SENTRY_DSN` no schema e `.env.example`
 
 **O que falta (configuração externa, zero código):**
@@ -911,7 +985,7 @@ _Estimativa: 0.75 dia_
 
 | Status | Itens |
 |--------|-------|
-| ✅ Concluídos | #1-11, #13, #14 (código), #17, #18, #20, #21, #30, #31, #33-40 |
+| ✅ Concluídos | #1-11, #13, #14 (código), #17, #18, #20, #21, #30, #31, #33-40, Migração Supabase → PostgreSQL + Drizzle ORM |
 | 🔴 Bloqueante | #22 (deploy) |
 | 🟡 Pós-lançamento | #14 (config), #16, #19 |
 | ⚪ Futuro | #15, #23-29, #32 (LangGraph) |
