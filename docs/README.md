@@ -19,6 +19,7 @@
 |-----------|-----------|
 | [Arquitetura de IA](tecnico/arquitetura-ia.md) | Módulo ai/, nós, prompts, tokens, LangGraph |
 | [Débitos Técnicos](tecnico/debitos-tecnicos.md) | Roadmap, histórico de concluídos e melhorias futuras |
+| [Teste E2E via Webhook](tecnico/teste-e2e-webhook.md) | Guia para testar fluxo Trial→Onboarding sem WhatsApp real |
 
 ## Marketing
 

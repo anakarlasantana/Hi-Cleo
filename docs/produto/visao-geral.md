@@ -69,13 +69,15 @@ Enquanto isso, a Cleo atende os clientes do dono automaticamente — com a perso
 
 ## Stack técnica
 
-- **Backend:** Node.js + TypeScript (Express, Hexagonal Architecture)
-- **Frontend:** Next.js (checkout, ativação, conexão)
-- **Banco:** Supabase (PostgreSQL) — migrando para Postgres próprio no beta
-- **WhatsApp:** Evolution API (open-source)
-- **IA:** Gemini (primário) + Groq (fallback + transcrição)
-- **Fila:** BullMQ (Redis)
+- **Backend:** Node.js 22 + TypeScript (Express, Hexagonal Architecture)
+- **Frontend:** Next.js 16 + Tailwind + Radix UI
+- **Banco:** PostgreSQL 16 (self-hosted via Docker) + Drizzle ORM
+- **WhatsApp:** Evolution API / Evolution Go (open-source, Baileys)
+- **IA:** DeepSeek (primário) → Groq (fallback) → Gemini (último recurso)
+- **Fila:** BullMQ + Redis
 - **Pagamento:** Mercado Pago (PIX + cartão)
+- **Testes:** Vitest
+- **Monitoramento:** Sentry + Pino logger
 - **Deploy:** Docker Compose em VPS
 
 ---
@@ -91,7 +93,8 @@ WhatsApp → Evolution API → Webhook → Fila (BullMQ) → Worker
                         (comandos dono)            (IA responde)       (cron alerta)
                               │                          │                  │
                               ▼                          ▼                  ▼
-                          Gemini IA               Gemini IA + perfil    Notificação
+                        DeepSeek/Groq/          DeepSeek/Groq/         Notificação
+                        Gemini (fallback)       Gemini + perfil             │
                               │                          │                  │
                               └──────────────────────────┼──────────────────┘
                                                          ▼
