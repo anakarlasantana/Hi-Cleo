@@ -1,7 +1,9 @@
 import { CronJob } from 'cron';
+import { and, lt, ne } from 'drizzle-orm';
 import { container } from '../../container.js';
 import { env } from '../../shared/config/env.js';
-import { supabase } from '../../shared/config/supabase.js';
+import { db } from '../../shared/config/database.js';
+import { onboardingStates } from '../../shared/schema.js';
 
 /** Horas sem atividade para considerar onboarding abandonado */
 const ONBOARDING_TIMEOUT_HOURS = 48;
@@ -22,23 +24,20 @@ export function startOnboardingTimeoutCron(): void {
 
     try {
       // Buscar onboardings parados há mais de TIMEOUT horas
-      const cutoff = new Date(Date.now() - ONBOARDING_TIMEOUT_HOURS * 60 * 60 * 1000).toISOString();
+      const cutoff = new Date(Date.now() - ONBOARDING_TIMEOUT_HOURS * 60 * 60 * 1000);
 
-      const { data: staleOnboardings, error } = await supabase
-        .from('onboarding_states')
-        .select('user_id, step, updated_at')
-        .neq('step', 'completed')
-        .lt('updated_at', cutoff);
+      const staleOnboardings = await db
+        .select({ userId: onboardingStates.userId, step: onboardingStates.step, updatedAt: onboardingStates.updatedAt })
+        .from(onboardingStates)
+        .where(and(ne(onboardingStates.step, 'completed'), lt(onboardingStates.updatedAt, cutoff)));
 
-      if (error || !staleOnboardings || staleOnboardings.length === 0) {
-        if (error) console.error('[Cron] Erro ao buscar onboardings:', error);
-        return;
-      }
+      if (staleOnboardings.length === 0) return;
 
       let remindersSent = 0;
 
       for (const stale of staleOnboardings) {
-        const user = await userRepo.findById(stale.user_id);
+        if (!stale.userId) continue;
+        const user = await userRepo.findById(stale.userId);
         if (!user || !user.phone) continue;
 
         const userName = user.name || 'parceiro(a)';

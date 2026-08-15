@@ -1,6 +1,9 @@
 import type { MessageJobData } from './queue.types.js';
 import type { MessageProcessorPort } from './queue.port.js';
 import type { Logger } from '../../shared/logger/logger.js';
+import { eq, and, sql } from 'drizzle-orm';
+import { db } from '../../shared/config/database.js';
+import { trialAttempts, businesses } from '../../shared/schema.js';
 import { CURRENT_TERMS_VERSION } from '../terms/constants.js';
 import { env } from '../../shared/config/env.js';
 import { transcribeAudio } from '../ai/nodes/transcribe-audio.js';
@@ -93,7 +96,15 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     const valid = await activationService.validateCode(code);
 
     if (!valid) {
-      await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: 'Código inválido ou expirado. Verifique o código e tente novamente.' });
+      // Diferenciar: código já usado vs expirado vs não existe
+      const existing = await container.activationRepo.findCodeByValue(code);
+      if (existing && existing.used) {
+        await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: '✅ Esse código já foi ativado! Se você já completou a configuração, basta conectar seu WhatsApp na página que ficou aberta no computador.\n\nSe precisa de ajuda, me diz aqui!' });
+      } else if (existing && new Date(existing.expires_at) < new Date()) {
+        await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: '⏰ Esse código expirou. Acesse o site e solicite um novo código de ativação.' });
+      } else {
+        await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: '❌ Código não encontrado. Verifique se digitou corretamente (formato: ATIVAR-XXXX).' });
+      }
       return;
     }
 
@@ -231,19 +242,14 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
     const createdAt = new Date(lead.created_at);
     const isNewLead = (Date.now() - createdAt.getTime()) < 5000; // criado há menos de 5s = novo
     if (isNewLead) {
-      const { supabase } = await import('../../shared/config/supabase.js');
-      await supabase
-        .from('trial_attempts')
-        .update({ leads_captured: (await supabase.from('trial_attempts').select('leads_captured').eq('trial_user_id', user.id).single()).data?.leads_captured + 1 || 1 })
-        .eq('trial_user_id', user.id);
+      await db.update(trialAttempts)
+        .set({ leadsCaptured: sql`${trialAttempts.leadsCaptured} + 1` })
+        .where(eq(trialAttempts.trialUserId, user.id));
     }
     // Marcar whatsapp_connected na primeira mensagem de cliente processada
-    const { supabase } = await import('../../shared/config/supabase.js');
-    await supabase
-      .from('trial_attempts')
-      .update({ whatsapp_connected: true, last_activity_at: new Date().toISOString() })
-      .eq('trial_user_id', user.id)
-      .eq('whatsapp_connected', false); // só atualiza se ainda era false
+    await db.update(trialAttempts)
+      .set({ whatsappConnected: true, lastActivityAt: new Date() })
+      .where(and(eq(trialAttempts.trialUserId, user.id), eq(trialAttempts.whatsappConnected, false)));
   }
 
   // Salvar mensagem com ou sem mídia
@@ -533,13 +539,12 @@ async function executeIntent(container: any, user: any, intent: { type: string; 
           const endHour = match[3].padStart(2, '0');
           const endMin = match[4] || '00';
 
-          const { supabase } = await import('../../shared/config/supabase.js');
-          await supabase.from('businesses')
-            .update({
-              business_hours_start: `${startHour}:${startMin}`,
-              business_hours_end: `${endHour}:${endMin}`,
+          await db.update(businesses)
+            .set({
+              businessHoursStart: `${startHour}:${startMin}`,
+              businessHoursEnd: `${endHour}:${endMin}`,
             })
-            .eq('user_id', user.id);
+            .where(eq(businesses.userId, user.id));
 
           return `✅ Horário atualizado!\n\n🕐 Agora atendo de *${startHour}:${startMin}* às *${endHour}:${endMin}*.\n\nMensagens fora desse horário vão receber a resposta automática.`;
         }

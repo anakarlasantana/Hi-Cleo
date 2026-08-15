@@ -1,4 +1,7 @@
 import { randomUUID } from 'crypto';
+import { eq } from 'drizzle-orm';
+import { db } from '../../shared/config/database.js';
+import { activationCodes, users } from '../../shared/schema.js';
 import type { MercadoPagoPort, PaymentRepository } from './payment.port.js';
 import type { PlanRepository } from '../plans/plans.port.js';
 import { calculatePrice, type PlanName, type BillingPeriod } from './price-calculator.js';
@@ -140,12 +143,11 @@ export class PaymentService {
 
     // Para pagamentos já processados, buscar activationCode se existir
     if (record.status === 'processed' && record.activation_code_id) {
-      const { supabase } = await import('../../shared/config/supabase.js');
-      const { data: codeRecord } = await supabase
-        .from('activation_codes')
-        .select('code')
-        .eq('id', record.activation_code_id)
-        .single();
+      const [codeRecord] = await db
+        .select({ code: activationCodes.code })
+        .from(activationCodes)
+        .where(eq(activationCodes.id, record.activation_code_id))
+        .limit(1);
       return { status: record.status, statusDetail: record.status, isRenewal: false, activationCode: codeRecord?.code };
     }
 
@@ -235,8 +237,7 @@ export class PaymentService {
 
       // Atualizar plano se mudou (upgrade/downgrade)
       if (existingUser.plan !== planName) {
-        const { supabase } = await import('../../shared/config/supabase.js');
-        await supabase.from('users').update({ plan: planName }).eq('id', existingUser.id);
+        await db.update(users).set({ plan: planName }).where(eq(users.id, existingUser.id));
       }
 
       // Notificar via WhatsApp que a renovação foi confirmada

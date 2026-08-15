@@ -48,11 +48,11 @@ app.use(express.json({ limit: '100kb' }));
 app.get('/health', async (_req, res) => {
   const checks: Record<string, 'ok' | 'error'> = { server: 'ok' };
 
-  // Verificar Supabase (DB)
+  // Verificar Database (PostgreSQL)
   try {
-    const { supabase } = await import('./shared/config/supabase.js');
-    const { error } = await supabase.from('plan_limits').select('id').limit(1);
-    checks.database = error ? 'error' : 'ok';
+    const { pool } = await import('./shared/config/database.js');
+    const result = await pool.query('SELECT 1');
+    checks.database = result.rows.length > 0 ? 'ok' : 'error';
   } catch {
     checks.database = 'error';
   }
@@ -132,6 +132,8 @@ const shutdown = async () => {
   logger.info('Encerrando...');
   await container.messageWorker.shutdown();
   await container.queueService.close();
+  const { closeDatabase } = await import('./shared/config/database.js');
+  await closeDatabase();
   process.exit(0);
 };
 

@@ -7,24 +7,24 @@ import { DeepSeekAdapter } from './modules/ai/adapters/deepseek.adapter.js';
 import { AiFallbackAdapter } from './modules/ai/adapters/ai-fallback.adapter.js';
 import { EvolutionApiAdapter } from './modules/evolution/evolution-api.adapter.js';
 import { EvolutionGoAdapter } from './modules/evolution/evolution-go.adapter.js';
-import { SupabaseActivationRepository, SupabaseUserRepository } from './modules/activation/activation.repository.js';
-import { SupabaseLeadRepository } from './modules/leads/leads.repository.js';
-import { SupabaseMessageRepository } from './modules/messages/messages.repository.js';
-import { SupabaseFollowUpRepository } from './modules/follow-up/follow-up.repository.js';
-import { SupabaseRuleRepository } from './modules/rules/rules.repository.js';
-import { SupabaseOnboardingRepository } from './modules/onboarding/onboarding.repository.js';
-import { SupabaseExclusionRepository } from './modules/exclusion/exclusion.repository.js';
-import { SupabaseSessionRepository } from './modules/webhooks/webhooks.repository.js';
-import { SupabasePlanRepository } from './modules/plans/plans.repository.js';
-import { SupabaseTermsConsentRepository } from './modules/terms/terms.repository.js';
-import { SupabaseCancellationRepository } from './modules/cancellation/cancellation.repository.js';
-import { SupabaseContactMonitorRepository } from './modules/contact-monitor/contact-monitor.repository.js';
-import { SupabasePaymentRepository } from './modules/payment/payment.repository.js';
-import { SupabaseSubscriptionRepository } from './modules/subscription/subscription.repository.js';
-import { SupabaseInviteRepository } from './modules/invites/invites.repository.js';
+import { DrizzleActivationRepository, DrizzleUserRepository } from './modules/activation/activation.repository.js';
+import { DrizzleLeadRepository } from './modules/leads/leads.repository.js';
+import { DrizzleMessageRepository } from './modules/messages/messages.repository.js';
+import { DrizzleFollowUpRepository } from './modules/follow-up/follow-up.repository.js';
+import { DrizzleRuleRepository } from './modules/rules/rules.repository.js';
+import { DrizzleOnboardingRepository } from './modules/onboarding/onboarding.repository.js';
+import { DrizzleExclusionRepository } from './modules/exclusion/exclusion.repository.js';
+import { DrizzleSessionRepository } from './modules/webhooks/webhooks.repository.js';
+import { DrizzlePlanRepository } from './modules/plans/plans.repository.js';
+import { DrizzleTermsConsentRepository } from './modules/terms/terms.repository.js';
+import { DrizzleCancellationRepository } from './modules/cancellation/cancellation.repository.js';
+import { DrizzleContactMonitorRepository } from './modules/contact-monitor/contact-monitor.repository.js';
+import { DrizzlePaymentRepository } from './modules/payment/payment.repository.js';
+import { DrizzleSubscriptionRepository } from './modules/subscription/subscription.repository.js';
+import { DrizzleInviteRepository } from './modules/invites/invites.repository.js';
 
 // Trial
-import { SupabaseTrialRepository } from './modules/trial/trial.repository.js';
+import { DrizzleTrialRepository } from './modules/trial/trial.repository.js';
 import { TrialService } from './modules/trial/trial.service.js';
 
 // Services
@@ -86,23 +86,23 @@ const messaging = env.MESSAGING_PROVIDER === 'evolution-go'
 
 // --- Repositories ---
 
-const activationRepo = new SupabaseActivationRepository();
-const userRepo = new SupabaseUserRepository();
-const leadRepo = new SupabaseLeadRepository();
-const messageRepo = new SupabaseMessageRepository();
-const followUpRepo = new SupabaseFollowUpRepository();
-const ruleRepo = new SupabaseRuleRepository();
-const onboardingRepo = new SupabaseOnboardingRepository();
-const exclusionRepo = new SupabaseExclusionRepository();
-const sessionRepo = new SupabaseSessionRepository();
-const planRepo = new SupabasePlanRepository();
-const termsConsentRepo = new SupabaseTermsConsentRepository();
-const cancellationRepo = new SupabaseCancellationRepository();
-const contactMonitorRepo = new SupabaseContactMonitorRepository();
-const paymentRepo = new SupabasePaymentRepository();
-const subscriptionRepo = new SupabaseSubscriptionRepository();
-const inviteRepo = new SupabaseInviteRepository();
-const trialRepo = new SupabaseTrialRepository();
+const activationRepo = new DrizzleActivationRepository();
+const userRepo = new DrizzleUserRepository();
+const leadRepo = new DrizzleLeadRepository();
+const messageRepo = new DrizzleMessageRepository();
+const followUpRepo = new DrizzleFollowUpRepository();
+const ruleRepo = new DrizzleRuleRepository();
+const onboardingRepo = new DrizzleOnboardingRepository();
+const exclusionRepo = new DrizzleExclusionRepository();
+const sessionRepo = new DrizzleSessionRepository();
+const planRepo = new DrizzlePlanRepository();
+const termsConsentRepo = new DrizzleTermsConsentRepository();
+const cancellationRepo = new DrizzleCancellationRepository();
+const contactMonitorRepo = new DrizzleContactMonitorRepository();
+const paymentRepo = new DrizzlePaymentRepository();
+const subscriptionRepo = new DrizzleSubscriptionRepository();
+const inviteRepo = new DrizzleInviteRepository();
+const trialRepo = new DrizzleTrialRepository();
 
 // --- Services ---
 

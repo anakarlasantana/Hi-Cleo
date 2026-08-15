@@ -67,7 +67,7 @@ export class TrialService {
       // Registrar tentativa bloqueada
       await this.trialRepo.create({ name, phone, ip_address: ipAddress, user_agent: userAgent });
       await this.blockLastAttempt(phone, 'duplicate_phone');
-      return { success: false, error: 'Este número já utilizou o período de teste.', blockedReason: 'duplicate_phone' };
+      return { success: false, error: 'Você já utilizou o teste gratuito com este número. Assine um plano para continuar usando a Cleo!', blockedReason: 'duplicate_phone' };
     }
 
     // === CAMADA 3: Rate limit por IP (max 3 em 24h) ===
@@ -83,7 +83,7 @@ export class TrialService {
     // === CAMADA 4: Verificar se já existe user com esse telefone ===
     const existingUser = await this.userRepo.findByPhone(phone);
     if (existingUser) {
-      return { success: false, error: 'Este número já possui uma conta. Faça login ou assine um plano.', blockedReason: 'existing_user' };
+      return { success: false, error: 'Este número já possui uma conta ativa. Se quiser renovar ou trocar de plano, acesse a página de planos.', blockedReason: 'existing_user' };
     }
 
     // === TODAS AS VALIDAÇÕES PASSARAM — Criar trial ===

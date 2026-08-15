@@ -1,4 +1,7 @@
 import { randomUUID } from 'crypto';
+import { eq, and } from 'drizzle-orm';
+import { db } from '../../shared/config/database.js';
+import { users, whatsappSessions } from '../../shared/schema.js';
 import type { InviteRepository } from './invites.port.js';
 import type { PlanService } from '../plans/plans.service.js';
 import type { UserRepository } from '../activation/activation.port.js';
@@ -124,26 +127,19 @@ export class InviteService {
    */
   async disconnectCollaborator(ownerUserId: string, collaboratorPhone: string): Promise<void> {
     // Buscar user colaborador pelo phone e owner_user_id
-    const { supabase } = await import('../../shared/config/supabase.js');
-
-    const { data: collaborator } = await supabase
-      .from('users')
-      .select('id')
-      .eq('phone', collaboratorPhone)
-      .eq('owner_user_id', ownerUserId)
-      .single();
+    const [collaborator] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.phone, collaboratorPhone), eq(users.ownerUserId, ownerUserId)))
+      .limit(1);
 
     if (!collaborator) {
       throw new Error('COLLABORATOR_NOT_FOUND');
     }
 
     // Desconectar sessão ativa
-    const { error } = await supabase
-      .from('whatsapp_sessions')
-      .update({ status: 'disconnected', disconnected_at: new Date().toISOString() })
-      .eq('user_id', collaborator.id)
-      .eq('status', 'active');
-
-    if (error) throw new Error(`Erro ao desconectar: ${error.message}`);
+    await db.update(whatsappSessions)
+      .set({ status: 'disconnected', disconnectedAt: new Date() })
+      .where(and(eq(whatsappSessions.userId, collaborator.id), eq(whatsappSessions.status, 'active')));
   }
 }

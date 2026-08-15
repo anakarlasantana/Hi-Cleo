@@ -5,6 +5,8 @@ import type { OnboardingState } from '../../shared/types/index.js';
 import { interpretOnboardingResponse } from '../ai/nodes/interpret-onboarding.js';
 import { ONBOARDING_RETRY_MESSAGES } from '../ai/prompts/onboarding.prompts.js';
 import { env } from '../../shared/config/env.js';
+import { db } from '../../shared/config/database.js';
+import { businesses } from '../../shared/schema.js';
 
 /**
  * Orquestra o onboarding conversacional.
@@ -120,7 +122,9 @@ export class OnboardingService {
 
     await this.onboardingRepo.updateStep(userId, 'completed', state.data);
     await this.saveBusinessProfileAndRules(userId, state.data);
-    return `Tudo configurado! 🎉\n\nA partir de agora eu cuido da organização dos seus contatos e respondo seus clientes do jeito que combinamos.\n\n📱 *Último passo:* conecte seu WhatsApp pra eu começar a acompanhar suas conversas.\n\nAcesse o link abaixo no computador e escaneie o QR Code:\n${env.SITE_URL}/conectar\n\nÉ igual ao WhatsApp Web: vai em *Dispositivos Vinculados* no celular e escaneie. Quando conectar, eu começo a trabalhar automaticamente!\n\n📌 Dica: fixa a Cleo no topo do WhatsApp pra não perder nenhuma mensagem minha!`;
+    const connectUrl = `${env.SITE_URL}/conectar`;
+    const userName = state.data.nome_confirmado || 'parceiro(a)';
+    return `Ótimo, ${userName}! Suas preferências estão salvas 👏\n\nAgora falta o *último e mais importante passo* pra eu começar a trabalhar por você:\n\n📱 *Conecte seu WhatsApp comigo*\n\n1️⃣ Volte para a tela que ficou aberta no computador — o QR Code já deve estar lá\n2️⃣ No celular, vá em *WhatsApp > Dispositivos Vinculados > Vincular Dispositivo*\n3️⃣ Escaneie o QR Code da tela\n\n💡 Se a tela não estiver mais aberta, acesse pelo computador:\n${connectUrl}\n\nÉ o mesmo processo do WhatsApp Web — leva 30 segundos!\n\nAssim que você conectar, eu te aviso aqui e começo a cuidar dos seus clientes automaticamente 🚀`;
   }
 
   /**
@@ -169,7 +173,7 @@ export class OnboardingService {
       case 'tone_of_voice':
         return `Atualmente: *${this.getToneLabel(data.tom_de_voz || 'friendly_professional')}*.\n\nComo quer que eu fale?\n1️⃣ Profissional e cordial\n2️⃣ Descontraído mas profissional\n3️⃣ Super informal`;
       case 'business_hours':
-        return `Atualmente: *${data.horario_descricao || `${data.horario_inicio}-${data.horario_fim}`}*.\n\nQual o novo horário?`;
+        return `Atualmente: *${data.horario_descricao || `${data.horario_inicio}-${data.horario_fim}`}*.\n\nMe diz os novos dias e horários (ex: "Seg a Sex, 9h às 18h"):`;
       case 'outside_hours_behavior':
         return 'O que faço quando chegar mensagem fora do horário?\n\n1️⃣ Aviso que retorna no próximo dia útil\n2️⃣ Não respondo nada, só anoto\n\nOu me diz a mensagem que quer:';
       default:
@@ -186,7 +190,7 @@ export class OnboardingService {
       case 'tone_of_voice':
         return 'Boa! Agora me diz: como quer que eu fale com seus clientes?\n\n1️⃣ Profissional e cordial\n2️⃣ Descontraído mas profissional\n3️⃣ Super informal\n\nOu descreve com suas palavras:';
       case 'business_hours':
-        return 'Perfeito! Vou me comunicar assim com seus clientes 💬\n\nE qual é seu horário de atendimento?\n\nExemplos:\n• Seg-Sex 9h-18h\n• Todos os dias 7h-22h\n\nManda como preferir:';
+        return 'Perfeito! Vou me comunicar assim com seus clientes 💬\n\nAgora preciso saber: *quais dias e horários* você atende?\n\nExemplos:\n• Seg a Sex, 9h às 18h\n• Seg a Sáb, 8h às 20h\n• Todos os dias, 7h às 22h\n\nMe diz os dias e o horário:';
       case 'outside_hours_behavior':
         return 'Anotado! 🕐\n\nÚltima pergunta: quando chegar mensagem *fora* desse horário, o que faço?\n\n1️⃣ Aviso que retorna no próximo dia útil\n2️⃣ Não respondo nada, só anoto\n\nOu me diz a mensagem que quer que eu mande:';
       case 'confirm_summary': {
@@ -201,16 +205,31 @@ export class OnboardingService {
   }
 
   private async saveBusinessProfileAndRules(userId: string, data: Record<string, string>): Promise<void> {
-    const { supabase } = await import('../../shared/config/supabase.js');
-    await supabase.from('businesses').upsert({
-      user_id: userId,
+    const businessDays = data.dias_semana
+      ? data.dias_semana.split(',').map(d => d.trim())
+      : ['mon', 'tue', 'wed', 'thu', 'fri'];
+
+    await db.insert(businesses).values({
+      userId,
       name: data.negocio,
       services: data.negocio,
-      target_audience: data.publico_alvo,
-      tone_of_voice: data.tom_de_voz || 'friendly_professional',
-      business_hours_start: data.horario_inicio || '08:00',
-      business_hours_end: data.horario_fim || '18:00',
-    }, { onConflict: 'user_id' });
+      targetAudience: data.publico_alvo,
+      toneOfVoice: data.tom_de_voz || 'friendly_professional',
+      businessHoursStart: data.horario_inicio || '08:00',
+      businessHoursEnd: data.horario_fim || '18:00',
+      businessDays,
+    }).onConflictDoUpdate({
+      target: businesses.userId,
+      set: {
+        name: data.negocio,
+        services: data.negocio,
+        targetAudience: data.publico_alvo,
+        toneOfVoice: data.tom_de_voz || 'friendly_professional',
+        businessHoursStart: data.horario_inicio || '08:00',
+        businessHoursEnd: data.horario_fim || '18:00',
+        businessDays,
+      },
+    });
 
     // Não cria mais regras de template fixo — a IA gera respostas contextuais em tempo real
     // Mantém apenas a regra de fora do horário customizada (se o dono escreveu uma mensagem específica)
