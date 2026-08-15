@@ -1,69 +1,65 @@
-import { supabase } from '../../shared/config/supabase.js';
+import { eq, and, desc, count } from 'drizzle-orm';
+import { db } from '../../shared/config/database.js';
+import { invites } from '../../shared/schema.js';
 import type { InviteRepository } from './invites.port.js';
 import type { Invite } from '../../shared/types/index.js';
 
-export class SupabaseInviteRepository implements InviteRepository {
+export class DrizzleInviteRepository implements InviteRepository {
   async create(data: { ownerUserId: string; phone: string; token: string; expiresAt: Date }): Promise<Invite> {
-    const { data: invite, error } = await supabase
-      .from('invites')
-      .insert({
-        owner_user_id: data.ownerUserId,
+    const [invite] = await db
+      .insert(invites)
+      .values({
+        ownerUserId: data.ownerUserId,
         phone: data.phone,
         token: data.token,
-        expires_at: data.expiresAt.toISOString(),
+        expiresAt: data.expiresAt,
       })
-      .select()
-      .single();
+      .returning();
 
-    if (error) throw new Error(`Erro ao criar convite: ${error.message}`);
-    return invite as Invite;
+    if (!invite) throw new Error('Erro ao criar convite');
+    return invite as unknown as Invite;
   }
 
   async findByToken(token: string): Promise<Invite | null> {
-    const { data } = await supabase
-      .from('invites')
-      .select('*')
-      .eq('token', token)
-      .single();
+    const [data] = await db
+      .select()
+      .from(invites)
+      .where(eq(invites.token, token))
+      .limit(1);
 
-    return (data as Invite) || null;
+    return (data as unknown as Invite) || null;
   }
 
   async markAccepted(token: string, collaboratorUserId: string): Promise<void> {
-    const { error } = await supabase
-      .from('invites')
-      .update({ status: 'accepted', used_by_user_id: collaboratorUserId })
-      .eq('token', token);
-
-    if (error) throw new Error(`Erro ao aceitar convite: ${error.message}`);
+    await db
+      .update(invites)
+      .set({ status: 'accepted', usedByUserId: collaboratorUserId })
+      .where(eq(invites.token, token));
   }
 
   async markCancelled(token: string): Promise<void> {
-    const { error } = await supabase
-      .from('invites')
-      .update({ status: 'cancelled' })
-      .eq('token', token);
-
-    if (error) throw new Error(`Erro ao cancelar convite: ${error.message}`);
+    await db
+      .update(invites)
+      .set({ status: 'cancelled' })
+      .where(eq(invites.token, token));
   }
 
   async listByOwner(ownerUserId: string): Promise<Invite[]> {
-    const { data } = await supabase
-      .from('invites')
-      .select('*')
-      .eq('owner_user_id', ownerUserId)
-      .order('created_at', { ascending: false });
+    const data = await db
+      .select()
+      .from(invites)
+      .where(eq(invites.ownerUserId, ownerUserId))
+      .orderBy(desc(invites.createdAt));
 
-    return (data || []) as Invite[];
+    return data as unknown as Invite[];
   }
 
   async countActiveByOwner(ownerUserId: string): Promise<number> {
-    const { count } = await supabase
-      .from('invites')
-      .select('*', { count: 'exact', head: true })
-      .eq('owner_user_id', ownerUserId)
-      .eq('status', 'pending');
+    const [result] = await db
+      .select({ count: count() })
+      .from(invites)
+      .where(and(eq(invites.ownerUserId, ownerUserId), eq(invites.status, 'pending')));
 
-    return count || 0;
+    return result?.count || 0;
   }
 }

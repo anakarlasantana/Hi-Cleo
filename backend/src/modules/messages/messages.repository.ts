@@ -1,78 +1,75 @@
-import { supabase } from '../../shared/config/supabase.js';
+import { eq, and, desc, isNotNull } from 'drizzle-orm';
+import { db } from '../../shared/config/database.js';
+import { messages } from '../../shared/schema.js';
 import type { MessageRepository, SaveMessageOptions } from './messages.port.js';
 import type { Message, MessageDirection, MediaType } from '../../shared/types/index.js';
 
-export class SupabaseMessageRepository implements MessageRepository {
+export class DrizzleMessageRepository implements MessageRepository {
   async save(leadId: string, text: string, direction: MessageDirection): Promise<Message> {
-    const { data, error } = await supabase
-      .from('messages')
-      .insert({ lead_id: leadId, text, direction })
-      .select()
-      .single();
+    const [data] = await db
+      .insert(messages)
+      .values({ leadId, text, direction })
+      .returning();
 
-    if (error) throw new Error(`Erro ao salvar mensagem: ${error.message}`);
-    return data as Message;
+    if (!data) throw new Error('Erro ao salvar mensagem');
+    return data as unknown as Message;
   }
 
   async saveWithMedia(options: SaveMessageOptions): Promise<Message> {
     const { leadId, text, direction, mediaType, mediaMimeType, mediaFileName, mediaKey } = options;
 
-    const { data, error } = await supabase
-      .from('messages')
-      .insert({
-        lead_id: leadId,
+    const [data] = await db
+      .insert(messages)
+      .values({
+        leadId,
         text,
         direction,
-        media_type: mediaType || null,
-        media_mime_type: mediaMimeType || null,
-        media_file_name: mediaFileName || null,
-        media_key: mediaKey || null,
+        mediaType: mediaType || null,
+        mediaMimeType: mediaMimeType || null,
+        mediaFileName: mediaFileName || null,
+        mediaKey: mediaKey || null,
       })
-      .select()
-      .single();
+      .returning();
 
-    if (error) throw new Error(`Erro ao salvar mensagem com mídia: ${error.message}`);
-    return data as Message;
+    if (!data) throw new Error('Erro ao salvar mensagem com mídia');
+    return data as unknown as Message;
   }
 
   async getByLead(leadId: string, limit = 20): Promise<Message[]> {
-    const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('lead_id', leadId)
-      .order('timestamp', { ascending: false })
+    const data = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.leadId, leadId))
+      .orderBy(desc(messages.timestamp))
       .limit(limit);
 
-    if (error) throw new Error(`Erro ao buscar mensagens: ${error.message}`);
-    return (data || []) as Message[];
+    return data as unknown as Message[];
   }
 
   async getLastMessage(leadId: string): Promise<Message | null> {
-    const { data } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('lead_id', leadId)
-      .order('timestamp', { ascending: false })
-      .limit(1)
-      .single();
+    const [data] = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.leadId, leadId))
+      .orderBy(desc(messages.timestamp))
+      .limit(1);
 
-    return (data as Message) || null;
+    return (data as unknown as Message) || null;
   }
 
   async getMediaMessages(leadId: string, mediaType?: MediaType): Promise<Message[]> {
-    let query = supabase
-      .from('messages')
-      .select('*')
-      .eq('lead_id', leadId)
-      .not('media_type', 'is', null);
+    const conditions = [eq(messages.leadId, leadId), isNotNull(messages.mediaType)];
 
     if (mediaType) {
-      query = query.eq('media_type', mediaType);
+      conditions.push(eq(messages.mediaType, mediaType));
     }
 
-    const { data, error } = await query.order('timestamp', { ascending: false });
+    const data = await db
+      .select()
+      .from(messages)
+      .where(and(...conditions))
+      .orderBy(desc(messages.timestamp));
 
-    if (error) throw new Error(`Erro ao buscar mensagens com mídia: ${error.message}`);
-    return (data || []) as Message[];
+    return data as unknown as Message[];
   }
 }

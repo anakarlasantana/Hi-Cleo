@@ -1,45 +1,35 @@
-import { supabase } from '../../shared/config/supabase.js';
+import { eq, desc } from 'drizzle-orm';
+import { db } from '../../shared/config/database.js';
+import { termsConsent } from '../../shared/schema.js';
 import type { TermsConsent, TermsConsentRepository } from './terms.port.js';
 
-export class SupabaseTermsConsentRepository implements TermsConsentRepository {
+export class DrizzleTermsConsentRepository implements TermsConsentRepository {
   async getLatestConsent(userId: string): Promise<TermsConsent | null> {
-    const { data, error } = await supabase
-      .from('terms_consent')
-      .select('*')
-      .eq('user_id', userId)
-      .order('accepted_at', { ascending: false })
-      .limit(1)
-      .single();
+    const [data] = await db
+      .select()
+      .from(termsConsent)
+      .where(eq(termsConsent.userId, userId))
+      .orderBy(desc(termsConsent.acceptedAt))
+      .limit(1);
 
-    if (error && error.code === 'PGRST116') {
-      // No rows found
-      return null;
-    }
-    if (error) throw new Error(`Erro ao buscar consentimento: ${error.message}`);
-
-    return data as TermsConsent;
+    return (data as unknown as TermsConsent) || null;
   }
 
   async insertConsent(userId: string, termsVersion: string, ipAddress?: string): Promise<void> {
-    const { error } = await supabase
-      .from('terms_consent')
-      .insert({
-        user_id: userId,
-        terms_version: termsVersion,
-        ip_address: ipAddress || null,
-      });
-
-    if (error) throw new Error(`Erro ao registrar consentimento: ${error.message}`);
+    await db.insert(termsConsent).values({
+      userId,
+      termsVersion,
+      ipAddress: ipAddress || null,
+    });
   }
 
   async getConsentHistory(userId: string): Promise<TermsConsent[]> {
-    const { data, error } = await supabase
-      .from('terms_consent')
-      .select('*')
-      .eq('user_id', userId)
-      .order('accepted_at', { ascending: false });
+    const data = await db
+      .select()
+      .from(termsConsent)
+      .where(eq(termsConsent.userId, userId))
+      .orderBy(desc(termsConsent.acceptedAt));
 
-    if (error) throw new Error(`Erro ao buscar histórico de consentimento: ${error.message}`);
-    return (data || []) as TermsConsent[];
+    return data as unknown as TermsConsent[];
   }
 }

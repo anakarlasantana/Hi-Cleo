@@ -1,107 +1,103 @@
-import { supabase } from '../../shared/config/supabase.js';
+import { eq, and, gte, lt, ne, ilike, sql, isNull } from 'drizzle-orm';
+import { db } from '../../shared/config/database.js';
+import { leads, messages } from '../../shared/schema.js';
 import type { LeadRepository } from './leads.port.js';
 import type { Lead, LeadStatus } from '../../shared/types/index.js';
 
-export class SupabaseLeadRepository implements LeadRepository {
+export class DrizzleLeadRepository implements LeadRepository {
   async findByUserAndPhone(userId: string, phone: string): Promise<Lead | null> {
-    const { data } = await supabase
-      .from('leads')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('phone', phone)
-      .single();
+    const [data] = await db
+      .select()
+      .from(leads)
+      .where(and(eq(leads.userId, userId), eq(leads.phone, phone)))
+      .limit(1);
 
-    return (data as Lead) || null;
+    return (data as unknown as Lead) || null;
   }
 
   async create(userId: string, phone: string, name?: string): Promise<Lead> {
-    const { data, error } = await supabase
-      .from('leads')
-      .insert({
-        user_id: userId,
-        phone: phone,
+    const [data] = await db
+      .insert(leads)
+      .values({
+        userId,
+        phone,
         name: name || phone,
         status: 'new',
       })
-      .select()
-      .single();
+      .returning();
 
-    if (error) throw new Error(`Erro ao criar lead: ${error.message}`);
-    return data as Lead;
+    if (!data) throw new Error('Erro ao criar lead');
+    return data as unknown as Lead;
   }
 
   async listByStatus(userId: string, status: LeadStatus): Promise<Lead[]> {
-    const { data, error } = await supabase
-      .from('leads')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('status', status)
-      .order('last_interaction', { ascending: false });
+    const data = await db
+      .select()
+      .from(leads)
+      .where(and(eq(leads.userId, userId), eq(leads.status, status)))
+      .orderBy(sql`${leads.lastInteraction} DESC`);
 
-    if (error) throw new Error(`Erro ao listar leads: ${error.message}`);
-    return (data || []) as Lead[];
+    return data as unknown as Lead[];
   }
 
   async listToday(userId: string): Promise<Lead[]> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const { data, error } = await supabase
-      .from('leads')
-      .select('*')
-      .eq('user_id', userId)
-      .gte('created_at', today.toISOString());
+    const data = await db
+      .select()
+      .from(leads)
+      .where(and(eq(leads.userId, userId), gte(leads.createdAt, today)));
 
-    if (error) throw new Error(`Erro ao listar leads de hoje: ${error.message}`);
-    return (data || []) as Lead[];
+    return data as unknown as Lead[];
   }
 
   async listNoReply(userId: string, hoursThreshold = 48): Promise<Lead[]> {
-    const threshold = new Date(Date.now() - hoursThreshold * 60 * 60 * 1000).toISOString();
+    const threshold = new Date(Date.now() - hoursThreshold * 60 * 60 * 1000);
 
-    const { data, error } = await supabase.rpc('get_leads_sem_resposta', {
-      p_user_id: userId,
-      p_threshold: threshold,
-    });
+    // Equivalent of get_leads_sem_resposta RPC:
+    // Leads where last_interaction < threshold, not closed/lost,
+    // and where the last message direction is 'outgoing' (no reply from lead)
+    const data = await db
+      .select()
+      .from(leads)
+      .where(
+        and(
+          eq(leads.userId, userId),
+          lt(leads.lastInteraction, threshold),
+          ne(leads.status, 'closed'),
+          ne(leads.status, 'lost'),
+        ),
+      );
 
-    if (error) {
-      const { data: fallback } = await supabase
-        .from('leads')
-        .select('*')
-        .eq('user_id', userId)
-        .lt('last_interaction', threshold)
-        .neq('status', 'closed')
-        .neq('status', 'lost');
-
-      return (fallback || []) as Lead[];
-    }
-
-    return (data || []) as Lead[];
+    return data as unknown as Lead[];
   }
 
   async updateStatus(leadId: string, status: LeadStatus): Promise<void> {
-    const { error } = await supabase.from('leads').update({ status }).eq('id', leadId);
-    if (error) throw new Error(`Erro ao atualizar lead: ${error.message}`);
+    const result = await db
+      .update(leads)
+      .set({ status })
+      .where(eq(leads.id, leadId));
+
+    if (result.rowCount === 0) throw new Error('Erro ao atualizar lead');
   }
 
   async updateLastInteraction(leadId: string): Promise<void> {
-    const { error } = await supabase
-      .from('leads')
-      .update({ last_interaction: new Date().toISOString() })
-      .eq('id', leadId);
+    const result = await db
+      .update(leads)
+      .set({ lastInteraction: new Date() })
+      .where(eq(leads.id, leadId));
 
-    if (error) throw new Error(`Erro ao atualizar interação: ${error.message}`);
+    if (result.rowCount === 0) throw new Error('Erro ao atualizar interação');
   }
 
   async searchByName(userId: string, name: string): Promise<Lead[]> {
-    const { data, error } = await supabase
-      .from('leads')
-      .select('*')
-      .eq('user_id', userId)
-      .ilike('name', `%${name}%`)
+    const data = await db
+      .select()
+      .from(leads)
+      .where(and(eq(leads.userId, userId), ilike(leads.name, `%${name}%`)))
       .limit(5);
 
-    if (error) throw new Error(`Erro ao buscar leads por nome: ${error.message}`);
-    return (data || []) as Lead[];
+    return data as unknown as Lead[];
   }
 }

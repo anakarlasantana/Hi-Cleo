@@ -1,11 +1,13 @@
-import { supabase } from "../../shared/config/supabase.js";
+import { eq, and, desc } from 'drizzle-orm';
+import { db } from '../../shared/config/database.js';
+import { activationCodes, users, businesses } from '../../shared/schema.js';
 import type {
   ActivationRepository,
   UserRepository,
-} from "./activation.port.js";
-import type { ActivationCode, User, Business } from "../../shared/types/index.js";
+} from './activation.port.js';
+import type { ActivationCode, User, Business } from '../../shared/types/index.js';
 
-export class SupabaseActivationRepository implements ActivationRepository {
+export class DrizzleActivationRepository implements ActivationRepository {
   async createCode(
     code: string,
     plan: string,
@@ -17,126 +19,121 @@ export class SupabaseActivationRepository implements ActivationRepository {
     const insertData: Record<string, unknown> = {
       code,
       plan,
-      payment_id: paymentId,
+      paymentId,
       used: false,
-      expires_at: expiresAt.toISOString(),
+      expiresAt,
     };
 
-    if (userId) insertData.user_id = userId;
-    if (userEmail) insertData.user_email = userEmail;
+    if (userId) insertData.userId = userId;
+    if (userEmail) insertData.userEmail = userEmail;
 
-    const { data, error } = await supabase
-      .from("activation_codes")
-      .insert(insertData)
-      .select()
-      .single();
+    const [data] = await db
+      .insert(activationCodes)
+      .values(insertData as typeof activationCodes.$inferInsert)
+      .returning();
 
-    if (error) throw new Error(`Erro ao gerar código: ${error.message}`);
-    return data as ActivationCode;
+    if (!data) throw new Error('Erro ao gerar código');
+    return data as unknown as ActivationCode;
   }
 
   async findValidCode(code: string): Promise<ActivationCode | null> {
-    const { data } = await supabase
-      .from("activation_codes")
-      .select("*")
-      .eq("code", code.toUpperCase())
-      .eq("used", false)
-      .single();
+    const [data] = await db
+      .select()
+      .from(activationCodes)
+      .where(and(eq(activationCodes.code, code.toUpperCase()), eq(activationCodes.used, false)))
+      .limit(1);
 
     if (!data) return null;
-    if (new Date(data.expires_at) < new Date()) return null;
+    if (new Date(data.expiresAt) < new Date()) return null;
 
-    return data as ActivationCode;
+    return data as unknown as ActivationCode;
   }
 
   async findCodeByValue(code: string): Promise<ActivationCode | null> {
-    const { data } = await supabase
-      .from("activation_codes")
-      .select("*")
-      .eq("code", code.toUpperCase())
-      .single();
+    const [data] = await db
+      .select()
+      .from(activationCodes)
+      .where(eq(activationCodes.code, code.toUpperCase()))
+      .limit(1);
 
     if (!data) return null;
-    return data as ActivationCode;
+    return data as unknown as ActivationCode;
   }
 
   async findByUserId(userId: string): Promise<ActivationCode | null> {
-    const { data } = await supabase
-      .from("activation_codes")
-      .select("*")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
+    const [data] = await db
+      .select()
+      .from(activationCodes)
+      .where(eq(activationCodes.userId, userId))
+      .orderBy(desc(activationCodes.createdAt))
+      .limit(1);
 
-    return (data as ActivationCode) || null;
+    return (data as unknown as ActivationCode) || null;
   }
 
   async markUsed(code: string, userId: string): Promise<void> {
-    await supabase
-      .from("activation_codes")
-      .update({ used: true, used_by: userId, activated_at: new Date().toISOString() })
-      .eq("code", code.toUpperCase());
+    await db
+      .update(activationCodes)
+      .set({ used: true, usedBy: userId, activatedAt: new Date() })
+      .where(eq(activationCodes.code, code.toUpperCase()));
   }
 }
 
-export class SupabaseUserRepository implements UserRepository {
+export class DrizzleUserRepository implements UserRepository {
   async findByPhone(phone: string): Promise<User | null> {
-    const { data } = await supabase
-      .from("users")
-      .select("*")
-      .eq("phone", phone)
-      .single();
+    const [data] = await db
+      .select()
+      .from(users)
+      .where(eq(users.phone, phone))
+      .limit(1);
 
-    return (data as User) || null;
+    return (data as unknown as User) || null;
   }
 
   async findById(userId: string): Promise<User | null> {
-    const { data } = await supabase
-      .from("users")
-      .select("*")
-      .eq("id", userId)
-      .single();
+    const [data] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
 
-    return (data as User) || null;
+    return (data as unknown as User) || null;
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    const { data } = await supabase
-      .from("users")
-      .select("*")
-      .eq("email", email)
-      .single();
+    const [data] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
 
-    return (data as User) || null;
+    return (data as unknown as User) || null;
   }
 
   async create(userData: Partial<User>): Promise<User> {
-    const { data, error } = await supabase
-      .from("users")
-      .insert(userData)
-      .select()
-      .single();
+    const [data] = await db
+      .insert(users)
+      .values(userData as typeof users.$inferInsert)
+      .returning();
 
-    if (error) throw new Error(`Erro ao criar usuário: ${error.message}`);
-    return data as User;
+    if (!data) throw new Error('Erro ao criar usuário');
+    return data as unknown as User;
   }
 
   async complementUser(userId: string, complementData: { phone: string; name: string }): Promise<User> {
-    const { data, error } = await supabase
-      .from("users")
-      .update(complementData)
-      .eq("id", userId)
-      .select()
-      .single();
+    const [data] = await db
+      .update(users)
+      .set(complementData)
+      .where(eq(users.id, userId))
+      .returning();
 
-    if (error) throw new Error(`Erro ao complementar usuário: ${error.message}`);
-    return data as User;
+    if (!data) throw new Error('Erro ao complementar usuário');
+    return data as unknown as User;
   }
 
   async listAll(): Promise<User[]> {
-    const { data } = await supabase.from("users").select("*");
-    return (data || []) as User[];
+    const data = await db.select().from(users);
+    return data as unknown as User[];
   }
 
   async createBusiness(
@@ -148,19 +145,22 @@ export class SupabaseUserRepository implements UserRepository {
       business_hours_end?: string;
     },
   ): Promise<void> {
-    await supabase.from("businesses").insert({
-      user_id: userId,
-      ...businessData,
+    await db.insert(businesses).values({
+      userId,
+      name: businessData.name,
+      services: businessData.services,
+      businessHoursStart: businessData.business_hours_start,
+      businessHoursEnd: businessData.business_hours_end,
     });
   }
 
   async getBusiness(userId: string): Promise<Business | null> {
-    const { data } = await supabase
-      .from('businesses')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
+    const [data] = await db
+      .select()
+      .from(businesses)
+      .where(eq(businesses.userId, userId))
+      .limit(1);
 
-    return (data as Business) || null;
+    return (data as unknown as Business) || null;
   }
 }

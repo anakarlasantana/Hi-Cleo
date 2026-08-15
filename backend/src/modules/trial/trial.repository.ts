@@ -1,130 +1,116 @@
-import { supabase } from '../../shared/config/supabase.js';
+import { eq, and, ne, gte, desc, count, sql } from 'drizzle-orm';
+import { db } from '../../shared/config/database.js';
+import { trialAttempts, users } from '../../shared/schema.js';
 import type { TrialRepository, TrialAttempt, CreateTrialAttemptData } from './trial.port.js';
 
-export class SupabaseTrialRepository implements TrialRepository {
+export class DrizzleTrialRepository implements TrialRepository {
   async create(data: CreateTrialAttemptData): Promise<TrialAttempt> {
-    const { data: attempt, error } = await supabase
-      .from('trial_attempts')
-      .insert({
+    const [attempt] = await db
+      .insert(trialAttempts)
+      .values({
         name: data.name,
         phone: data.phone,
-        ip_address: data.ip_address || null,
-        user_agent: data.user_agent || null,
+        ipAddress: data.ip_address || null,
+        userAgent: data.user_agent || null,
       })
-      .select()
-      .single();
+      .returning();
 
-    if (error) throw new Error(`Erro ao criar trial attempt: ${error.message}`);
-    return attempt;
+    if (!attempt) throw new Error('Erro ao criar trial attempt');
+    return attempt as unknown as TrialAttempt;
   }
 
   async findByPhone(phone: string): Promise<TrialAttempt | null> {
-    const { data } = await supabase
-      .from('trial_attempts')
+    const [data] = await db
       .select()
-      .eq('phone', phone)
-      .neq('status', 'blocked')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+      .from(trialAttempts)
+      .where(and(eq(trialAttempts.phone, phone), ne(trialAttempts.status, 'blocked')))
+      .orderBy(desc(trialAttempts.createdAt))
+      .limit(1);
 
-    return data || null;
+    return (data as unknown as TrialAttempt) || null;
   }
 
   async findRecentByPhone(phone: string, withinDays: number): Promise<TrialAttempt | null> {
     const since = new Date();
     since.setDate(since.getDate() - withinDays);
 
-    const { data } = await supabase
-      .from('trial_attempts')
+    const [data] = await db
       .select()
-      .eq('phone', phone)
-      .neq('status', 'blocked')
-      .gte('created_at', since.toISOString())
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+      .from(trialAttempts)
+      .where(
+        and(
+          eq(trialAttempts.phone, phone),
+          ne(trialAttempts.status, 'blocked'),
+          gte(trialAttempts.createdAt, since),
+        ),
+      )
+      .orderBy(desc(trialAttempts.createdAt))
+      .limit(1);
 
-    return data || null;
+    return (data as unknown as TrialAttempt) || null;
   }
 
   async findRecentByIp(ip: string, withinHours: number): Promise<number> {
     const since = new Date();
     since.setHours(since.getHours() - withinHours);
 
-    const { count } = await supabase
-      .from('trial_attempts')
-      .select('*', { count: 'exact', head: true })
-      .eq('ip_address', ip)
-      .gte('created_at', since.toISOString());
+    const [result] = await db
+      .select({ count: count() })
+      .from(trialAttempts)
+      .where(and(eq(trialAttempts.ipAddress, ip), gte(trialAttempts.createdAt, since)));
 
-    return count || 0;
+    return result?.count || 0;
   }
 
   async findByDeviceFingerprint(fingerprint: string): Promise<TrialAttempt | null> {
-    const { data } = await supabase
-      .from('trial_attempts')
+    const [data] = await db
       .select()
-      .eq('device_fingerprint', fingerprint)
-      .neq('status', 'blocked')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+      .from(trialAttempts)
+      .where(and(eq(trialAttempts.deviceFingerprint, fingerprint), ne(trialAttempts.status, 'blocked')))
+      .orderBy(desc(trialAttempts.createdAt))
+      .limit(1);
 
-    return data || null;
+    return (data as unknown as TrialAttempt) || null;
   }
 
   async updateStatus(id: string, status: TrialAttempt['status'], fields?: Record<string, unknown>): Promise<void> {
     const update: Record<string, unknown> = { status, ...fields };
-    const { error } = await supabase.from('trial_attempts').update(update).eq('id', id);
-    if (error) throw new Error(`Erro ao atualizar trial status: ${error.message}`);
+    await db
+      .update(trialAttempts)
+      .set(update)
+      .where(eq(trialAttempts.id, id));
   }
 
   async updateProspectionStatus(id: string, status: TrialAttempt['prospection_status']): Promise<void> {
-    const { error } = await supabase
-      .from('trial_attempts')
-      .update({ prospection_status: status, last_prospection_at: new Date().toISOString() })
-      .eq('id', id);
-    if (error) throw new Error(`Erro ao atualizar prospection status: ${error.message}`);
+    await db
+      .update(trialAttempts)
+      .set({ prospectionStatus: status, lastProspectionAt: new Date() })
+      .where(eq(trialAttempts.id, id));
   }
 
   async linkUser(id: string, userId: string): Promise<void> {
-    const { error } = await supabase
-      .from('trial_attempts')
-      .update({ trial_user_id: userId, status: 'activated', activated_at: new Date().toISOString() })
-      .eq('id', id);
-    if (error) throw new Error(`Erro ao vincular user ao trial: ${error.message}`);
+    await db
+      .update(trialAttempts)
+      .set({ trialUserId: userId, status: 'activated', activatedAt: new Date() })
+      .where(eq(trialAttempts.id, id));
   }
 
   async incrementResponses(userId: string): Promise<number> {
-    // Incrementa no user
-    const { data, error } = await supabase.rpc('increment_trial_responses', { p_user_id: userId });
+    // Increment trial_responses_used atomically on the user
+    const [user] = await db
+      .update(users)
+      .set({ trialResponsesUsed: sql`${users.trialResponsesUsed} + 1` })
+      .where(eq(users.id, userId))
+      .returning({ trialResponsesUsed: users.trialResponsesUsed });
 
-    if (error) {
-      // Fallback: update manual se RPC não existir
-      const { data: user } = await supabase
-        .from('users')
-        .select('trial_responses_used')
-        .eq('id', userId)
-        .single();
+    const next = user?.trialResponsesUsed || 1;
 
-      const current = user?.trial_responses_used || 0;
-      const next = current + 1;
+    // Update also on trial_attempts
+    await db
+      .update(trialAttempts)
+      .set({ responsesUsed: next, lastActivityAt: new Date() })
+      .where(eq(trialAttempts.trialUserId, userId));
 
-      await supabase
-        .from('users')
-        .update({ trial_responses_used: next })
-        .eq('id', userId);
-
-      // Atualizar também na trial_attempts
-      await supabase
-        .from('trial_attempts')
-        .update({ responses_used: next, last_activity_at: new Date().toISOString() })
-        .eq('trial_user_id', userId);
-
-      return next;
-    }
-
-    return data;
+    return next;
   }
 }

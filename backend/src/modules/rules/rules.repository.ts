@@ -1,32 +1,39 @@
-import { supabase } from '../../shared/config/supabase.js';
+import { eq, and } from 'drizzle-orm';
+import { db } from '../../shared/config/database.js';
+import { rules } from '../../shared/schema.js';
 import type { RuleRepository } from './rules.port.js';
 import type { Rule } from '../../shared/types/index.js';
 
-export class SupabaseRuleRepository implements RuleRepository {
+export class DrizzleRuleRepository implements RuleRepository {
   async listActive(userId: string): Promise<Rule[]> {
-    const { data } = await supabase
-      .from('rules')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('active', true);
+    const data = await db
+      .select()
+      .from(rules)
+      .where(and(eq(rules.userId, userId), eq(rules.active, true)));
 
-    return (data || []) as Rule[];
+    return data as unknown as Rule[];
   }
 
   async create(userId: string, condition: string, response: string): Promise<Rule> {
-    const { data, error } = await supabase
-      .from('rules')
-      .insert({ user_id: userId, condition, response, active: true })
-      .select()
-      .single();
+    const [data] = await db
+      .insert(rules)
+      .values({ userId, condition, response, active: true })
+      .returning();
 
-    if (error) throw new Error(`Erro ao criar regra: ${error.message}`);
-    return data as Rule;
+    if (!data) throw new Error('Erro ao criar regra');
+    return data as unknown as Rule;
   }
 
-  async insertMany(rules: Array<{ user_id: string; condition: string; response: string; active: boolean }>): Promise<void> {
-    if (rules.length > 0) {
-      await supabase.from('rules').insert(rules);
+  async insertMany(rulesList: Array<{ user_id: string; condition: string; response: string; active: boolean }>): Promise<void> {
+    if (rulesList.length > 0) {
+      await db.insert(rules).values(
+        rulesList.map((r) => ({
+          userId: r.user_id,
+          condition: r.condition,
+          response: r.response,
+          active: r.active,
+        })),
+      );
     }
   }
 }

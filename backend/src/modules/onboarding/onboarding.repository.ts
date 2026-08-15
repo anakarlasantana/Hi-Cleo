@@ -1,26 +1,28 @@
-import { supabase } from '../../shared/config/supabase.js';
+import { eq } from 'drizzle-orm';
+import { db } from '../../shared/config/database.js';
+import { onboardingStates } from '../../shared/schema.js';
 import type { OnboardingRepository } from './onboarding.port.js';
 import type { OnboardingState, OnboardingStep } from '../../shared/types/index.js';
 
-export class SupabaseOnboardingRepository implements OnboardingRepository {
+export class DrizzleOnboardingRepository implements OnboardingRepository {
   async getState(userId: string): Promise<OnboardingState | null> {
-    const { data } = await supabase
-      .from('onboarding_states')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
+    const [data] = await db
+      .select()
+      .from(onboardingStates)
+      .where(eq(onboardingStates.userId, userId))
+      .limit(1);
 
-    return (data as OnboardingState) || null;
+    return (data as unknown as OnboardingState) || null;
   }
 
   async updateStep(userId: string, step: OnboardingStep, data: Record<string, string>): Promise<void> {
-    await supabase
-      .from('onboarding_states')
-      .update({ step, data, updated_at: new Date().toISOString() })
-      .eq('user_id', userId);
+    await db
+      .update(onboardingStates)
+      .set({ step, data, updatedAt: new Date() })
+      .where(eq(onboardingStates.userId, userId));
   }
 
   async create(userId: string, step: OnboardingStep, data: Record<string, string>): Promise<void> {
-    await supabase.from('onboarding_states').insert({ user_id: userId, step, data });
+    await db.insert(onboardingStates).values({ userId, step, data });
   }
 }

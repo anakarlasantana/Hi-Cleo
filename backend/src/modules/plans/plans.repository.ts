@@ -1,60 +1,55 @@
-import { supabase } from '../../shared/config/supabase.js';
+import { eq, and, desc, count, inArray } from 'drizzle-orm';
+import { db } from '../../shared/config/database.js';
+import { planLimits, whatsappSessions, users } from '../../shared/schema.js';
 import type { PlanLimit, PlanRepository } from './plans.port.js';
 
-export class SupabasePlanRepository implements PlanRepository {
+export class DrizzlePlanRepository implements PlanRepository {
   async getPlanLimit(planName: string): Promise<PlanLimit | null> {
-    const { data } = await supabase
-      .from('plan_limits')
-      .select('*')
-      .eq('plan_name', planName)
-      .single();
+    const [data] = await db
+      .select()
+      .from(planLimits)
+      .where(eq(planLimits.planName, planName))
+      .limit(1);
 
-    return (data as PlanLimit) || null;
+    return (data as unknown as PlanLimit) || null;
   }
 
   async getAllPlanLimits(): Promise<PlanLimit[]> {
-    const { data } = await supabase
-      .from('plan_limits')
-      .select('*');
-
-    return (data || []) as PlanLimit[];
+    const data = await db.select().from(planLimits);
+    return data as unknown as PlanLimit[];
   }
 
   async countActiveUsers(userId: string): Promise<number> {
-    // Count active WhatsApp sessions for the user's account
-    const { count, error } = await supabase
-      .from('whatsapp_sessions')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('status', 'active');
+    const [result] = await db
+      .select({ count: count() })
+      .from(whatsappSessions)
+      .where(and(eq(whatsappSessions.userId, userId), eq(whatsappSessions.status, 'active')));
 
-    if (error) throw new Error(`Erro ao contar usuários ativos: ${error.message}`);
-    return count || 0;
+    return result?.count || 0;
   }
 
   async getUserPlan(userId: string): Promise<string | null> {
-    const { data } = await supabase
-      .from('users')
-      .select('plan')
-      .eq('id', userId)
-      .single();
+    const [data] = await db
+      .select({ plan: users.plan })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
 
     return data?.plan || null;
   }
 
   async getUserMaxConnections(userId: string): Promise<number> {
-    // Busca override e plan do user
-    const { data: user } = await supabase
-      .from('users')
-      .select('plan, max_connections_override')
-      .eq('id', userId)
-      .single();
+    const [user] = await db
+      .select({ plan: users.plan, maxConnectionsOverride: users.maxConnectionsOverride })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
 
     if (!user) throw new Error('Usuário não encontrado');
 
     // Se tem override customizado, usa ele
-    if (user.max_connections_override != null) {
-      return user.max_connections_override;
+    if (user.maxConnectionsOverride != null) {
+      return user.maxConnectionsOverride;
     }
 
     // Senão, busca o limite padrão do plano
@@ -64,25 +59,23 @@ export class SupabasePlanRepository implements PlanRepository {
 
   async disconnectExcessUsers(userId: string, maxUsers: number): Promise<number> {
     // Get all active sessions ordered by connected_at (most recent first)
-    const { data: sessions } = await supabase
-      .from('whatsapp_sessions')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .order('connected_at', { ascending: false });
+    const sessions = await db
+      .select({ id: whatsappSessions.id })
+      .from(whatsappSessions)
+      .where(and(eq(whatsappSessions.userId, userId), eq(whatsappSessions.status, 'active')))
+      .orderBy(desc(whatsappSessions.connectedAt));
 
-    if (!sessions || sessions.length <= maxUsers) return 0;
+    if (sessions.length <= maxUsers) return 0;
 
     // Disconnect the excess sessions (keep the oldest ones, disconnect newest)
     const sessionsToDisconnect = sessions.slice(maxUsers);
     const idsToDisconnect = sessionsToDisconnect.map((s) => s.id);
 
-    const { error } = await supabase
-      .from('whatsapp_sessions')
-      .update({ status: 'disconnected' })
-      .in('id', idsToDisconnect);
+    await db
+      .update(whatsappSessions)
+      .set({ status: 'disconnected' })
+      .where(inArray(whatsappSessions.id, idsToDisconnect));
 
-    if (error) throw new Error(`Erro ao desconectar usuários: ${error.message}`);
     return idsToDisconnect.length;
   }
 }
