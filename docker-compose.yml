@@ -21,7 +21,10 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - EVOLUTION_API_URL=http://evolution-api:8080
+      - DATABASE_URL=postgresql://hicleo:hicleo123@app-db:5432/hicleo
     depends_on:
+      app-db:
+        condition: service_healthy
       redis:
         condition: service_healthy
       evolution-api:
@@ -70,6 +73,27 @@ services:
       - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - hicleo-network
+    restart: unless-stopped
+
+  app-db:
+    image: postgres:16-alpine
+    container_name: hicleo-app-db
+    ports:
+      - "5434:5432"
+    environment:
+      - POSTGRES_USER=hicleo
+      - POSTGRES_PASSWORD=hicleo123
+      - POSTGRES_DB=hicleo
+    volumes:
+      - app_db_data:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hicleo"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -149,5 +173,6 @@ networks:
 # --- Volumes ---
 
 volumes:
+  app_db_data:
   evolution_data:
   evolution_db_data:

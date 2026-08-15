@@ -5,10 +5,8 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(3001),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 
-  // Supabase
-  SUPABASE_URL: z.string().url(),
-  SUPABASE_ANON_KEY: z.string().min(1),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  // Database (PostgreSQL)
+  DATABASE_URL: z.string().url().startsWith('postgresql://'),
 
   // Gemini
   GEMINI_API_KEY: z.string().min(1),
