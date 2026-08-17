@@ -4,3 +4,10 @@
 supabase/.temp/
 backend/supabase/.temp/
 docs/laudos
+
+# Segurança — nunca commitar certificados e backups
+nginx/ssl/*.pem
+nginx/ssl/*.key
+nginx/ssl/*.crt
+!nginx/ssl/.gitkeep
+backups/

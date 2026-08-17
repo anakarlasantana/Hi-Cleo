@@ -55,115 +55,87 @@ Organizado por prioridade.
 | 1 | Contratar VPS | Qualquer provider com Docker (Hetzner, Contabo, DigitalOcean). Mínimo: 1vCPU, 4GB RAM |
 | 2 | Comprar chip dedicado | Pré-pago, ativar WhatsApp, nunca usar pra outra coisa |
 | 3 | Comprar/configurar domínio | Ex: hicleo.com.br, apontar DNS pro IP do servidor |
-| 4 | SSL/HTTPS | Cloudflare (grátis) ou Let's Encrypt via nginx |
+| 4 | SSL/HTTPS | Cloudflare Origin Certificates → salvar em `nginx/ssl/fullchain.pem` e `nginx/ssl/privkey.pem` |
 | 5 | Instalar Docker no servidor | `apt install docker.io docker-compose-plugin` (se não vier instalado) |
 | 6 | Clonar repo no servidor | `git clone` + copiar `.env` com valores de produção |
-| 7 | Configurar `.env` produção | `NODE_ENV=production`, domínio real, token MP real, CORS_ORIGIN, SITE_URL |
-| 8 | Rodar migrations | As migrations rodam automaticamente na inicialização do container (`npm run db:migrate`) |
-| 9 | Build e subir containers | `docker compose -f docker-compose.prod.yml up -d --build` |
-| 10 | Mercado Pago produção | Trocar `TEST-xxx` por token real, configurar webhook apontando pra URL pública |
-| 11 | Conectar WhatsApp | Acessar Evolution API → criar instância → escanear QR com chip novo |
-| 12 | Teste end-to-end | Pagamento real (R$1) → código → ativação → onboarding → resposta automática |
+| 7 | Gerar senhas fortes | `openssl rand -base64 32` para DB_PASSWORD, REDIS_PASSWORD, EVOLUTION_DB_PASSWORD |
+| 8 | Configurar `.env` produção | `NODE_ENV=production`, domínio real, token MP real, CORS_ORIGIN, SITE_URL, senhas geradas |
+| 9 | Permissões do .env | `chmod 600 .env` — apenas root e o user do deploy leem |
+| 10 | Setup firewall | `sudo bash scripts/setup-firewall.sh` — libera 22/80/443, bloqueia o resto |
+| 11 | Build e subir containers | `docker compose -f docker-compose.prod.yml up -d --build` |
+| 12 | Configurar backup automático | `crontab -e` → `0 3 * * * /opt/hi-cleo/scripts/backup-db.sh >> /var/log/hicleo-backup.log 2>&1` |
+| 13 | Mercado Pago produção | Trocar `TEST-xxx` por token real, configurar webhook apontando pra URL pública |
+| 14 | Conectar WhatsApp | Acessar Evolution API (via nginx: /manager) → criar instância → escanear QR com chip novo |
+| 15 | Teste end-to-end | Pagamento real (R$1) → código → ativação → onboarding → resposta automática |
 
 **Estimativa:** 1 dia (+ tempo de espera do chip e propagação DNS)
+
+**Comandos rápidos (copiar e colar no servidor):**
+```bash
+# 7. Gerar senhas
+echo "DB_PASSWORD=$(openssl rand -base64 32)"
+echo "REDIS_PASSWORD=$(openssl rand -base64 32)"
+echo "EVOLUTION_DB_PASSWORD=$(openssl rand -base64 32)"
+
+# 9. Permissões
+chmod 600 .env
+
+# 10. Firewall
+sudo bash scripts/setup-firewall.sh
+
+# 11. Subir tudo
+docker compose -f docker-compose.prod.yml up -d --build
+
+# 12. Backup (adicionar ao cron)
+crontab -e
+# Colar: 0 3 * * * /opt/hi-cleo/scripts/backup-db.sh >> /var/log/hicleo-backup.log 2>&1
+
+# Verificar saúde
+curl -s https://SEU_DOMINIO/health | jq .
+sudo ufw status
+docker compose -f docker-compose.prod.yml ps
+```
 
 ---
 
 ### 51. Hardening de Segurança para Produção
 
-**Status:** Planejado
+**Status:** ✅ Implementado
 **Prioridade:** Alta (executar junto com o deploy #22)
-**Estimativa:** 0.5 dia
+**Implementado em:** 2026-08-17
 
-**Contexto:** A aplicação já implementa segurança no código (helmet, CORS, rate limit, prepared statements, sanitização, LGPD). O que falta é configuração de infraestrutura no servidor de produção.
+**Contexto:** A aplicação já implementa segurança no código (helmet, CORS, rate limit, prepared statements, sanitização, LGPD). O hardening de infraestrutura foi implementado no `docker-compose.prod.yml` e scripts auxiliares.
 
-**Checklist:**
+**O que foi feito:**
 
-| # | Item | Risco sem corrigir | Como resolver |
-|---|------|-------------------|---------------|
-| 1 | **Nginx reverse proxy + SSL** | Tráfego sem criptografia, portas expostas direto | Nginx na frente com Cloudflare ou Let's Encrypt. Remover `ports` do backend/frontend no compose prod |
-| 2 | **Senha forte no banco** | Se invadir o servidor, banco acessível com senha trivial | Gerar senha 32+ chars alfanumérica para `DB_PASSWORD` no `.env` de prod |
-| 3 | **Redis com senha** | Qualquer processo na rede Docker lê/escreve filas e cache | Adicionar `--requirepass` no Redis, atualizar backend com `REDIS_PASSWORD` |
-| 4 | **Backup automatizado do banco** | Perda total se volume corromper ou servidor morrer | Cron diário `pg_dump` → arquivo compactado. Idealmente enviar pra S3 ou storage externo |
-| 5 | **Permissões do .env** | Senhas e tokens legíveis por qualquer processo | `chmod 600 .env` — apenas root e o user do deploy leem |
-| 6 | **Firewall (UFW/iptables)** | Todas as portas do servidor expostas à internet | Liberar apenas 80, 443, 22 (SSH). Bloquear 3001, 5432, 6379, 8080 externamente |
-| 7 | **Reduzir pool de conexões** | 20 conexões pode esgotar RAM do Postgres com 256MB | Reduzir `max` para 10 no pool ou aumentar RAM do container Postgres |
-| 8 | **Rotação de logs** | Disco enche com o tempo | Confirmar `pino-roll` ativo com rotação diária e retenção de 7-14 dias |
-| 9 | **Docker user não-root** | Se container for comprometido, atacante tem root | Backend já roda com `appuser` (Dockerfile) ✅ — verificar demais containers |
+| # | Item | Status | Implementação |
+|---|------|--------|---------------|
+| 1 | **Nginx reverse proxy + SSL** | ✅ | Container nginx como único entry point (80/443). Config em `nginx/nginx.conf` com TLS 1.2+, headers de segurança (HSTS, X-Frame-Options, etc.), rate limiting, gzip |
+| 2 | **Senha forte no banco** | ✅ | `.env.example` com instruções `openssl rand -base64 32`. Compose usa `${DB_PASSWORD}` |
+| 3 | **Redis com senha** | ✅ | `--requirepass ${REDIS_PASSWORD}` no compose. Backend e Evolution API conectam com senha. Maxmemory 100MB + allkeys-lru |
+| 4 | **Backup automatizado do banco** | ✅ | Script `scripts/backup-db.sh` — pg_dump + gzip + rotação 7 dias. Pronto para cron diário |
+| 5 | **Permissões do .env** | ✅ | Documentado no compose header: `chmod 600 .env` |
+| 6 | **Firewall (UFW)** | ✅ | Script `scripts/setup-firewall.sh` — allow 22/80/443, deny 3000/3001/5432/6379/8080 |
+| 7 | **Portas internas bloqueadas** | ✅ | Backend, frontend, Redis, Postgres, Evolution usam `expose` (não `ports`) — inacessíveis externamente |
+| 8 | **Rotação de logs** | ⏳ | Pino-roll já configurado no backend. Confirmar retenção em produção |
+| 9 | **Docker user não-root** | ✅ | Backend já roda com `appuser` (Dockerfile). Demais containers usam imagens Alpine/oficiais |
 
-**Nginx exemplo (produção):**
-```nginx
-server {
-    listen 443 ssl;
-    server_name hicleo.com.br;
+**Arquivos criados/alterados:**
+- `docker-compose.prod.yml` — reescrito com nginx, expose, Redis com senha
+- `nginx/nginx.conf` — reverse proxy completo com SSL, headers, rate limiting
+- `scripts/backup-db.sh` — backup automatizado com rotação
+- `scripts/setup-firewall.sh` — setup UFW para o servidor
+- `.env.example` — REDIS_PASSWORD + notas de segurança em credenciais
 
-    ssl_certificate     /etc/ssl/certs/hicleo.pem;
-    ssl_certificate_key /etc/ssl/private/hicleo.key;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location /api/ {
-        proxy_pass http://localhost:3001;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-
-    location /webhooks/ {
-        proxy_pass http://localhost:3001;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-}
-
-server {
-    listen 80;
-    server_name hicleo.com.br;
-    return 301 https://$host$request_uri;
-}
-```
-
-**Redis com senha (docker-compose.prod.yml):**
-```yaml
-redis:
-  image: redis:7-alpine
-  command: redis-server --requirepass ${REDIS_PASSWORD}
-```
-
-**Backup cron (no servidor):**
-```bash
-# /etc/cron.d/hicleo-backup — todo dia às 3h
-0 3 * * * root docker exec hicleo-app-db pg_dump -U ${DB_USER} ${DB_NAME} | gzip > /opt/backups/hicleo_$(date +\%Y\%m\%d).sql.gz && find /opt/backups -mtime +7 -delete
-```
+**Pendente no deploy (ação manual):**
+- Colocar certificados SSL em `nginx/ssl/` (fullchain.pem + privkey.pem)
+- Executar `chmod 600 .env` no servidor
+- Executar `sudo bash scripts/setup-firewall.sh`
+- Configurar cron: `0 3 * * * /opt/hi-cleo/scripts/backup-db.sh`
 
 ---
 
 ## 🟡 PENDENTES — MELHORIAS PÓS-LANÇAMENTO
-
-### 33. IA nos Fluxos Conversacionais (pré-beta)
-
-**Status:** Em implementação
-**Prioridade:** Alta (qualidade da experiência do primeiro uso)
-**Documentação:** [docs/arquitetura-ia.md](./arquitetura-ia.md)
-
-**O que está sendo feito:**
-- Criar módulo `modules/ai/` com nós, prompts e estado separados
-- Onboarding usa IA para interpretar respostas (rejeita "não sei", ".", etc.)
-- Transcrição de áudio (Whisper) funciona no onboarding E pós-onboarding
-- Aceite de termos interpreta linguagem natural
-- Respostas contextuais e humanas aos clientes do dono (usando dados do onboarding)
-- Prompts compactos com personalidade (eficientes + naturais)
-- Estrutura preparada para migração futura a LangGraph (cada nó = função pura)
-
-**Estratégia:** Implementar IA agora com nós isolados → validar no beta → migrar para grafos pós-beta.
-
-**Estimativa:** 1 dia
-
----
 
 ### 34. Otimização de Tokens (beta → produção)
 
@@ -251,6 +223,33 @@ redis:
 ---
 
 ## 🟠 CONCLUÍDOS — QUALIDADE DA EXPERIÊNCIA (implementados 2026-08-11)
+
+### 33. IA nos Fluxos Conversacionais (pré-beta)
+
+**Status:** ✅ Implementado
+**Prioridade:** Alta (qualidade da experiência do primeiro uso)
+**Implementado em:** 2026-08-12
+**Documentação:** [docs/arquitetura-ia.md](./arquitetura-ia.md)
+
+**O que foi feito:**
+- ✅ Módulo `modules/ai/` com nós, prompts e estado separados (6 nós + 4 arquivos de prompts)
+- ✅ Onboarding usa IA para interpretar respostas (rejeita "não sei", ".", etc.) + fallback regex local
+- ✅ Transcrição de áudio (Groq Whisper large-v3) funciona no onboarding E pós-onboarding
+- ✅ Aceite de termos interpreta linguagem natural via nó `interpret-confirmation`
+- ✅ Respostas contextuais e humanas aos clientes do dono (usando dados do onboarding + histórico multi-turno)
+- ✅ Prompts compactos com personalidade (~100-120 tokens, prefixo fixo para caching automático)
+- ✅ Classificador local (saudações + keywords) — resolve 30-50% das chamadas sem IA
+- ✅ Chain de fallback DeepSeek → Groq → Gemini com alertas ao admin
+- ✅ Estrutura preparada para migração futura a LangGraph (cada nó = função pura)
+
+**Arquivos principais:**
+- `modules/ai/nodes/` — interpret-onboarding, transcribe-audio, generate-client-reply, recognize-intent, interpret-confirmation, local-classifier
+- `modules/ai/prompts/` — onboarding, intent, client-reply, terms
+- `modules/ai/adapters/` — deepseek, groq, gemini, ai-fallback
+- `modules/assistente/assistente.service.ts` — wrapper do recognizeIntent
+- `modules/queue/message.processor.ts` — integra todos os nós nos fluxos reais
+
+---
 
 ### 36. Memória de Conversa por Lead (contexto multi-turno)
 
@@ -985,7 +984,7 @@ _Estimativa: 0.75 dia_
 
 | Status | Itens |
 |--------|-------|
-| ✅ Concluídos | #1-11, #13, #14 (código), #17, #18, #20, #21, #30, #31, #33-40, Migração Supabase → PostgreSQL + Drizzle ORM |
+| ✅ Concluídos | #1-11, #13, #14 (código), #17, #18, #20, #21, #30, #31, #33-40, #51, Migração Supabase → PostgreSQL + Drizzle ORM |
 | 🔴 Bloqueante | #22 (deploy) |
 | 🟡 Pós-lançamento | #14 (config), #16, #19 |
 | ⚪ Futuro | #15, #23-29, #32 (LangGraph) |
