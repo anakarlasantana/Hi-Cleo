@@ -49,16 +49,18 @@ export class ActivationService {
 
     let user: User;
 
-    // Novo fluxo: se o código tem user_id, complementa user existente (criado no pagamento)
-    if (validCode.user_id) {
-      const existingUser = await this.userRepo.findById(validCode.user_id);
+    // Novo fluxo: se o código tem user_id, complementa user existente (criado no pagamento/trial)
+    // Drizzle retorna camelCase (userId), tipo legado usa snake_case (user_id) — suportamos ambos
+    const codeUserId = (validCode as any).userId || validCode.user_id;
+    if (codeUserId) {
+      const existingUser = await this.userRepo.findById(codeUserId);
       if (!existingUser) {
         throw new Error('USER_NOT_FOUND_FOR_CODE');
       }
-      // Complementar user com phone e name
+      // Complementar user com phone e name (se phone já estiver preenchido, só atualiza name)
       user = await this.userRepo.complementUser(existingUser.id, {
         phone,
-        name: parsed.nome || phone,
+        name: parsed.nome || existingUser.name || phone,
       });
     } else {
       // Fluxo legado: criar user novo (para códigos antigos sem user_id)
