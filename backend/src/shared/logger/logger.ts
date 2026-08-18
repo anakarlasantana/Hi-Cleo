@@ -21,6 +21,7 @@ function isPinoPrettyAvailable(): boolean {
 export function createLogger(): Logger {
   const isDev = env.NODE_ENV === 'development';
 
+  // Dev com pino-pretty: formatado e colorido no terminal
   if (isDev && isPinoPrettyAvailable()) {
     return pino({
       level: env.LOG_LEVEL,
@@ -32,17 +33,27 @@ export function createLogger(): Logger {
     });
   }
 
+  // Produção/Docker: escreve em stdout (Docker captura) + arquivo (persistência)
+  // Em Docker, stdout é essencial para `docker logs` funcionar.
   return pino({
     level: env.LOG_LEVEL,
     timestamp: pino.stdTimeFunctions.isoTime,
     transport: {
-      target: 'pino-roll',
-      options: {
-        file: path.join(env.LOG_DIR, 'app.log'),
-        frequency: 'daily',
-        limit: { count: 7 },
-        mkdir: true,
-      },
+      targets: [
+        // stdout — visível via `docker logs`
+        { target: 'pino/file', options: { destination: 1 }, level: env.LOG_LEVEL },
+        // Arquivo com rotação diária — persistência local
+        {
+          target: 'pino-roll',
+          options: {
+            file: path.join(env.LOG_DIR, 'app.log'),
+            frequency: 'daily',
+            limit: { count: 7 },
+            mkdir: true,
+          },
+          level: env.LOG_LEVEL,
+        },
+      ],
     },
   });
 }

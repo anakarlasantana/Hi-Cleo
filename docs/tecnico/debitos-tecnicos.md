@@ -47,6 +47,7 @@ Organizado por prioridade.
 
 **Status:** Código pronto. Nunca rodou em produção.
 **Prioridade:** Máxima (último bloqueante antes de ter clientes)
+**Documentação completa:** [docs/tecnico/deploy-producao.md](./deploy-producao.md) — guia passo a passo com opções de VPS, domínio, SSL, segurança, backup, monitoramento e checklist operacional.
 
 **Checklist de deploy:**
 
@@ -211,6 +212,21 @@ docker compose -f docker-compose.prod.yml ps
 
 **O que falta:** GitHub Actions (lint + test + build no PR).
 **Quando:** Após validar que prod está estável.
+**Estimativa:** 0.5 dia
+
+### 52. Bug: Trial Activation — Duplicação de User no Message Processor
+
+**Status:** 🔴 Encontrado via teste E2E autônomo (2026-08-18)
+**Prioridade:** Alta (bloqueia fluxo trial → onboarding)
+
+**Problema:** Quando o usuário envia o código de ativação (ATIVAR-XXXX) após criar um trial, o `message.processor.ts` tenta criar um user novo com o mesmo phone. Mas o `trial/start` já criou o user. O INSERT falha por unique constraint no phone.
+
+**Erro:** `Failed query: insert into "users" (...) values (...) — duplicate phone`
+
+**Causa raiz:** O processor não está reconhecendo que o user já existe (criado pelo trial) ao processar o código de ativação.
+
+**Fix esperado:** O processor deve buscar o user existente pelo código de ativação (que tem `user_id` vinculado) antes de tentar criar um novo.
+
 **Estimativa:** 0.5 dia
 
 ### 16. Testes Payment

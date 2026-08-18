@@ -11,15 +11,17 @@ export class GroqAdapter implements AiPort {
 
   async generateContent(prompts: string[]): Promise<string> {
     const response = await this.client.chat.completions.create({
-      model: 'llama-3.1-8b-instant',
+      model: 'qwen/qwen3.6-27b',
       messages: [
         { role: 'system', content: prompts[0] },
         { role: 'user', content: prompts.slice(1).join('\n') },
       ],
       temperature: 0.3,
-      max_tokens: 500,
+      max_tokens: 800,
     });
 
-    return response.choices[0]?.message?.content?.trim() || '';
+    const content = response.choices[0]?.message?.content?.trim() || '';
+    // Qwen retorna <think>...</think> antes da resposta real
+    return content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
   }
 }

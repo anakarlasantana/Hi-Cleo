@@ -18,8 +18,10 @@
 | Documento | Descrição |
 |-----------|-----------|
 | [Arquitetura de IA](tecnico/arquitetura-ia.md) | Módulo ai/, nós, prompts, tokens, LangGraph |
+| [Deploy em Produção](tecnico/deploy-producao.md) | Guia completo: VPS, domínio, SSL, segurança, backup, checklist |
 | [Débitos Técnicos](tecnico/debitos-tecnicos.md) | Roadmap, histórico de concluídos e melhorias futuras |
 | [Teste E2E via Webhook](tecnico/teste-e2e-webhook.md) | Guia para testar fluxo Trial→Onboarding sem WhatsApp real |
+| [Teste E2E de Qualidade](../tests/e2e-quality/README.md) | Teste autônomo com LLM simulando usuário + avaliando respostas |
 
 ## Marketing
 
@@ -43,5 +45,6 @@ Relatórios de testes E2E gerados automaticamente. Não versionados.
 | Ver regras e fluxos | `produto/regras-de-negocio.md` |
 | Escrever/ajustar prompts da Cleo | `produto/personalidade-cleo.md` |
 | Entender a camada de IA | `tecnico/arquitetura-ia.md` |
+| Fazer deploy em produção | `tecnico/deploy-producao.md` |
 | Ver o que falta fazer | `tecnico/debitos-tecnicos.md` |
 | Calcular custos | `produto/custos-e-faturamento.md` |
