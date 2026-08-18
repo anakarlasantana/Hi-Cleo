@@ -22,6 +22,7 @@
 | [Débitos Técnicos](tecnico/debitos-tecnicos.md) | Roadmap, histórico de concluídos e melhorias futuras |
 | [Teste E2E via Webhook](tecnico/teste-e2e-webhook.md) | Guia para testar fluxo Trial→Onboarding sem WhatsApp real |
 | [Teste E2E de Qualidade](../tests/e2e-quality/README.md) | Teste autônomo com LLM simulando usuário + avaliando respostas |
+| [Limites de IA](tecnico/limites-ia.md) | Resultados do teste de carga dos providers (gerado automaticamente) |
 
 ## Marketing
 
