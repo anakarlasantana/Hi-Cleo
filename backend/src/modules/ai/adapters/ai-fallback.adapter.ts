@@ -7,6 +7,18 @@ import type { Logger } from '../../../shared/logger/logger.js';
  */
 export type AiAlertCallback = (message: string) => Promise<void>;
 
+/**
+ * Interface para adapters que suportam fallback de modelo.
+ */
+interface ModelFallbackCapable {
+  activeModel: string;
+  advanceModel(): { switched: boolean; previous: string; current: string };
+}
+
+function hasModelFallback(adapter: AiPort): adapter is AiPort & ModelFallbackCapable {
+  return 'advanceModel' in adapter && 'activeModel' in adapter;
+}
+
 export class AiFallbackAdapter implements AiPort {
   private providers: { name: string; adapter: AiPort }[];
   private logger: Logger;
@@ -15,6 +27,7 @@ export class AiFallbackAdapter implements AiPort {
   // Controle de alertas (cooldown para não spammar)
   private lastAllFailedAlert = 0;
   private lastProviderDownAlerts: Map<string, number> = new Map();
+  private lastDeprecationAlerts: Map<string, number> = new Map();
   private static readonly ALERT_COOLDOWN_MS = 10 * 60 * 1000; // 10 min entre alertas iguais
 
   // Contador diário de chamadas
@@ -43,6 +56,12 @@ export class AiFallbackAdapter implements AiPort {
         const result = await adapter.generateContent(prompts);
         return result;
       } catch (error: any) {
+        // Se o erro é de modelo descontinuado e o adapter suporta fallback
+        if (this.isModelDeprecated(error) && hasModelFallback(adapter)) {
+          const retryResult = await this.handleModelDeprecation(name, adapter, prompts, error);
+          if (retryResult !== null) return retryResult;
+        }
+
         this.logger.warn({ provider: name, err: error }, `${name} falhou, tentando próximo provider`);
         await this.alertProviderDown(name, error);
       }
@@ -51,6 +70,80 @@ export class AiFallbackAdapter implements AiPort {
     this.logger.error('todos os providers de IA falharam');
     await this.alertAllFailed();
     throw new Error('AI_ALL_PROVIDERS_FAILED');
+  }
+
+  /**
+   * Detecta se o erro indica modelo descontinuado/não encontrado.
+   */
+  private isModelDeprecated(error: any): boolean {
+    const status = error?.status ?? error?.response?.status ?? error?.httpStatusCode ?? error?.code;
+    const message = String(error?.message ?? error?.response?.data?.error?.message ?? '');
+    return (
+      status === 404 ||
+      message.includes('no longer available') ||
+      message.includes('not found') ||
+      message.includes('does not exist') ||
+      message.includes('decommissioned')
+    );
+  }
+
+  /**
+   * Tenta modelos alternativos do mesmo provider.
+   * Se funcionar, alerta o admin sobre a troca.
+   */
+  private async handleModelDeprecation(
+    providerName: string,
+    adapter: AiPort & ModelFallbackCapable,
+    prompts: string[],
+    originalError: any,
+  ): Promise<string | null> {
+    const deprecatedModel = adapter.activeModel;
+
+    while (true) {
+      const advance = adapter.advanceModel();
+      if (!advance.switched) break;
+
+      this.logger.warn(
+        { provider: providerName, from: advance.previous, to: advance.current },
+        `modelo ${advance.previous} descontinuado, tentando ${advance.current}`,
+      );
+
+      try {
+        const result = await adapter.generateContent(prompts);
+
+        // Sucesso com modelo alternativo — alerta admin
+        await this.alertModelDeprecation(providerName, deprecatedModel, advance.current);
+        return result;
+      } catch (retryError: any) {
+        // Se também é 404, tenta o próximo modelo
+        if (this.isModelDeprecated(retryError)) continue;
+        // Outro erro — para de tentar modelos desse provider
+        break;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Alerta o admin que um modelo foi descontinuado e o sistema trocou automaticamente.
+   */
+  private async alertModelDeprecation(providerName: string, oldModel: string, newModel: string): Promise<void> {
+    const key = `${providerName}:${oldModel}`;
+    const now = Date.now();
+    const lastAlert = this.lastDeprecationAlerts.get(key) || 0;
+    if (now - lastAlert < AiFallbackAdapter.ALERT_COOLDOWN_MS) return;
+
+    this.lastDeprecationAlerts.set(key, now);
+
+    await this.sendAlert(
+      `🔄 *Modelo de IA descontinuado*\n\n` +
+      `*Provider:* ${providerName}\n` +
+      `*Modelo anterior:* ${oldModel} (descontinuado)\n` +
+      `*Modelo atual:* ${newModel} (fallback automático)\n\n` +
+      `A Cleo continua funcionando normalmente.\n\n` +
+      `⚠️ *Ação necessária:* atualize a lista de modelos no código para refletir a mudança e evitar uso de fallbacks menos otimizados.`
+    );
   }
 
   /**
@@ -76,7 +169,6 @@ export class AiFallbackAdapter implements AiPort {
 
   /**
    * Alerta quando um provider individual falha (rate limit, fora do ar).
-   * O outro assume, mas admin é avisado.
    */
   private async alertProviderDown(providerName: string, error: any): Promise<void> {
     const now = Date.now();
