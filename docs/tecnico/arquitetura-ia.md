@@ -7,16 +7,32 @@ Descreve a estrutura atual, as decisões de design e o plano de migração para 
 
 ## Visão Geral
 
-A Cleo usa IA em dois eixos:
+A Cleo usa IA em três eixos:
 
-1. **Entender o dono** — interpretar comandos, respostas do onboarding e áudios
+1. **Entender o dono** — interpretar comandos, respostas do onboarding e áudios transcritos
 2. **Atender os clientes do dono** — respostas contextuais baseadas no negócio (usando dados do onboarding: nome, serviços, tom de voz, horário, público-alvo)
+3. **Classificação local (sem IA)** — resolver mensagens simples por regex/keywords, reduzindo 30-50% das chamadas de IA
 
-Ambos os eixos fazem parte do beta. O onboarding existe justamente para alimentar a IA
-com contexto suficiente para que ela atue como secretária real — não como autoresponder.
+O onboarding existe justamente para alimentar a IA com contexto suficiente para que ela
+atue como secretária real — não como autoresponder.
 
 A estratégia é implementar IA **agora** com funções isoladas (nós) e prompts separados,
 de forma que a migração para LangGraph no pós-beta seja mecânica (mover nós para grafos).
+
+### Providers de IA — Ordem de Fallback Atual
+
+```
+DeepSeek (primário) → Groq (fallback rápido) → Gemini (último recurso)
+```
+
+| Provider | Modelo Ativo | Papel |
+|----------|-------------|-------|
+| DeepSeek | deepseek-chat | Primário — barato, sem rate limit restritivo, bom em PT-BR |
+| Groq | qwen/qwen3.6-27b | Fallback — gratuito, resposta rápida, bom para cargas altas |
+| Gemini | gemini-3.6-flash | Último recurso — rate limit restritivo no free tier |
+
+Cada adapter mantém uma lista de modelos alternativos para fallback automático caso um
+modelo seja descontinuado (ver seção "Fallback de Modelo e Alertas de Deprecação").
 
 ---
 
@@ -61,14 +77,16 @@ backend/src/modules/ai/
 │   └── terms.prompts.ts         # Prompt de interpretação de aceite
 ├── nodes/                       # Funções puras (futuros nós do LangGraph)
 │   ├── interpret-onboarding.ts  # Interpreta resposta do usuário em cada step
-│   ├── transcribe-audio.ts      # Baixa e transcreve áudio via Whisper
-│   ├── recognize-intent.ts      # Classifica intent do dono
-│   ├── generate-client-reply.ts # Gera resposta contextual para cliente do dono
-│   └── interpret-confirmation.ts # Interpreta confirmação/aceite genérico
-├── adapters/                    # Providers de IA
-│   ├── gemini.adapter.ts        # Google Gemini 2.0 Flash
-│   ├── groq.adapter.ts          # Groq (Llama 3.1 + Whisper)
-│   └── ai-fallback.adapter.ts   # Chain de fallback (Gemini → Groq)
+│   ├── transcribe-audio.ts      # Baixa e transcreve áudio via Groq Whisper
+│   ├── recognize-intent.ts      # Classifica intent do dono (com fallback por keywords)
+│   ├── generate-client-reply.ts # Gera resposta contextual para cliente do dono (multi-turno)
+│   ├── interpret-confirmation.ts # Interpreta confirmação/aceite genérico
+│   └── local-classifier.ts     # Classificação local SEM IA (saudações + keywords do dono)
+├── adapters/                    # Providers de IA (com fallback de modelo por provider)
+│   ├── gemini.adapter.ts        # Google Gemini (lista de modelos com fallback)
+│   ├── groq.adapter.ts          # Groq (lista de modelos com fallback)
+│   ├── deepseek.adapter.ts      # DeepSeek (lista de modelos com fallback)
+│   └── ai-fallback.adapter.ts   # Chain de fallback entre providers + detecção de deprecação
 └── index.ts                     # Re-exporta tudo para facilitar imports
 
 backend/src/shared/ports/
@@ -78,9 +96,13 @@ backend/src/shared/ports/
 ### Módulos que CONSOMEM a IA (não contêm lógica de IA)
 
 ```
-modules/onboarding/   → usa nodes/interpret-onboarding.ts (com fallback local regex)
-modules/queue/        → usa nodes/transcribe-audio.ts, nodes/recognize-intent.ts, nodes/generate-client-reply.ts
-modules/terms/        → usa nodes/interpret-confirmation.ts
+modules/onboarding/       → usa nodes/interpret-onboarding.ts (com fallback local regex)
+modules/queue/            → usa nodes/transcribe-audio.ts, nodes/recognize-intent.ts,
+                            nodes/generate-client-reply.ts, nodes/local-classifier.ts
+modules/terms/            → usa nodes/interpret-confirmation.ts
+modules/assistente/       → usa nodes/recognize-intent.ts (wrapper service)
+modules/trial/            → NÃO usa IA diretamente (validação é regra de negócio)
+modules/invites/          → NÃO usa IA diretamente (acionado por intents reconhecidas)
 ```
 
 ---
@@ -138,14 +160,18 @@ export interface ConversationState {
 
 ### Orquestrador
 
-Hoje: `OnboardingService` com switch/case chamando nós.
-Futuro: grafo LangGraph com edges condicionais.
+Hoje: `message.processor.ts` como orquestrador central (não mais os services individuais).
+O processor decide o fluxo com base em: instância, tipo de mídia, estado do user,
+local-classifier e reconhecimento de intent.
 
 ```
-HOJE:  switch(step) → chama nó → atualiza estado → retorna resposta
-       Se _editing=true: nextStep = confirm_summary (edição parcial)
-       Se rejeita resumo: detectFieldToEdit() → volta só ao step relevante
-       Fallback local (regex) garante onboarding funciona sem IA
+HOJE:  processor recebe mensagem →
+       1. Filtros (prospecção, ativação, onboarding, termos)
+       2. Mídia (áudio→transcrição, resto→material)
+       3. Local-classifier (resolve sem IA se possível)
+       4. IA: reconhece intent → executeIntent()
+       5. Para clientes: local-classifier → IA contextual → fallback degradado
+
 FUTURO: grafo.invoke(state) → nó executa → edge decide próximo → checkpointer salva
 ```
 
@@ -199,6 +225,331 @@ export async function generateClientReply(
 
 ---
 
+## Classificador Local (local-classifier.ts)
+
+### Objetivo
+
+Resolver mensagens simples **sem chamar providers de IA**, reduzindo 30-50% das chamadas
+e consequentemente custo e latência.
+
+### Estratégia
+
+- **Saudações de clientes** → detecta "oi", "bom dia", etc. e responde com template baseado no tom de voz do dono
+- **Keywords exatas do dono** → bypass do reconhecimento de intent por IA
+- **Não tenta resolver mensagens ambíguas** — na dúvida, retorna `null` e deixa a IA decidir
+
+### Padrões de saudação (clientes)
+
+```
+oi, olá, hey, eai, bom dia, boa tarde, boa noite, opa, fala, salve,
+beleza, tudo bem, hi, hello, hey there
+```
+
+Quando detectada saudação → `classifyClientMessage()` retorna `{ resolved: true, intent: 'greeting' }`.
+O caller (`message.processor.ts`) gera resposta via `buildGreetingReply()` usando o tom de voz do negócio.
+
+### Keywords do dono (bypass intent recognition)
+
+| Keyword(s) | Intent Mapeada |
+|------------|---------------|
+| ajuda, help, comandos | `help` |
+| quem tá ignorado, lista ignorados | `list_ignored` |
+| meus clientes, mostra clientes, leads | `list_leads` |
+| clientes de hoje, leads de hoje | `leads_today` |
+| quem tá sem resposta, pendentes | `no_reply` |
+| clientes quentes, leads quentes | `hot_leads` |
+
+Quando detectado → `classifyOwnerMessage()` retorna `{ resolved: true, intent }`.
+O processor executa a intent diretamente sem chamar IA.
+
+### Limites intencionais
+
+- Mensagens < 2 chars → não classifica (podem ser typos)
+- Mensagens > 60 chars do dono → não classifica (provavelmente é conversa complexa)
+- Qualquer coisa com entidades (nome, telefone, data) → vai para IA
+
+---
+
+## Intents do Dono — Mapa Completo
+
+O sistema reconhece as seguintes intents do dono (via IA ou local-classifier):
+
+| Intent | Descrição | Requer Entidades? | Local-Classifier? |
+|--------|-----------|-------------------|-------------------|
+| `list_leads` | Listar clientes/contatos | Não | ✅ |
+| `leads_today` | Clientes novos de hoje | Não | ✅ |
+| `no_reply` | Clientes sem retorno | Não | ✅ |
+| `hot_leads` | Clientes engajados | Não | ✅ |
+| `help` | Comandos disponíveis | Não | ✅ |
+| `list_ignored` | Contatos ignorados | Não | ✅ |
+| `schedule_followup` | Agendar lembrete | Sim (name, date, time) | ❌ |
+| `lead_status` | Status de cliente específico | Sim (name) | ❌ |
+| `send_material` | Enviar documento/arquivo | Sim (name, material) | ❌ |
+| `configure_rule` | Mudar configuração | Sim (horário/regra) | ❌ |
+| `ignore_contact` | Ignorar número | Sim (name/phone) | ❌ |
+| `stop_ignoring` | Parar de ignorar | Sim (name/phone) | ❌ |
+| `invite_user` | Convidar colaborador | Sim (phone) | ❌ |
+| `disconnect_user` | Desconectar colaborador | Sim (phone) | ❌ |
+| `unknown` | Não identificado | — | — |
+
+### Fallback de reconhecimento
+
+Quando a IA falha (timeout, erro de parsing), o nó `recognize-intent.ts` possui um
+fallback por keywords que cobre as intents mais comuns (similar ao local-classifier,
+mas aceita matches parciais em textos mais longos).
+
+---
+
+## Fluxo de Materiais (send_material)
+
+### Salvar material
+
+1. Dono envia documento/imagem/vídeo para a Cleo (instância secretary)
+2. Processor detecta mídia (não é áudio) → salva no lead especial "materials"
+3. Confirma: "✅ Material recebido: 📄 arquivo.pdf"
+
+### Reenviar material
+
+1. Dono diz: "manda material pro João"
+2. IA reconhece intent `send_material` com entities `{ name: "João", material: "..." }`
+3. Se há múltiplos materiais e não especificou qual → lista para escolha
+4. Se especificou nome → busca por match parcial no filename
+5. Envia via `messaging.forwardMessage()` usando o `media_key` original
+6. Confirma: "✅ arquivo.pdf enviado para João!"
+
+---
+
+## Módulo Trial (modules/trial/)
+
+### Parâmetros do trial
+
+| Parâmetro | Valor |
+|-----------|-------|
+| Duração | 7 dias |
+| Limite de respostas | 30 |
+| Cooldown por telefone | 90 dias |
+| Rate limit por IP | 3 trials/24h |
+| Plano concedido | solo (subscription_status: trial) |
+
+### Fluxo de criação
+
+1. `trial.controller.ts` recebe request (name, phone, IP)
+2. `trial.service.ts` valida:
+   - Telefone brasileiro válido (55 + DDD + 9 + 8 dígitos)
+   - Cooldown: mesmo telefone não pode testar novamente em 90 dias
+   - Rate limit: máximo 3 IPs iguais em 24h
+   - Conta existente: não pode ter user ativo com esse telefone
+3. Se válido → cria trial_attempt + user (trial) + código de ativação
+4. Retorna código ATIVAR-XXXX para o frontend
+
+### Guard no processamento de clientes
+
+Quando `user.subscription_status === 'trial'`:
+- Verifica expiração (7 dias)
+- Verifica limite de respostas (30)
+- Se inválido → resposta genérica ("O responsável vai te responder em breve")
+- Se limite atingido → avisa o dono via WhatsApp com link de checkout
+
+### Métricas rastreadas (por trial)
+
+- `leads_captured` — incrementado na primeira mensagem de cada lead novo
+- `whatsapp_connected` — marcado true na primeira mensagem de qualquer cliente
+- `last_activity_at` — atualizado a cada interação
+
+### Prospecção pós-trial (trial-prospection.cron.ts)
+
+Cron diário (10h) que envia mensagens automatizadas para ex-trials:
+
+**Classificação de temperatura:**
+
+| Temperatura | Critério |
+|------------|---------|
+| 🔥 Hot | ≥20 respostas usadas + WhatsApp conectado + ≥1 lead capturado |
+| 🟡 Warm | Onboarding completo + ≥5 respostas usadas |
+| 🧊 Cold | Demais |
+
+**Timing por temperatura:**
+
+| Temperatura | 1ª tentativa (dias após expirar) | 2ª tentativa |
+|------------|----------------------------------|-------------|
+| Hot | 1 dia | 14 dias depois |
+| Warm | 3 dias | 17 dias depois |
+| Cold | 7 dias | Não recebe 2ª |
+
+**Limites:**
+- Máximo 2 tentativas de prospecção
+- Máximo 20 envios por execução do cron
+- Intervalo mínimo de 13 dias entre prospecções
+- Delay de 3s entre envios (anti-ban WhatsApp)
+
+**Opt-out automático:**
+Se o ex-trial responde com "não", "para", "cancela" → status muda para `not_interested`
+e não recebe mais mensagens.
+
+---
+
+## Módulo Invites (modules/invites/)
+
+### Objetivo
+
+Permitir que o dono convide colaboradores para conectarem seus WhatsApps ao plano dele
+(modelo multi-user dos planos Equipe e Empresa).
+
+### Fluxo
+
+1. Dono diz: "convida 11999887766"
+2. IA reconhece intent `invite_user` → `executeIntent()` chama `inviteService.createInvite()`
+3. Valida: slots disponíveis no plano, assinatura ativa
+4. Cria invite com token único + envia link via WhatsApp ao colaborador
+5. Colaborador acessa link → conecta WhatsApp → sessão criada vinculada ao dono
+6. Para desconectar: "desconecta 11999887766" → `inviteService.disconnectCollaborator()`
+
+### Limites
+
+- Convite expira em 72 horas
+- Slots limitados pelo plano (solo=1, equipe=5, empresa=10)
+- Se sem slots → sugere upgrade ou desconectar alguém
+
+---
+
+## Resposta Degradada (Fallback quando IA total falha)
+
+Quando **todos** os providers de IA falham (`AI_ALL_PROVIDERS_FAILED`), o sistema
+não deixa o cliente sem resposta:
+
+### Para clientes do dono:
+Usa `getDegradedReplyForClient()` que gera mensagem genérica respeitando o tom de voz:
+- Formal: "Sua mensagem foi registrada e retornaremos em breve."
+- Casual: "Tô aqui! Já anotei e a gente te responde logo!"
+- Friendly: "Já anotei seu contato e vamos te retornar em breve!"
+
+### Para o dono:
+Usa `getDegradedReplyForOwner()` com mensagem genérica + info sobre o problema.
+
+### Alerta simultâneo:
+O `AiFallbackAdapter` envia alerta crítico ao admin via WhatsApp quando todos os providers falham.
+
+---
+
+## Fluxo Completo de Processamento (message.processor.ts)
+
+### Mensagem do DONO (instância secretary)
+
+```
+1. Detecta resposta de prospecção pós-trial? → Sim → trata opt-in/opt-out → fim
+2. É código de ativação (ATIVAR-XXXX)? → Sim → ativa user → inicia onboarding → fim
+3. User existe? → Não → "envie seu código de ativação" → fim
+4. Onboarding completo? → Não → transcreve áudio se for → processMessage() → fim
+5. Precisa aceitar termos? → Sim → verifica aceite via IA → fim
+6. É mídia?
+   6a. Áudio → transcreve → reconhece intent → executa
+   6b. Documento/imagem/vídeo → salva como material → fim
+7. Local-classifier resolve? → Sim → executa intent direto → fim
+8. Reconhece intent via IA → confidence < 0.7? → pede reformulação
+9. Executa intent reconhecida → responde
+```
+
+### Mensagem de CLIENTE (instância do dono)
+
+```
+1. Sessão existe para a instância? → Não → ignora
+2. User (dono) existe? → Não → ignora
+3. Contato excluído? → Sim → ignora
+4. Cria/busca lead → salva mensagem → atualiza métricas trial se aplicável
+5. Trial válido? → Não (expirado/limite) → mensagem genérica + avisa dono → fim
+6. Verifica horário comercial → fora do horário + regra customizada? → aplica regra → fim
+7. Local-classifier (saudação)? → Sim → template greeting → fim
+8. Gera resposta via IA (generateClientReply) com contexto do negócio + histórico
+9. Se IA falha total → resposta degradada
+10. Envia resposta → salva no banco
+```
+
+---
+
+## Fallback de Modelo e Alertas de Deprecação
+
+### Problema
+
+Provedores de IA descontinuam modelos sem muito aviso prévio. Quando isso acontece, a API
+retorna erro 404 e a Cleo para de responder clientes — impacto direto em produção.
+
+### Solução implementada
+
+Cada adapter mantém uma **lista ordenada de modelos** (do preferido ao mais genérico).
+Quando o modelo ativo retorna 404 ("no longer available"), o sistema:
+
+1. Tenta automaticamente o próximo modelo da lista do mesmo provider
+2. Se funcionar, atualiza o modelo ativo em memória (sem restart)
+3. **Alerta o admin via WhatsApp** sobre a troca, indicando ação necessária
+
+Se todos os modelos de um provider falharem, o `AiFallbackAdapter` tenta o próximo provider
+(comportamento existente).
+
+### Listas de modelos por provider
+
+```typescript
+// gemini.adapter.ts
+const GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-flash', 'gemini-flash-latest'];
+
+// deepseek.adapter.ts
+const DEEPSEEK_MODELS = ['deepseek-chat', 'deepseek-v4-flash', 'deepseek-reasoner'];
+
+// groq.adapter.ts
+const GROQ_MODELS = ['qwen/qwen3.6-27b', 'llama-3.3-70b-versatile', 'mixtral-8x7b-32768'];
+```
+
+### Interface de fallback
+
+Todos os adapters expõem:
+
+```typescript
+interface ModelFallbackCapable {
+  activeModel: string;                           // Modelo em uso
+  advanceModel(): {                             // Tenta o próximo da lista
+    switched: boolean;
+    previous: string;
+    current: string;
+  };
+}
+```
+
+### Alerta ao admin
+
+Quando um modelo é detectado como descontinuado e o fallback assume, o admin recebe:
+
+```
+🔄 Modelo de IA descontinuado
+
+Provider: Gemini
+Modelo anterior: gemini-3.6-flash (descontinuado)
+Modelo atual: gemini-flash (fallback automático)
+
+A Cleo continua funcionando normalmente.
+
+⚠️ Ação necessária: atualize a lista de modelos no código para
+refletir a mudança e evitar uso de fallbacks menos otimizados.
+```
+
+### Detecção de deprecação
+
+O sistema identifica modelo descontinuado pelos seguintes sinais:
+- HTTP 404
+- Mensagem contendo: "no longer available", "not found", "does not exist", "decommissioned"
+
+### Cooldown de alertas
+
+Para evitar spam, alertas do mesmo tipo respeitam cooldown de **10 minutos**.
+Um modelo descontinuado gera apenas 1 alerta — depois o fallback assume silenciosamente.
+
+### Manutenção
+
+Quando receber o alerta:
+1. Verificar qual modelo novo o provider recomenda
+2. Atualizar a lista `*_MODELS` no adapter correspondente (remover o antigo, adicionar o novo no topo)
+3. Deploy — o sistema volta a usar o modelo preferido
+
+---
+
 ## Fluxo de Migração (Beta → LangGraph)
 
 ### Fase 1 — Agora (pré-beta)
@@ -227,17 +578,24 @@ export async function generateClientReply(
 
 ## Mapa de Uso de IA (Atual vs. Alvo)
 
-| Fluxo | Hoje | Alvo (beta) | Alvo (LangGraph) |
-|-------|------|-------------|-------------------|
-| Ativação (parse dados) | ✅ IA | ✅ IA | Nó no grafo |
-| Onboarding (interpretar respostas) | ❌ Regex | ✅ IA via nó | Nós no grafo |
-| Transcrição de áudio (onboarding) | ✅ Whisper | ✅ Whisper | Nó `transcribe` |
-| Transcrição de áudio (pós-onboarding) | ❌ Salva como material | ✅ Whisper + intent | Nó `transcribe` → router |
-| Reconhecimento de intents | ✅ IA | ✅ IA | Nó router no grafo |
-| Aceite de termos | ❌ 3 palavras fixas | ✅ IA via nó | Nó no grafo |
-| Respostas aos clientes | ✅ IA contextual | ✅ IA contextual + histórico | Nó especializado no grafo |
-| Memória de conversa (multi-turno) | ✅ Últimas 5 msgs | ✅ Últimas 5 msgs | Nó + lead_memory |
-| Classificação de leads | ❌ Não existe | ❌ Não existe | Nó classificador |
+| Fluxo | Hoje | Usa IA? | Nó/Módulo |
+|-------|------|---------|-----------|
+| Ativação (parse dados) | ✅ Implementado | ✅ Sim | activation.service |
+| Onboarding (interpretar respostas) | ✅ Implementado | ✅ Sim + fallback regex | nodes/interpret-onboarding.ts |
+| Transcrição de áudio | ✅ Implementado | ✅ Groq Whisper | nodes/transcribe-audio.ts |
+| Reconhecimento de intents | ✅ Implementado | ✅ Sim + fallback keywords | nodes/recognize-intent.ts |
+| Aceite de termos | ✅ Implementado | ✅ Sim | nodes/interpret-confirmation.ts |
+| Respostas aos clientes | ✅ Implementado | ✅ Sim + histórico multi-turno | nodes/generate-client-reply.ts |
+| Classificação local (saudações) | ✅ Implementado | ❌ Regex local | nodes/local-classifier.ts |
+| Classificação local (keywords dono) | ✅ Implementado | ❌ Regex local | nodes/local-classifier.ts |
+| Trial (validação/criação) | ✅ Implementado | ❌ Regra de negócio | modules/trial/ |
+| Prospecção pós-trial | ✅ Implementado | ❌ Templates + cron | trial-prospection.cron.ts |
+| Convites (multi-user) | ✅ Implementado | ❌ Regra de negócio | modules/invites/ |
+| Materiais (salvar/reenviar) | ✅ Implementado | ❌ Forward direto | message.processor.ts |
+| Fallback degradado | ✅ Implementado | ❌ Templates | shared/utils/fallback-templates.ts |
+| Memória de conversa (multi-turno) | ✅ Últimas 5 msgs | ✅ Injeta no prompt | generate-client-reply.ts |
+| Classificação de leads | ❌ Não existe | — | Futuro: nó classificador |
+| FAQ contextual | ❌ Não existe | — | Futuro: dados do dono |
 
 ---
 
@@ -351,6 +709,7 @@ Se cada chamada usa ~400 tokens de prompt, isso queima tokens rápido e custa ma
   - Provider retorna 429 (rate limit atingido)
   - Todos os providers falham (AI_ALL_PROVIDERS_FAILED)
   - Uso diário atinge 80% do threshold configurado
+  - **Modelo descontinuado** — fallback automático acionado (ver seção "Fallback de Modelo")
 - Dashboard simples (futuro): custo estimado por dono
 
 ---
