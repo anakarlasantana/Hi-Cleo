@@ -26,6 +26,112 @@ try {
   }
 } catch { /* .env não encontrado — usa env vars do sistema */ }
 
+/** Todos os cenários de teste suportados */
+export type Scenario =
+  | 'onboarding'
+  | 'client_message'
+  | 'owner_command'
+  | 'edge_case'
+  | 'trial_flow'
+  | 'payment_webhook'
+  | 'invite_flow'
+  | 'prospection_response'
+  | 'material_flow'
+  | 'local_classifier'
+  | 'configure_rules'
+  | 'degraded_fallback';
+
+/** Tipo de avaliação para cada cenário */
+export type EvaluationType = 'llm_judge' | 'deterministic' | 'hybrid';
+
+/** Metadata de um cenário de teste */
+export interface ScenarioMeta {
+  /** Identificador do cenário */
+  name: Scenario;
+  /** Descrição legível */
+  description: string;
+  /** Se precisa de setup especial antes de executar (ex: criar user, expirar trial) */
+  requiresSpecialSetup: boolean;
+  /** Tipo de avaliação usado para pontuar */
+  evaluationType: EvaluationType;
+}
+
+/** Lista de cenários com metadata */
+export const scenarios: ScenarioMeta[] = [
+  {
+    name: 'onboarding',
+    description: 'Fluxo completo de onboarding — do código de ativação até configurar o negócio',
+    requiresSpecialSetup: false,
+    evaluationType: 'llm_judge',
+  },
+  {
+    name: 'client_message',
+    description: 'Cliente envia mensagem para dono e Cleo responde como secretária',
+    requiresSpecialSetup: true,
+    evaluationType: 'llm_judge',
+  },
+  {
+    name: 'owner_command',
+    description: 'Dono envia comando direto (ex: /agenda, /pausa, /status)',
+    requiresSpecialSetup: true,
+    evaluationType: 'hybrid',
+  },
+  {
+    name: 'edge_case',
+    description: 'Casos limítrofes — mensagens vazias, emojis, áudio sem texto, spam',
+    requiresSpecialSetup: true,
+    evaluationType: 'llm_judge',
+  },
+  {
+    name: 'trial_flow',
+    description: 'Criação de trial, limites de respostas e expiração',
+    requiresSpecialSetup: false,
+    evaluationType: 'hybrid',
+  },
+  {
+    name: 'payment_webhook',
+    description: 'Simulação de pagamento MercadoPago — webhook de aprovação e ativação de plano',
+    requiresSpecialSetup: true,
+    evaluationType: 'deterministic',
+  },
+  {
+    name: 'invite_flow',
+    description: 'Dono convida colaborador para acessar a secretária',
+    requiresSpecialSetup: true,
+    evaluationType: 'hybrid',
+  },
+  {
+    name: 'prospection_response',
+    description: 'Resposta a mensagem de prospecção — trial contactado responde',
+    requiresSpecialSetup: true,
+    evaluationType: 'llm_judge',
+  },
+  {
+    name: 'material_flow',
+    description: 'Dono envia material (PDF, imagem) e Cleo reencaminha para clientes',
+    requiresSpecialSetup: true,
+    evaluationType: 'hybrid',
+  },
+  {
+    name: 'local_classifier',
+    description: 'Classificação local — saudações simples e keywords sem chamar IA',
+    requiresSpecialSetup: true,
+    evaluationType: 'deterministic',
+  },
+  {
+    name: 'configure_rules',
+    description: 'Dono muda horário de atendimento, regras de resposta ou personalização',
+    requiresSpecialSetup: true,
+    evaluationType: 'hybrid',
+  },
+  {
+    name: 'degraded_fallback',
+    description: 'Comportamento quando a IA está indisponível — fallback gracioso',
+    requiresSpecialSetup: true,
+    evaluationType: 'deterministic',
+  },
+];
+
 export const config = {
   /** URL base do backend */
   baseUrl: process.env.BASE_URL || 'http://localhost:3001',
@@ -50,6 +156,7 @@ export const config = {
     'docs/produto/regras-de-negocio.md',
     'docs/produto/personalidade-cleo.md',
     'docs/produto/visao-geral.md',
+    'docs/tecnico/arquitetura-ia.md',
   ],
 
   /** Provider para o teste (deepseek | groq | gemini) */

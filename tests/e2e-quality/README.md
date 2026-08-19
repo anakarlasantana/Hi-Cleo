@@ -5,15 +5,16 @@ Testa a Cleo de forma autônoma: uma LLM simula usuários reais conversando com 
 ## Como funciona
 
 ```
-1. Lê docs do produto (regras, personalidade, fluxos)
+1. Lê docs do produto (regras, personalidade, arquitetura)
 2. Gera personas variadas via IA (zero input manual)
 3. Para cada persona:
    - LLM gera mensagens como usuário real (informal, vago, com erros)
    - Envia via webhook → Cleo processa normalmente via fila
    - Coleta resposta do banco
    - LLM decide próxima mensagem ou encerra
-4. LLM-as-judge avalia cada conversa em 5 dimensões
-5. Gera relatório com scores e problemas
+4. LLM-as-judge avalia cada conversa em 5-6 dimensões
+5. Cenários técnicos são avaliados de forma determinística
+6. Gera relatório com scores e problemas
 ```
 
 **Nenhum cenário é escrito na mão** — a IA gera tudo baseada nos docs.
@@ -29,58 +30,33 @@ cd backend
 npm run test:e2e:quality
 ```
 
-## Configuração
+## Cenários cobertos
 
-Via variáveis de ambiente (ou usa defaults sensatos):
+### Conversacionais (avaliados por LLM-as-judge)
 
-| Variável | Default | Descrição |
-|----------|---------|-----------|
-| `E2E_AI_PROVIDER` | `deepseek` | LLM para simular usuário e julgar (`deepseek`, `groq`, `gemini`) |
-| `E2E_CONVERSATION_COUNT` | `5` | Quantas conversas autônomas gerar |
-| `E2E_MAX_TURNS` | `12` | Máximo de turnos por conversa |
-| `E2E_MESSAGE_DELAY` | `5000` | Delay entre msgs (ms, pro backend processar) |
-| `E2E_PASS_THRESHOLD` | `0.7` | Score mínimo para passar (0.0 a 1.0) |
-| `DATABASE_URL` | `postgresql://...localhost:5434...` | Conexão com o banco (para ler respostas) |
+| Cenário | O que testa |
+|---------|------------|
+| `onboarding` | Dono ativando e configurando a Cleo pela primeira vez (7 steps) |
+| `client_message` | Cliente de um dono mandando mensagem para o negócio |
+| `owner_command` | Dono pedindo algo à Cleo (leads, follow-up, status, etc.) |
+| `edge_case` | Situações limite (fora do horário, msgs vagas, áudio simulado) |
+| `trial_flow` | Dono que acabou de iniciar trial e está testando limites |
+| `invite_flow` | Dono convidando colaborador para conectar WhatsApp |
+| `material_flow` | Dono enviando material e pedindo para reenviar a um cliente |
+| `local_classifier` | Saudações simples que devem ser resolvidas sem IA |
+| `configure_rules` | Dono mudando horário ou configurações via chat |
+| `prospection_response` | Ex-trial respondendo mensagem de prospecção |
 
-## Exemplo de saída
+### Técnicos (avaliados deterministicamente)
 
-```
-╔══════════════════════════════════════════════════════╗
-║   Hi Cleo — Teste E2E de Qualidade (Autônomo)       ║
-╠══════════════════════════════════════════════════════╣
-║  Backend:      http://localhost:3001
-║  Provider IA:  deepseek
-║  Conversas:    5
-║  Threshold:    0.7
-╚══════════════════════════════════════════════════════╝
-
-✅ Backend saudável
-✅ AI client criado (deepseek)
-📖 Lendo documentação do produto...
-🎭 Gerando 5 personas via IA...
-   1. Pedro Lima (onboarding) — Corretor de imóveis configurando a Cleo
-   2. Ana Costa (client_message) — Cliente perguntando sobre aulas de inglês
-   3. Carlos Mendes (owner_command) — Dono pedindo lista de leads
-   4. Julia Santos (edge_case) — Cliente mandando msg às 23h
-   5. Roberto Alves (onboarding) — Personal trainer ativando a Cleo
-
-━━━ [1/5] Pedro Lima (onboarding) ━━━
-   💬 14 turnos
-   📊 Média: 0.88 ✅
-
-━━━ [2/5] Ana Costa (client_message) ━━━
-   💬 6 turnos
-   📊 Média: 0.92 ✅
-
-...
-
-═══════════════════════════════════════════════════════
-📊 Resultado: 4/5 conversas passaram (threshold: 0.7)
-📊 Score médio: 0.85
-═══════════════════════════════════════════════════════
-```
+| Cenário | O que testa |
+|---------|------------|
+| `payment_webhook` | Webhook do MercadoPago ativa subscription corretamente |
+| `degraded_fallback` | Com IA indisponível, sistema envia resposta degradada |
 
 ## Dimensões avaliadas
+
+### Cenários conversacionais (5 dimensões)
 
 | Dimensão | O que mede |
 |----------|-----------|
@@ -90,27 +66,60 @@ Via variáveis de ambiente (ou usa defaults sensatos):
 | **completude** | Atendeu o que o usuário precisava? |
 | **naturalidade** | Respostas fluidas, não robóticas? |
 
-## Cenários gerados automaticamente
+### Cenários funcionais (6 dimensões = 5 acima + 1 extra)
 
-A IA gera 4 tipos de cenários:
+| Dimensão extra | O que mede |
+|---------------|-----------|
+| **corretude_funcional** | O sistema executou a ação corretamente? (convite criado, trial iniciado, material salvo, etc.) |
 
-- **onboarding** — Dono ativando e configurando a Cleo pela primeira vez
-- **client_message** — Cliente de um dono mandando mensagem para o negócio
-- **owner_command** — Dono pedindo algo à Cleo (leads, follow-up, etc.)
-- **edge_case** — Situações limite (fora do horário, msgs vagas, áudio)
+## Configuração
+
+Via variáveis de ambiente (ou usa defaults sensatos):
+
+| Variável | Default | Descrição |
+|----------|---------|-----------|
+| `E2E_AI_PROVIDER` | `deepseek` | LLM para simular usuário e julgar (`deepseek`, `groq`, `gemini`) |
+| `E2E_CONVERSATION_COUNT` | `8` | Quantas conversas autônomas gerar |
+| `E2E_MAX_TURNS` | `12` | Máximo de turnos por conversa |
+| `E2E_MESSAGE_DELAY` | `5000` | Delay entre msgs (ms, pro backend processar) |
+| `E2E_PASS_THRESHOLD` | `0.7` | Score mínimo para passar (0.0 a 1.0) |
+| `DATABASE_URL` | `postgresql://...localhost:5434...` | Conexão com o banco (para ler respostas) |
 
 ## Arquitetura
 
 ```
 tests/e2e-quality/
 ├── run.ts              # Orquestrador (entry point)
-├── config.ts           # Configuração centralizada
+├── config.ts           # Configuração + definição de cenários
 ├── ai-client.ts        # Cliente de IA (DeepSeek/Groq/Gemini)
-├── simulator.ts        # Envia webhooks + coleta respostas do banco
+├── simulator.ts        # Envia webhooks + coleta respostas + helpers de banco
 ├── autonomous-user.ts  # LLM que age como usuário real
-├── judge.ts            # LLM que avalia qualidade das respostas
+├── judge.ts            # LLM que avalia qualidade (+ avaliação determinística)
 └── README.md           # Este arquivo
 ```
+
+### simulator.ts — Funções disponíveis
+
+| Função | Uso |
+|--------|-----|
+| `sendMessage(phone, text)` | Envia webhook na instância secretary |
+| `sendMessageAsClient(instance, phone, text)` | Envia webhook como cliente do dono |
+| `waitForResponse(phone, after)` | Espera resposta outbound no banco |
+| `waitForSecretaryResponse(phone, after)` | Espera resposta na instância secretary |
+| `startTrial(phone, name)` | Cria trial via API e retorna código |
+| `createTestUser(phone, name, opts)` | Cria user direto no banco |
+| `simulatePaymentWebhook(userId, planId)` | Simula webhook MercadoPago |
+| `getTrialStatus(phone)` | Consulta status do trial |
+| `getSubscriptionStatus(phone)` | Consulta subscription |
+| `sendMaterial(phone, fileName, mimeType)` | Simula envio de documento |
+| `setTrialExpired(phone)` | Marca trial como expirado |
+| `setTrialResponsesUsed(phone, count)` | Seta respostas usadas |
+| `markAsProspected(phone)` | Marca como contactado por prospecção |
+| `getMessages(phone, limit)` | Busca últimas mensagens |
+| `getFollowUps(userId)` | Consulta follow-ups agendados |
+| `cleanupPhone(phone)` | Limpa dados de um telefone |
+| `cleanupAll(phones)` | Limpa múltiplos telefones |
+| `closeDb()` | Fecha pool de conexões |
 
 ## Requisitos
 
@@ -122,6 +131,14 @@ tests/e2e-quality/
 ## Custo por execução
 
 Com DeepSeek (provider padrão):
-- 5 conversas × ~10 chamadas = ~50 chamadas
-- Custo estimado: ~R$0,05 por execução
+- 8-12 conversas × ~10 chamadas = ~80-120 chamadas
+- Custo estimado: ~R$0,08 por execução
 - Groq free tier: R$0 (com rate limit)
+
+## Quando rodar
+
+- Antes de cada deploy para produção
+- Após mudanças em prompts, nodes ou lógica de processamento
+- Após trocar/atualizar modelos de IA
+- Após mudanças no fluxo de onboarding, pagamento ou trial
+- Como validação de smoke test em CI (com threshold mais baixo)

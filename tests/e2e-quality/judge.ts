@@ -1,24 +1,61 @@
 /**
  * Judge — LLM que avalia a qualidade de uma conversa da Cleo.
  * Avalia em múltiplas dimensões e retorna scores + parecer.
+ *
+ * Cenários conversacionais: 5 dimensões originais
+ * Cenários técnicos/funcionais: 5 dimensões + corretude_funcional
  */
 
 import type { AiClient } from './ai-client.js';
 import type { Turn } from './simulator.js';
 import type { Persona } from './autonomous-user.js';
+import type { Scenario } from './config.js';
+
+/** Scores base (5 dimensões conversacionais) */
+export interface BaseScores {
+  relevancia: number;
+  tom_de_voz: number;
+  factualidade: number;
+  completude: number;
+  naturalidade: number;
+}
+
+/** Scores expandidos (inclui corretude funcional) */
+export interface FunctionalScores extends BaseScores {
+  corretude_funcional: number;
+}
 
 export interface Verdict {
-  scores: {
-    relevancia: number;
-    tom_de_voz: number;
-    factualidade: number;
-    completude: number;
-    naturalidade: number;
-  };
+  scores: BaseScores | FunctionalScores;
   media: number;
   pass: boolean;
   razao: string;
   problemas: string[];
+}
+
+/** Cenários que usam avaliação funcional (5 dims + corretude_funcional) */
+const FUNCTIONAL_SCENARIOS: Scenario[] = [
+  'trial_flow',
+  'payment_webhook',
+  'invite_flow',
+  'material_flow',
+  'local_classifier',
+  'configure_rules',
+  'degraded_fallback',
+  'prospection_response',
+];
+
+/** Cenários conversacionais puros (apenas 5 dimensões) */
+const CONVERSATIONAL_SCENARIOS: Scenario[] = [
+  'onboarding',
+  'client_message',
+  'owner_command',
+  'edge_case',
+];
+
+/** Verifica se cenário usa dimensão funcional */
+export function isFunctionalScenario(scenario: Scenario): boolean {
+  return FUNCTIONAL_SCENARIOS.includes(scenario);
 }
 
 const JUDGE_PROMPT = `Você é um avaliador de qualidade de chatbots conversacionais.
@@ -68,6 +105,92 @@ Retorne APENAS JSON válido (sem markdown):
   "problemas": ["lista de problemas encontrados, se houver"]
 }`;
 
+const JUDGE_PROMPT_FUNCTIONAL = `Você é um avaliador de qualidade de chatbots conversacionais.
+Sua tarefa é avaliar as respostas da "Cleo" — uma secretária virtual por WhatsApp para pequenos negócios.
+
+REGRAS DA CLEO (do produto):
+- Nunca inventa informações (preços, prazos, detalhes que o dono não informou)
+- Responde no tom configurado pelo dono
+- Para clientes: anota interesse e avisa que o dono retorna
+- Para o dono: executa comandos (listar leads, agendar, etc.)
+- No onboarding: coleta dados do negócio em 7 etapas conversacionais
+- Deve ser natural, empática e concisa
+
+CONTEXTO DA CONVERSA:
+- Persona: {persona_name}
+- Cenário: {scenario}
+- Descrição: {persona_description}
+
+CENÁRIO ESPECÍFICO E O QUE DEVE ACONTECER:
+{scenario_expectation}
+
+TRANSCRIÇÃO:
+{transcript}
+
+AVALIE em 6 dimensões (0.0 a 1.0):
+
+1. **relevancia** (0-1): As respostas da Cleo fazem sentido no contexto? Respondem ao que foi perguntado?
+2. **tom_de_voz** (0-1): A Cleo soa natural, empática e profissional? Parece um humano e não um robô?
+3. **factualidade** (0-1): A Cleo inventou algo que não deveria? (1.0 = não inventou nada)
+4. **completude** (0-1): A Cleo atendeu o que o usuário precisava? Avançou o fluxo corretamente?
+5. **naturalidade** (0-1): As respostas são naturais e fluidas? Não são genéricas demais nem robóticas?
+6. **corretude_funcional** (0-1): O sistema executou corretamente a AÇÃO ESPERADA? Veja as expectativas abaixo:
+
+EXPECTATIVAS POR CENÁRIO:
+- trial_flow: Trial foi criado, código de ativação enviado, limites respeitados
+- payment_webhook: Pagamento processado, subscription ativada, confirmação enviada
+- invite_flow: Convite enviado, colaborador adicionado (ou mensagem clara de como fazer)
+- prospection_response: Resposta reconhecida como interesse/desinteresse, fluxo seguido corretamente
+- material_flow: Material recebido/salvo, confirmação de reenvio quando solicitado
+- local_classifier: Saudação respondida rapidamente sem chamar IA pesada, resposta adequada e curta
+- configure_rules: Configuração alterada ou confirmada, feedback claro ao dono
+- degraded_fallback: ALGUMA resposta foi enviada mesmo com IA indisponível (fallback gracioso)
+
+CRITÉRIOS DE FALHA GRAVE (score 0 na dimensão):
+- Inventar preço, horário ou dado que não foi configurado
+- Ignorar completamente o que o usuário disse
+- Repetir a mesma resposta em loop
+- Não executar a ação funcional esperada (corretude_funcional = 0)
+- Responder em inglês quando deveria ser português
+
+Retorne APENAS JSON válido (sem markdown):
+{
+  "scores": {
+    "relevancia": 0.0,
+    "tom_de_voz": 0.0,
+    "factualidade": 0.0,
+    "completude": 0.0,
+    "naturalidade": 0.0,
+    "corretude_funcional": 0.0
+  },
+  "razao": "Explicação curta do parecer geral",
+  "problemas": ["lista de problemas encontrados, se houver"]
+}`;
+
+/** Expectativas por cenário funcional para o prompt */
+function getScenarioExpectation(scenario: Scenario): string {
+  switch (scenario) {
+    case 'trial_flow':
+      return 'O dono iniciou o trial. ESPERADO: código de ativação gerado, mensagem de boas-vindas, trial ativo.';
+    case 'payment_webhook':
+      return 'Webhook de pagamento aprovado. ESPERADO: subscription ativada no banco, confirmação ao usuário.';
+    case 'invite_flow':
+      return 'Dono quer convidar colaborador. ESPERADO: convite processado ou instruções claras fornecidas.';
+    case 'prospection_response':
+      return 'Ex-trial respondeu à prospecção. ESPERADO: resposta classificada como interesse/desinteresse e fluxo seguido.';
+    case 'material_flow':
+      return 'Dono enviou material (documento). ESPERADO: material recebido, confirmação e capacidade de reenvio.';
+    case 'local_classifier':
+      return 'Cliente mandou saudação simples. ESPERADO: resposta rápida, curta e adequada SEM chamar IA pesada.';
+    case 'configure_rules':
+      return 'Dono pediu mudança de configuração. ESPERADO: configuração alterada e feedback confirmando a mudança.';
+    case 'degraded_fallback':
+      return 'IA indisponível. ESPERADO: ALGUMA resposta chegou (fallback gracioso, não silêncio).';
+    default:
+      return '';
+  }
+}
+
 export async function evaluateConversation(
   ai: AiClient,
   persona: Persona,
@@ -78,11 +201,23 @@ export async function evaluateConversation(
     .map(t => `[${t.role === 'user' ? 'Usuário' : 'Cleo'}]: ${t.content}`)
     .join('\n');
 
-  const prompt = JUDGE_PROMPT
-    .replace('{persona_name}', persona.name)
-    .replace('{scenario}', persona.scenario)
-    .replace('{persona_description}', persona.description)
-    .replace('{transcript}', transcript);
+  const useFunctional = isFunctionalScenario(persona.scenario);
+
+  let prompt: string;
+  if (useFunctional) {
+    prompt = JUDGE_PROMPT_FUNCTIONAL
+      .replace('{persona_name}', persona.name)
+      .replace('{scenario}', persona.scenario)
+      .replace('{persona_description}', persona.description)
+      .replace('{scenario_expectation}', getScenarioExpectation(persona.scenario))
+      .replace('{transcript}', transcript);
+  } else {
+    prompt = JUDGE_PROMPT
+      .replace('{persona_name}', persona.name)
+      .replace('{scenario}', persona.scenario)
+      .replace('{persona_description}', persona.description)
+      .replace('{transcript}', transcript);
+  }
 
   const response = await ai.generate(
     'Você é um avaliador imparcial. Retorne APENAS JSON válido, sem markdown.',
@@ -100,13 +235,22 @@ export async function evaluateConversation(
   const objStart = jsonStr.indexOf('{');
   if (objStart > 0) jsonStr = jsonStr.slice(objStart);
 
-  let parsed: { scores: Verdict['scores']; razao: string; problemas: string[] };
+  let parsed: { scores: Record<string, number>; razao: string; problemas: string[] };
   try {
     parsed = JSON.parse(jsonStr);
   } catch {
     // Se falhou o parse, retorna score neutro com o erro
+    const defaultScores: BaseScores = {
+      relevancia: 0.5,
+      tom_de_voz: 0.5,
+      factualidade: 0.5,
+      completude: 0.5,
+      naturalidade: 0.5,
+    };
     return {
-      scores: { relevancia: 0.5, tom_de_voz: 0.5, factualidade: 0.5, completude: 0.5, naturalidade: 0.5 },
+      scores: useFunctional
+        ? { ...defaultScores, corretude_funcional: 0.5 }
+        : defaultScores,
       media: 0.5,
       pass: false,
       razao: `Erro ao avaliar: resposta do judge não é JSON válido`,
@@ -119,10 +263,49 @@ export async function evaluateConversation(
   const media = values.reduce((a, b) => a + b, 0) / values.length;
 
   return {
-    scores,
+    scores: scores as unknown as BaseScores | FunctionalScores,
     media: Math.round(media * 100) / 100,
     pass: media >= passThreshold,
     razao: parsed.razao,
     problemas: parsed.problemas || [],
+  };
+}
+
+/**
+ * Avaliação determinística para cenários técnicos (sem LLM).
+ * Retorna um Verdict baseado em verificações diretas.
+ */
+export function evaluateDeterministic(
+  scenario: Scenario,
+  checks: { label: string; passed: boolean }[],
+): Verdict {
+  const passedChecks = checks.filter(c => c.passed).length;
+  const totalChecks = checks.length;
+  const corretude = totalChecks > 0 ? passedChecks / totalChecks : 0;
+
+  const problemas = checks
+    .filter(c => !c.passed)
+    .map(c => c.label);
+
+  const scores: FunctionalScores = {
+    relevancia: 1.0, // N/A para determinístico — neutro
+    tom_de_voz: 1.0,
+    factualidade: 1.0,
+    completude: corretude,
+    naturalidade: 1.0,
+    corretude_funcional: corretude,
+  };
+
+  const values = Object.values(scores);
+  const media = values.reduce((a, b) => a + b, 0) / values.length;
+
+  return {
+    scores,
+    media: Math.round(media * 100) / 100,
+    pass: corretude >= 0.8,
+    razao: corretude === 1.0
+      ? 'Todas as verificações passaram'
+      : `${passedChecks}/${totalChecks} verificações passaram`,
+    problemas,
   };
 }

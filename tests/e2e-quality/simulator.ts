@@ -23,6 +23,8 @@ function getPool(): pg.Pool {
   return pool;
 }
 
+// ─── Funções existentes ──────────────────────────────────────────────────────
+
 /** Envia mensagem simulada via webhook do Evolution API */
 export async function sendMessage(phone: string, text: string): Promise<void> {
   const msgId = `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -120,6 +122,312 @@ export async function closeDb(): Promise<void> {
     pool = null;
   }
 }
+
+// ─── Novas funções de simulação ──────────────────────────────────────────────
+
+/**
+ * Envia webhook como se fosse um cliente de um dono (instância diferente da secretary).
+ * Usado para simular mensagens de clientes finais que chegam na instância do dono.
+ */
+export async function sendMessageAsClient(instance: string, phone: string, text: string): Promise<void> {
+  const msgId = `e2e-client-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  await axios.post(
+    `${config.baseUrl}/webhooks/evolution`,
+    {
+      instance,
+      event: 'messages.upsert',
+      data: {
+        key: {
+          remoteJid: `${phone}@s.whatsapp.net`,
+          fromMe: false,
+          id: msgId,
+        },
+        message: { conversation: text },
+        messageTimestamp: Math.floor(Date.now() / 1000),
+        pushName: 'E2E Client User',
+      },
+    },
+    { headers: { 'Content-Type': 'application/json' }, timeout: 10_000 },
+  );
+}
+
+/**
+ * Simula webhook de pagamento aprovado do MercadoPago.
+ * POST para /webhooks/mercadopago com payload de pagamento aprovado.
+ */
+export async function simulatePaymentWebhook(userId: string, planId: string): Promise<void> {
+  await axios.post(
+    `${config.baseUrl}/webhooks/mercadopago`,
+    {
+      action: 'payment.created',
+      type: 'payment',
+      data: {
+        id: `e2e-payment-${Date.now()}`,
+        status: 'approved',
+        external_reference: userId,
+        metadata: {
+          plan_id: planId,
+          user_id: userId,
+        },
+        transaction_amount: 49.90,
+        currency_id: 'BRL',
+        date_approved: new Date().toISOString(),
+      },
+    },
+    { headers: { 'Content-Type': 'application/json' }, timeout: 10_000 },
+  );
+}
+
+/** Consulta status do trial de um telefone no banco */
+export async function getTrialStatus(phone: string): Promise<{
+  status: string;
+  responsesUsed: number;
+  responsesLimit: number;
+  expiresAt: Date | null;
+} | null> {
+  const db = getPool();
+  const result = await db.query(
+    `SELECT t.status, t.responses_used, t.responses_limit, t.expires_at
+     FROM trials t
+     JOIN users u ON u.id = t.user_id
+     WHERE u.phone = $1`,
+    [phone],
+  );
+
+  if (result.rows.length === 0) return null;
+
+  const row = result.rows[0];
+  return {
+    status: row.status,
+    responsesUsed: row.responses_used,
+    responsesLimit: row.responses_limit,
+    expiresAt: row.expires_at ? new Date(row.expires_at) : null,
+  };
+}
+
+/** Consulta status da subscription de um telefone no banco */
+export async function getSubscriptionStatus(phone: string): Promise<{
+  status: string;
+  planId: string;
+  currentPeriodEnd: Date | null;
+} | null> {
+  const db = getPool();
+  const result = await db.query(
+    `SELECT s.status, s.plan_id, s.current_period_end
+     FROM subscriptions s
+     JOIN users u ON u.id = s.user_id
+     WHERE u.phone = $1`,
+    [phone],
+  );
+
+  if (result.rows.length === 0) return null;
+
+  const row = result.rows[0];
+  return {
+    status: row.status,
+    planId: row.plan_id,
+    currentPeriodEnd: row.current_period_end ? new Date(row.current_period_end) : null,
+  };
+}
+
+/**
+ * Cria um user de teste direto no banco para cenários que precisam
+ * de um user pré-existente (client_message, owner_command, etc.).
+ */
+export async function createTestUser(
+  phone: string,
+  name: string,
+  options?: {
+    plan?: string;
+    subscriptionStatus?: string;
+    onboardingComplete?: boolean;
+  },
+): Promise<string> {
+  const db = getPool();
+
+  const userResult = await db.query(
+    `INSERT INTO users (phone, name, created_at)
+     VALUES ($1, $2, NOW())
+     RETURNING id`,
+    [phone, name],
+  );
+  const userId: string = userResult.rows[0].id;
+
+  if (options?.onboardingComplete) {
+    await db.query(
+      `INSERT INTO onboarding_states (user_id, step, completed_at)
+       VALUES ($1, 'completed', NOW())`,
+      [userId],
+    );
+  }
+
+  if (options?.plan || options?.subscriptionStatus) {
+    await db.query(
+      `INSERT INTO subscriptions (user_id, plan_id, status, current_period_end)
+       VALUES ($1, $2, $3, NOW() + INTERVAL '30 days')`,
+      [userId, options.plan || 'basic', options.subscriptionStatus || 'active'],
+    );
+  }
+
+  return userId;
+}
+
+/**
+ * Simula envio de documento (PDF, imagem, etc.) via webhook.
+ * Usado para testar fluxo de materiais.
+ */
+export async function sendMaterial(phone: string, fileName: string, mimeType: string): Promise<void> {
+  const msgId = `e2e-doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  await axios.post(
+    `${config.baseUrl}/webhooks/evolution`,
+    {
+      instance: config.instance,
+      event: 'messages.upsert',
+      data: {
+        key: {
+          remoteJid: `${phone}@s.whatsapp.net`,
+          fromMe: false,
+          id: msgId,
+        },
+        message: {
+          documentMessage: {
+            url: `https://fake-cdn.test/${msgId}/${fileName}`,
+            mimetype: mimeType,
+            fileName,
+            fileLength: 1024,
+          },
+        },
+        messageTimestamp: Math.floor(Date.now() / 1000),
+        pushName: 'E2E Test User',
+      },
+    },
+    { headers: { 'Content-Type': 'application/json' }, timeout: 10_000 },
+  );
+}
+
+/** Consulta follow-ups agendados para um user */
+export async function getFollowUps(userId: string): Promise<Array<{
+  id: string;
+  scheduledAt: Date;
+  status: string;
+  leadPhone: string;
+}>> {
+  const db = getPool();
+  const result = await db.query(
+    `SELECT f.id, f.scheduled_at, f.status, l.phone as lead_phone
+     FROM follow_ups f
+     JOIN leads l ON l.id = f.lead_id
+     WHERE f.user_id = $1
+     ORDER BY f.scheduled_at ASC`,
+    [userId],
+  );
+
+  return result.rows.map(row => ({
+    id: row.id,
+    scheduledAt: new Date(row.scheduled_at),
+    status: row.status,
+    leadPhone: row.lead_phone,
+  }));
+}
+
+/** Marca trial como expirado no banco (para testar comportamento pós-trial) */
+export async function setTrialExpired(phone: string): Promise<void> {
+  const db = getPool();
+  await db.query(
+    `UPDATE trials SET status = 'expired', expires_at = NOW() - INTERVAL '1 day'
+     WHERE user_id IN (SELECT id FROM users WHERE phone = $1)`,
+    [phone],
+  );
+}
+
+/** Seta número de respostas usadas no trial (para testar limite) */
+export async function setTrialResponsesUsed(phone: string, count: number): Promise<void> {
+  const db = getPool();
+  await db.query(
+    `UPDATE trials SET responses_used = $2
+     WHERE user_id IN (SELECT id FROM users WHERE phone = $1)`,
+    [phone, count],
+  );
+}
+
+/** Marca trial como 'contacted' para testar resposta de prospecção */
+export async function markAsProspected(phone: string): Promise<void> {
+  const db = getPool();
+  await db.query(
+    `UPDATE trials SET status = 'contacted'
+     WHERE user_id IN (SELECT id FROM users WHERE phone = $1)`,
+    [phone],
+  );
+}
+
+/** Busca últimas mensagens de um telefone (inbound + outbound) */
+export async function getMessages(phone: string, limit?: number): Promise<Turn[]> {
+  const db = getPool();
+  const maxMessages = limit || 20;
+
+  const result = await db.query(
+    `SELECT m.text, m.direction, m.timestamp
+     FROM messages m
+     JOIN leads l ON l.id = m.lead_id
+     WHERE l.phone = $1
+     ORDER BY m.timestamp DESC
+     LIMIT $2`,
+    [phone, maxMessages],
+  );
+
+  return result.rows
+    .map(row => ({
+      role: (row.direction === 'outbound' ? 'assistant' : 'user') as Turn['role'],
+      content: row.text,
+      timestamp: new Date(row.timestamp),
+    }))
+    .reverse();
+}
+
+/**
+ * Espera resposta da Cleo na instância secretary para um telefone específico.
+ * Diferente de waitForResponse, este busca especificamente na instância secretary
+ * (útil quando a mensagem foi enviada em outra instância mas a resposta sai pela secretary).
+ */
+export async function waitForSecretaryResponse(phone: string, afterTimestamp: Date): Promise<string | null> {
+  const db = getPool();
+  const maxWait = config.messageDelay + 5000;
+  const pollInterval = 1000;
+  const deadline = Date.now() + maxWait;
+
+  while (Date.now() < deadline) {
+    const result = await db.query(
+      `SELECT m.text FROM messages m
+       JOIN leads l ON l.id = m.lead_id
+       WHERE l.phone = $1
+         AND m.direction = 'outbound'
+         AND m.instance = $2
+         AND m.timestamp > $3
+       ORDER BY m.timestamp DESC
+       LIMIT 1`,
+      [phone, config.instance, afterTimestamp.toISOString()],
+    );
+
+    if (result.rows.length > 0) {
+      return result.rows[0].text;
+    }
+
+    await sleep(pollInterval);
+  }
+
+  return null;
+}
+
+/** Limpa múltiplos telefones de teste de uma vez */
+export async function cleanupAll(phones: string[]): Promise<void> {
+  for (const phone of phones) {
+    await cleanupPhone(phone);
+  }
+}
+
+// ─── Utilitários internos ────────────────────────────────────────────────────
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
