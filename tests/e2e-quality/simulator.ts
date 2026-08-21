@@ -106,11 +106,21 @@ export async function startTrial(phone: string, name: string): Promise<string> {
 /** Limpa dados de um telefone de teste (para repetir) */
 export async function cleanupPhone(phone: string): Promise<void> {
   const db = getPool();
-  await db.query(`DELETE FROM messages WHERE lead_id IN (SELECT id FROM leads WHERE user_id IN (SELECT id FROM users WHERE phone = $1))`, [phone]);
-  await db.query(`DELETE FROM leads WHERE user_id IN (SELECT id FROM users WHERE phone = $1)`, [phone]);
-  await db.query(`DELETE FROM businesses WHERE user_id IN (SELECT id FROM users WHERE phone = $1)`, [phone]);
-  await db.query(`DELETE FROM onboarding_states WHERE user_id IN (SELECT id FROM users WHERE phone = $1)`, [phone]);
-  await db.query(`DELETE FROM activation_codes WHERE user_id IN (SELECT id FROM users WHERE phone = $1)`, [phone]);
+  const userSubquery = `(SELECT id FROM users WHERE phone = $1)`;
+  await db.query(`DELETE FROM messages WHERE lead_id IN (SELECT id FROM leads WHERE user_id IN ${userSubquery})`, [phone]);
+  await db.query(`DELETE FROM follow_ups WHERE user_id IN ${userSubquery}`, [phone]);
+  await db.query(`DELETE FROM leads WHERE user_id IN ${userSubquery}`, [phone]);
+  await db.query(`DELETE FROM businesses WHERE user_id IN ${userSubquery}`, [phone]);
+  await db.query(`DELETE FROM onboarding_states WHERE user_id IN ${userSubquery}`, [phone]);
+  await db.query(`DELETE FROM terms_consent WHERE user_id IN ${userSubquery}`, [phone]);
+  await db.query(`DELETE FROM cancellations WHERE user_id IN ${userSubquery}`, [phone]);
+  await db.query(`DELETE FROM whatsapp_sessions WHERE user_id IN ${userSubquery}`, [phone]);
+  await db.query(`DELETE FROM subscription_events WHERE user_id IN ${userSubquery}`, [phone]);
+  await db.query(`DELETE FROM invites WHERE owner_user_id IN ${userSubquery}`, [phone]);
+  await db.query(`DELETE FROM excluded_contacts WHERE user_id IN ${userSubquery}`, [phone]);
+  await db.query(`DELETE FROM rules WHERE user_id IN ${userSubquery}`, [phone]);
+  await db.query(`DELETE FROM payments WHERE activation_code_id IN (SELECT id FROM activation_codes WHERE user_id IN ${userSubquery})`, [phone]);
+  await db.query(`DELETE FROM activation_codes WHERE user_id IN ${userSubquery}`, [phone]);
   await db.query(`DELETE FROM trial_attempts WHERE phone = $1`, [phone]);
   await db.query(`DELETE FROM users WHERE phone = $1`, [phone]);
 }
@@ -188,10 +198,13 @@ export async function getTrialStatus(phone: string): Promise<{
 } | null> {
   const db = getPool();
   const result = await db.query(
-    `SELECT t.status, t.responses_used, t.responses_limit, t.expires_at
-     FROM trials t
-     JOIN users u ON u.id = t.user_id
-     WHERE u.phone = $1`,
+    `SELECT t.status, u.trial_responses_used as responses_used,
+            u.trial_responses_limit as responses_limit,
+            u.subscription_expires_at as expires_at
+     FROM trial_attempts t
+     JOIN users u ON u.id = t.trial_user_id
+     WHERE t.phone = $1
+     ORDER BY t.created_at DESC LIMIT 1`,
     [phone],
   );
 
@@ -200,8 +213,8 @@ export async function getTrialStatus(phone: string): Promise<{
   const row = result.rows[0];
   return {
     status: row.status,
-    responsesUsed: row.responses_used,
-    responsesLimit: row.responses_limit,
+    responsesUsed: row.responses_used ?? 0,
+    responsesLimit: row.responses_limit ?? 30,
     expiresAt: row.expires_at ? new Date(row.expires_at) : null,
   };
 }
@@ -214,10 +227,10 @@ export async function getSubscriptionStatus(phone: string): Promise<{
 } | null> {
   const db = getPool();
   const result = await db.query(
-    `SELECT s.status, s.plan_id, s.current_period_end
-     FROM subscriptions s
-     JOIN users u ON u.id = s.user_id
-     WHERE u.phone = $1`,
+    `SELECT subscription_status as status, plan as plan_id,
+            subscription_expires_at as current_period_end
+     FROM users
+     WHERE phone = $1`,
     [phone],
   );
 
@@ -225,7 +238,7 @@ export async function getSubscriptionStatus(phone: string): Promise<{
 
   const row = result.rows[0];
   return {
-    status: row.status,
+    status: row.status || 'none',
     planId: row.plan_id,
     currentPeriodEnd: row.current_period_end ? new Date(row.current_period_end) : null,
   };
@@ -256,17 +269,19 @@ export async function createTestUser(
 
   if (options?.onboardingComplete) {
     await db.query(
-      `INSERT INTO onboarding_states (user_id, step, completed_at)
-       VALUES ($1, 'completed', NOW())`,
+      `INSERT INTO onboarding_states (id, user_id, step, data, updated_at)
+       VALUES (gen_random_uuid(), $1, 'completed', '{}', NOW())
+       ON CONFLICT DO NOTHING`,
       [userId],
     );
   }
 
   if (options?.plan || options?.subscriptionStatus) {
     await db.query(
-      `INSERT INTO subscriptions (user_id, plan_id, status, current_period_end)
-       VALUES ($1, $2, $3, NOW() + INTERVAL '30 days')`,
-      [userId, options.plan || 'basic', options.subscriptionStatus || 'active'],
+      `UPDATE users SET plan = $2, subscription_status = $3,
+       subscription_started_at = NOW(), subscription_expires_at = NOW() + INTERVAL '30 days'
+       WHERE id = $1`,
+      [userId, options.plan || 'solo', options.subscriptionStatus || 'active'],
     );
   }
 
@@ -336,8 +351,14 @@ export async function getFollowUps(userId: string): Promise<Array<{
 export async function setTrialExpired(phone: string): Promise<void> {
   const db = getPool();
   await db.query(
-    `UPDATE trials SET status = 'expired', expires_at = NOW() - INTERVAL '1 day'
-     WHERE user_id IN (SELECT id FROM users WHERE phone = $1)`,
+    `UPDATE trial_attempts SET status = 'expired', expired_at = NOW()
+     WHERE phone = $1`,
+    [phone],
+  );
+  await db.query(
+    `UPDATE users SET subscription_status = 'expired',
+     subscription_expires_at = NOW() - INTERVAL '1 day'
+     WHERE phone = $1`,
     [phone],
   );
 }
@@ -346,8 +367,13 @@ export async function setTrialExpired(phone: string): Promise<void> {
 export async function setTrialResponsesUsed(phone: string, count: number): Promise<void> {
   const db = getPool();
   await db.query(
-    `UPDATE trials SET responses_used = $2
-     WHERE user_id IN (SELECT id FROM users WHERE phone = $1)`,
+    `UPDATE users SET trial_responses_used = $2
+     WHERE phone = $1`,
+    [phone, count],
+  );
+  await db.query(
+    `UPDATE trial_attempts SET responses_used = $2
+     WHERE phone = $1`,
     [phone, count],
   );
 }
@@ -356,8 +382,9 @@ export async function setTrialResponsesUsed(phone: string, count: number): Promi
 export async function markAsProspected(phone: string): Promise<void> {
   const db = getPool();
   await db.query(
-    `UPDATE trials SET status = 'contacted'
-     WHERE user_id IN (SELECT id FROM users WHERE phone = $1)`,
+    `UPDATE trial_attempts SET prospection_status = 'contacted',
+     last_prospection_at = NOW(), prospection_attempts = prospection_attempts + 1
+     WHERE phone = $1`,
     [phone],
   );
 }
