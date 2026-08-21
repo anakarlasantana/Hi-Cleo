@@ -19,7 +19,7 @@ import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { config, type Scenario } from './config.js';
-import { createAiClient } from './ai-client.js';
+import { createPersonaClient, createJudgeClient, type AiClient } from './ai-client.js';
 import {
   sendMessage,
   waitForResponse,
@@ -198,7 +198,7 @@ async function runDegradedFallback(persona: Persona): Promise<ConversationResult
 
 // ─── Conversa individual (cenários com autonomous-user) ──────────────────────
 
-async function runConversation(ai: ReturnType<typeof createAiClient>, persona: Persona): Promise<ConversationResult> {
+async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: Persona): Promise<ConversationResult> {
   const turns: Turn[] = [];
 
   // Limpar dados anteriores
@@ -300,7 +300,7 @@ async function runConversation(ai: ReturnType<typeof createAiClient>, persona: P
   const maxTurns = getMaxTurns(persona.scenario);
 
   // Primeira mensagem
-  const firstMsg = await generateFirstMessage(ai, persona, activationCode);
+  const firstMsg = await generateFirstMessage(personaAi, persona, activationCode);
   const beforeSend = new Date();
   await sendMessage(persona.phone, firstMsg);
   turns.push({ role: 'user', content: firstMsg, timestamp: beforeSend });
@@ -315,7 +315,7 @@ async function runConversation(ai: ReturnType<typeof createAiClient>, persona: P
   // Loop de conversa (usuário autônomo decide o que mandar)
   for (let turn = 0; turn < maxTurns - 1; turn++) {
     // Gera próxima mensagem do usuário
-    const nextMsg = await generateNextMessage(ai, persona, turns);
+    const nextMsg = await generateNextMessage(personaAi, persona, turns);
     if (!nextMsg) break; // Conversa acabou naturalmente
 
     const beforeNext = new Date();
@@ -334,7 +334,7 @@ async function runConversation(ai: ReturnType<typeof createAiClient>, persona: P
   }
 
   // Avaliar a conversa completa
-  const verdict = await evaluateConversation(ai, persona, turns, config.passThreshold);
+  const verdict = await evaluateConversation(judgeAi, persona, turns, config.passThreshold);
 
   return { persona, turns, verdict };
 }
@@ -370,7 +370,8 @@ async function main(): Promise<void> {
   console.log('║   Hi Cleo — Teste E2E de Qualidade (Autônomo)       ║');
   console.log('╠══════════════════════════════════════════════════════╣');
   console.log(`║  Backend:      ${config.baseUrl}`);
-  console.log(`║  Provider IA:  ${config.aiProvider}`);
+  console.log(`║  Persona:      ${config.personaProvider} (${config.personaProvider === 'ollama' ? config.ollama.model : 'API'})`);
+  console.log(`║  Judge:        ${config.judgeProvider} (${config.judgeProvider === 'ollama' ? config.ollama.model : 'API'})`);
   console.log(`║  Conversas:    ${config.conversationCount}`);
   console.log(`║  Max turnos:   ${config.maxTurnsPerConversation}`);
   console.log(`║  Threshold:    ${config.passThreshold}`);
@@ -389,9 +390,31 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // 2. Criar AI client
-  const ai = createAiClient();
-  console.log(`✅ AI client criado (${config.aiProvider})`);
+  // 2. Criar AI clients (separados por papel)
+  if (config.personaProvider === 'ollama' || config.judgeProvider === 'ollama') {
+    try {
+      const ollamaCheck = await fetch(`${config.ollama.baseUrl}/api/tags`, { signal: AbortSignal.timeout(5000) });
+      if (!ollamaCheck.ok) throw new Error(`HTTP ${ollamaCheck.status}`);
+      const tags = await ollamaCheck.json() as { models: Array<{ name: string }> };
+      const hasModel = tags.models?.some((m: { name: string }) => m.name.startsWith(config.ollama.model.split(':')[0]));
+      if (!hasModel) {
+        console.error(`❌ Modelo ${config.ollama.model} não encontrado no Ollama`);
+        console.error(`   Rode: ollama pull ${config.ollama.model}`);
+        process.exit(1);
+      }
+      console.log(`✅ Ollama saudável (${config.ollama.model})`);
+    } catch (error: any) {
+      console.error(`❌ Ollama indisponível em ${config.ollama.baseUrl}`);
+      console.error(`   Erro: ${error.message}`);
+      console.error('   Rode: ollama serve');
+      process.exit(1);
+    }
+  }
+
+  const personaAi = createPersonaClient();
+  const judgeAi = createJudgeClient();
+  console.log(`✅ Persona client criado (${config.personaProvider})`);
+  console.log(`✅ Judge client criado (${config.judgeProvider})`);
 
   // 3. Ler docs
   console.log('📖 Lendo documentação do produto...');
@@ -400,7 +423,7 @@ async function main(): Promise<void> {
 
   // 4. Gerar personas (exclui cenários técnicos)
   console.log(`🎭 Gerando ${config.conversationCount} personas via IA...`);
-  const personas = await generatePersonas(ai, docs, config.conversationCount);
+  const personas = await generatePersonas(personaAi, docs, config.conversationCount);
   console.log('   Personas geradas:');
   personas.forEach((p, i) => console.log(`   ${i + 1}. ${p.name} (${p.scenario}) — ${p.description}`));
   console.log('');
@@ -438,7 +461,7 @@ async function main(): Promise<void> {
       } else if (persona.scenario === 'degraded_fallback') {
         result = await runDegradedFallback(persona);
       } else {
-        result = await runConversation(ai, persona);
+        result = await runConversation(personaAi, judgeAi, persona);
       }
 
       results.push(result);

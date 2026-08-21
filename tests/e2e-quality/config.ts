@@ -159,8 +159,30 @@ export const config = {
     'docs/tecnico/arquitetura-ia.md',
   ],
 
-  /** Provider para o teste (deepseek | groq | gemini) */
-  aiProvider: (process.env.E2E_AI_PROVIDER || 'deepseek') as 'deepseek' | 'groq' | 'gemini',
+  /** Provider para o simulador de persona (ollama = local, grátis, sem rate limit) */
+  personaProvider: (process.env.E2E_PERSONA_PROVIDER || 'ollama') as 'ollama' | 'deepseek' | 'groq' | 'gemini',
+
+  /** Provider para o judge/evaluator (ollama = local, grátis, sem rate limit) */
+  judgeProvider: (process.env.E2E_JUDGE_PROVIDER || 'ollama') as 'ollama' | 'deepseek' | 'groq' | 'gemini',
+
+  /** Provider legado — usado quando persona e judge compartilham o mesmo provider */
+  aiProvider: (process.env.E2E_AI_PROVIDER || 'ollama') as 'ollama' | 'deepseek' | 'groq' | 'gemini',
+
+  /** Ollama — configuração do modelo local */
+  ollama: {
+    baseUrl: process.env.E2E_OLLAMA_BASE_URL || 'http://localhost:11434',
+    model: process.env.E2E_OLLAMA_MODEL || 'qwen3:8b',
+    /** Temperatura mais alta para personas (mais variação) */
+    personaTemperature: Number(process.env.E2E_OLLAMA_PERSONA_TEMP) || 0.7,
+    /** Temperatura mais baixa para o judge (mais consistente) */
+    judgeTemperature: Number(process.env.E2E_OLLAMA_JUDGE_TEMP) || 0.3,
+    /** Máximo de tokens para respostas de persona (msgs WhatsApp são curtas) */
+    personaMaxTokens: Number(process.env.E2E_OLLAMA_PERSONA_MAX_TOKENS) || 200,
+    /** Máximo de tokens para respostas do judge (avaliação pode ser mais longa) */
+    judgeMaxTokens: Number(process.env.E2E_OLLAMA_JUDGE_MAX_TOKENS) || 2000,
+    /** Timeout em ms (modelo local pode ser mais lento) */
+    timeout: Number(process.env.E2E_OLLAMA_TIMEOUT) || 120_000,
+  },
 
   /** Conexão com o banco (para ler respostas da Cleo) */
   databaseUrl: process.env.DATABASE_URL || 'postgresql://hicleo:hicleo123@localhost:5434/hicleo',
