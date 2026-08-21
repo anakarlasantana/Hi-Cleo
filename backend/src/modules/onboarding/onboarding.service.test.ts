@@ -105,7 +105,7 @@ describe('OnboardingService', () => {
       }
 
       // business_hours
-      if (systemPrompt.includes('Step: horário de atendimento')) {
+      if (systemPrompt.includes('Step: dias da semana')) {
         const timePattern = /(\d{1,2})[:h]?(\d{2})?\s*[-aàáeé]+\s*(\d{1,2})[:h]?(\d{2})?/i;
         const match = msg.match(timePattern);
         if (match) {
@@ -237,7 +237,7 @@ describe('OnboardingService', () => {
 
       const response = await service.processMessage('user-1', 'ok');
 
-      expect(response).toContain('configurado');
+      expect(response).toContain('salvas');
       expect(response).toContain('/conectar');
       expect(response).toContain('Dispositivos Vinculados');
       const state = await onboardingRepo.getState('user-1');

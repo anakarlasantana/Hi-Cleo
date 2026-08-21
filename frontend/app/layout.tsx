@@ -1,8 +1,13 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
-import { Analytics } from '@vercel/analytics/next'
+import dynamic from 'next/dynamic'
 import { Toaster } from '@/components/ui/toaster'
 import './globals.css'
+
+const Analytics = dynamic(
+  () => import('@vercel/analytics/next').then((mod) => mod.Analytics),
+  { ssr: false }
+)
 
 const inter = Inter({ 
   subsets: ["latin"],

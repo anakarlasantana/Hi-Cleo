@@ -23,6 +23,7 @@
 | [Teste E2E via Webhook](tecnico/teste-e2e-webhook.md) | Guia para testar fluxo Trial→Onboarding sem WhatsApp real |
 | [Teste E2E de Qualidade](../tests/e2e-quality/README.md) | Teste autônomo com LLM simulando usuário + avaliando respostas |
 | [Limites de IA](tecnico/limites-ia.md) | Resultados do teste de carga dos providers (gerado automaticamente) |
+| [Credenciais de Teste MP](tecnico/credenciais-teste-mercadopago.md) | Cartões, emails e cenários de teste do sandbox Mercado Pago |
 
 ## Marketing
 

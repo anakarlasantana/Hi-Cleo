@@ -11,12 +11,28 @@ export class DrizzlePlanRepository implements PlanRepository {
       .where(eq(planLimits.planName, planName))
       .limit(1);
 
-    return (data as unknown as PlanLimit) || null;
+    if (!data) return null;
+    return this.toPlanLimit(data);
   }
 
   async getAllPlanLimits(): Promise<PlanLimit[]> {
     const data = await db.select().from(planLimits);
-    return data as unknown as PlanLimit[];
+    return data.map(this.toPlanLimit);
+  }
+
+  private toPlanLimit(data: typeof planLimits.$inferSelect): PlanLimit {
+    return {
+      id: data.id,
+      plan_name: data.planName,
+      display_name: data.displayName ?? '',
+      description: data.description ?? '',
+      max_users: data.maxUsers,
+      price_monthly: data.priceMonthly * 100,
+      price_yearly_total: data.priceYearlyTotal * 100,
+      features: data.features ?? [],
+      highlighted: data.highlighted ?? false,
+      created_at: data.createdAt?.toISOString() ?? '',
+    };
   }
 
   async countActiveUsers(userId: string): Promise<number> {
