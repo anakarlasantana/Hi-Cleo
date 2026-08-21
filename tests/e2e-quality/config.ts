@@ -176,12 +176,12 @@ export const config = {
     personaTemperature: Number(process.env.E2E_OLLAMA_PERSONA_TEMP) || 0.7,
     /** Temperatura mais baixa para o judge (mais consistente) */
     judgeTemperature: Number(process.env.E2E_OLLAMA_JUDGE_TEMP) || 0.3,
-    /** Máximo de tokens para respostas de persona (msgs WhatsApp são curtas) */
-    personaMaxTokens: Number(process.env.E2E_OLLAMA_PERSONA_MAX_TOKENS) || 200,
+    /** Máximo de tokens para respostas de persona (msgs WhatsApp são curtas, mas geração de personas precisa mais) */
+    personaMaxTokens: Number(process.env.E2E_OLLAMA_PERSONA_MAX_TOKENS) || 2000,
     /** Máximo de tokens para respostas do judge (avaliação pode ser mais longa) */
     judgeMaxTokens: Number(process.env.E2E_OLLAMA_JUDGE_MAX_TOKENS) || 2000,
-    /** Timeout em ms (modelo local pode ser mais lento) */
-    timeout: Number(process.env.E2E_OLLAMA_TIMEOUT) || 120_000,
+    /** Timeout em ms (modelo local pode ser mais lento, especialmente na geração de personas) */
+    timeout: Number(process.env.E2E_OLLAMA_TIMEOUT) || 300_000,
   },
 
   /** Conexão com o banco (para ler respostas da Cleo) */

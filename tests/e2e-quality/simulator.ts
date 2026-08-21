@@ -285,7 +285,33 @@ export async function createTestUser(
     );
   }
 
+  // Criar business profile de teste (necessário para Cleo gerar respostas contextuais)
+  if (options?.onboardingComplete) {
+    await db.query(
+      `INSERT INTO businesses (id, user_id, name, type, tone_of_voice, target_audience,
+       business_hours_start, business_hours_end, created_at)
+       VALUES (gen_random_uuid(), $1, $2, 'Serviços gerais', 'friendly_professional', 'Público geral',
+       '08:00', '18:00', NOW())
+       ON CONFLICT (user_id) DO NOTHING`,
+      [userId, name],
+    );
+  }
+
   return userId;
+}
+
+/**
+ * Cria uma sessão WhatsApp de teste para simular a instância do dono.
+ * Necessário para que handleUserWhatsAppMessage encontre o user via session.
+ */
+export async function createWhatsappSession(userId: string, instanceName: string): Promise<void> {
+  const db = getPool();
+  await db.query(
+    `INSERT INTO whatsapp_sessions (id, user_id, instance_name, status, connected_at)
+     VALUES (gen_random_uuid(), $1, $2, 'active', NOW())
+     ON CONFLICT DO NOTHING`,
+    [userId, instanceName],
+  );
 }
 
 /**

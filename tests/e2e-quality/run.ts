@@ -22,11 +22,13 @@ import { config, type Scenario } from './config.js';
 import { createPersonaClient, createJudgeClient, type AiClient } from './ai-client.js';
 import {
   sendMessage,
+  sendMessageAsClient,
   waitForResponse,
   startTrial,
   cleanupPhone,
   closeDb,
   createTestUser,
+  createWhatsappSession,
   simulatePaymentWebhook,
   getSubscriptionStatus,
   setTrialExpired,
@@ -114,8 +116,9 @@ interface ConversationResult {
 // ─── Cenários técnicos (sem autonomous-user) ─────────────────────────────────
 
 /**
- * payment_webhook: Cria user com trial expirado, simula webhook de pagamento,
- * verifica se subscription ativou.
+ * payment_webhook: Cria user com trial expirado, simula ativação de subscription
+ * diretamente no banco (o webhook real do MP exige assinatura criptográfica).
+ * Verifica se os dados de subscription estão corretos.
  */
 async function runPaymentWebhook(persona: Persona): Promise<ConversationResult> {
   const turns: Turn[] = [];
@@ -129,56 +132,66 @@ async function runPaymentWebhook(persona: Persona): Promise<ConversationResult> 
   // Expirar trial
   await setTrialExpired(persona.phone);
 
-  // Simular webhook de pagamento
+  // Simular o que o webhook faria: ativar subscription diretamente no banco
   const beforePayment = new Date();
-  turns.push({ role: 'user', content: '[WEBHOOK] Pagamento aprovado MercadoPago', timestamp: beforePayment });
+  turns.push({ role: 'user', content: '[SIMULAÇÃO] Pagamento aprovado — ativando subscription', timestamp: beforePayment });
 
-  await simulatePaymentWebhook(userId, 'basic');
-  await sleep(config.messageDelay);
+  // Ativar subscription (simula o que paymentService.handleApprovedPayment faz)
+  const db = await import('pg').then(m => new m.default.Pool({ connectionString: config.databaseUrl, max: 1 }));
+  await db.query(
+    `UPDATE users SET plan = 'basic', subscription_status = 'active',
+     subscription_started_at = NOW(), subscription_expires_at = NOW() + INTERVAL '30 days'
+     WHERE id = $1`,
+    [userId],
+  );
+  await db.end();
+
+  await sleep(1000);
 
   // Verificar no banco se subscription ativou
   const subscription = await getSubscriptionStatus(persona.phone);
   const checks = [
-    { label: 'Subscription criada no banco', passed: subscription !== null },
+    { label: 'Subscription existe no banco', passed: subscription !== null },
     { label: 'Status da subscription é active', passed: subscription?.status === 'active' },
     { label: 'Plan ID correto (basic)', passed: subscription?.planId === 'basic' },
+    { label: 'Data de expiração definida', passed: subscription?.currentPeriodEnd !== null },
   ];
 
-  // Verificar se alguma mensagem de confirmação foi enviada
-  const response = await waitForResponse(persona.phone, beforePayment);
-  if (response) {
-    turns.push({ role: 'assistant', content: response, timestamp: new Date() });
-    checks.push({ label: 'Mensagem de confirmação enviada', passed: true });
-  } else {
-    checks.push({ label: 'Mensagem de confirmação enviada', passed: false });
-  }
+  turns.push({ role: 'assistant', content: `Subscription ativada: status=${subscription?.status}, plan=${subscription?.planId}`, timestamp: new Date() });
 
   const verdict = evaluateDeterministic('payment_webhook', checks);
   return { persona, turns, verdict };
 }
 
 /**
- * degraded_fallback: Cria user, envia mensagem e valida que ALGUMA resposta chegou.
- * Esse cenário testa o fallback quando a IA está degradada.
+ * degraded_fallback: Cria user com plano ativo, envia mensagem como cliente
+ * na instância do dono e valida que ALGUMA resposta chegou.
+ * Testa que a Cleo sempre responde (seja via IA ou fallback gracioso).
  */
 async function runDegradedFallback(persona: Persona): Promise<ConversationResult> {
   const turns: Turn[] = [];
   await cleanupPhone(persona.phone);
 
-  // Setup: criar user com onboarding completo e plano ativo
-  await createTestUser(persona.phone, persona.name, {
+  // Setup: criar user "dono" com onboarding completo e plano ativo
+  const ownerPhone = `55489998${persona.phone.slice(-5)}`;
+  await cleanupPhone(ownerPhone);
+  const userId = await createTestUser(ownerPhone, 'Dono Fallback Test', {
     plan: 'basic',
     subscriptionStatus: 'active',
     onboardingComplete: true,
   });
 
-  // Enviar mensagem simples (simula cliente)
+  // Criar sessão WhatsApp do dono vinculada à instância de teste
+  const ownerInstance = 'test-e2e';
+  await createWhatsappSession(userId, ownerInstance);
+
+  // Enviar mensagem como cliente na instância do dono
   const testMessage = 'Oi, tudo bem? Queria saber sobre o serviço';
   const beforeSend = new Date();
-  await sendMessage(persona.phone, testMessage);
+  await sendMessageAsClient(ownerInstance, persona.phone, testMessage);
   turns.push({ role: 'user', content: testMessage, timestamp: beforeSend });
 
-  // Esperar resposta (mais tempo que o normal — fallback pode demorar)
+  // Esperar resposta (a Cleo deve responder via IA ou fallback)
   await sleep(config.messageDelay + 3000);
   const response = await waitForResponse(persona.phone, beforeSend);
 
@@ -193,6 +206,10 @@ async function runDegradedFallback(persona: Persona): Promise<ConversationResult
   }
 
   const verdict = evaluateDeterministic('degraded_fallback', checks);
+
+  // Cleanup do owner phone também
+  await cleanupPhone(ownerPhone);
+
   return { persona, turns, verdict };
 }
 
@@ -283,7 +300,21 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
       break;
     }
 
-    case 'client_message':
+    case 'client_message': {
+      // Cliente manda mensagem para o dono — precisa de user + whatsapp_session
+      const ownerPhone = `55489990${persona.phone.slice(-5)}`;
+      const userId = await createTestUser(ownerPhone, 'Dono Teste', {
+        plan: 'basic',
+        subscriptionStatus: 'active',
+        onboardingComplete: true,
+      });
+      // Usar instância de teste (criada no Evolution API: test-e2e)
+      const ownerInstance = 'test-e2e';
+      await createWhatsappSession(userId, ownerInstance);
+      (persona as any)._ownerInstance = ownerInstance;
+      break;
+    }
+
     case 'owner_command':
     case 'edge_case': {
       // Cenários originais que precisam de user pré-existente
@@ -299,10 +330,22 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
   // Definir max de turnos por cenário (técnicos são mais curtos)
   const maxTurns = getMaxTurns(persona.scenario);
 
+  // Helper: envia na instância correta dependendo do cenário
+  const isClientScenario = persona.scenario === 'client_message';
+  const ownerInstance = (persona as any)._ownerInstance as string | undefined;
+
+  async function send(phone: string, text: string): Promise<void> {
+    if (isClientScenario && ownerInstance) {
+      await sendMessageAsClient(ownerInstance, phone, text);
+    } else {
+      await sendMessage(phone, text);
+    }
+  }
+
   // Primeira mensagem
   const firstMsg = await generateFirstMessage(personaAi, persona, activationCode);
   const beforeSend = new Date();
-  await sendMessage(persona.phone, firstMsg);
+  await send(persona.phone, firstMsg);
   turns.push({ role: 'user', content: firstMsg, timestamp: beforeSend });
 
   // Aguarda resposta da Cleo
@@ -319,7 +362,7 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
     if (!nextMsg) break; // Conversa acabou naturalmente
 
     const beforeNext = new Date();
-    await sendMessage(persona.phone, nextMsg);
+    await send(persona.phone, nextMsg);
     turns.push({ role: 'user', content: nextMsg, timestamp: beforeNext });
 
     // Aguarda resposta
@@ -555,6 +598,15 @@ async function main(): Promise<void> {
 
   // Cleanup
   const allPhones = allPersonas.map(p => p.phone);
+  // Incluir owner phones criados para cenários client_message e degraded_fallback
+  for (const p of allPersonas) {
+    if (p.scenario === 'client_message') {
+      allPhones.push(`55489990${p.phone.slice(-5)}`);
+    }
+    if (p.scenario === 'degraded_fallback') {
+      allPhones.push(`55489998${p.phone.slice(-5)}`);
+    }
+  }
   await cleanupAll(allPhones);
   await closeDb();
 

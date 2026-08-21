@@ -1,0 +1,52 @@
+[
+  {
+    "name": "Carla Mendes",
+    "scenario": "onboarding",
+    "description": "Dona de salão de beleza, acabou de pagar e vai ativar a Cleo pela primeira vez. Não é muito técnica mas sabe usar WhatsApp bem."
+  },
+  {
+    "name": "Ricardo Silva",
+    "scenario": "client_message",
+    "description": "Cliente de uma barbearia que quer saber o preço do corte e se atende no sábado. Manda mensagens curtas e informais."
+  },
+  {
+    "name": "Fernanda Costa",
+    "scenario": "owner_command",
+    "description": "Dona de clínica de estética, quer ver quantos clientes novos teve hoje e quem está sem resposta."
+  },
+  {
+    "name": "Lucas Oliveira",
+    "scenario": "edge_case",
+    "description": "Jovem que manda mensagens vagas, muda de assunto, usa gírias e testa os limites do bot. Pode mandar emoji solto ou mensagem sem contexto."
+  },
+  {
+    "name": "Ana Paula Rocha",
+    "scenario": "trial_flow",
+    "description": "Nutricionista que acabou de ativar o trial de 7 dias. Quer testar se a Cleo realmente funciona mandando mensagens de teste."
+  },
+  {
+    "name": "Marcos Ferreira",
+    "scenario": "invite_flow",
+    "description": "Dono de oficina mecânica com plano Equipe. Quer convidar seu atendente para também usar a Cleo."
+  },
+  {
+    "name": "Juliana Santos",
+    "scenario": "prospection_response",
+    "description": "Ex-trial que recebeu mensagem de prospecção. Está interessada mas quer saber o preço antes de decidir."
+  },
+  {
+    "name": "Pedro Almeida",
+    "scenario": "material_flow",
+    "description": "Personal trainer que quer enviar o PDF do treino para um cliente específico via Cleo."
+  },
+  {
+    "name": "Maria Souza",
+    "scenario": "local_classifier",
+    "description": "Cliente idosa que só manda 'bom dia' e espera uma resposta educada. Mensagens simples e curtas."
+  },
+  {
+    "name": "Bruno Nascimento",
+    "scenario": "configure_rules",
+    "description": "Dono de pet shop que quer mudar o horário de atendimento da Cleo para não responder nos domingos."
+  }
+]

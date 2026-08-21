@@ -3,9 +3,40 @@
  * Gera mensagens baseadas no contexto da conversa, sem script pré-definido.
  */
 
+import { readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import type { AiClient } from './ai-client.js';
 import type { Turn } from './simulator.js';
-import type { Scenario } from './config.js';
+import { config, type Scenario } from './config.js';
+
+const __dirname = typeof import.meta.dirname === 'string'
+  ? import.meta.dirname
+  : dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Carrega personas pré-geradas de um arquivo JSON local.
+ * Permite rodar os testes sem precisar gerar personas via IA (mais rápido, sem timeout).
+ * Gere o arquivo com: E2E_PERSONA_PROVIDER=deepseek npx tsx tests/e2e-quality/generate-personas.ts
+ */
+function loadPregeneratedPersonas(count: number): Persona[] | null {
+  try {
+    const filePath = resolve(__dirname, 'personas.json');
+    const content = readFileSync(filePath, 'utf-8');
+    const personas = JSON.parse(content) as Array<{ name: string; scenario: string; description: string; phone?: string }>;
+
+    // Pega a quantidade solicitada (ou todas se menos que count)
+    return personas.slice(0, count).map((p, i) => ({
+      name: p.name,
+      scenario: p.scenario as Scenario,
+      description: p.description,
+      phone: p.phone || `5548999${String(100 + i).padStart(3, '0')}${String(1000 + i).slice(1)}`,
+    }));
+  } catch {
+    // Arquivo não existe — vai gerar via IA
+    return null;
+  }
+}
 
 export interface Persona {
   name: string;
@@ -136,9 +167,20 @@ function getScenarioInstructions(scenario: Scenario): string {
 
 /** Gera personas automaticamente a partir dos docs */
 export async function generatePersonas(ai: AiClient, docs: string, count: number): Promise<Persona[]> {
+  // Tenta carregar personas pré-geradas (mais rápido, sem IA)
+  const pregenerated = loadPregeneratedPersonas(count);
+  if (pregenerated) {
+    console.log('   📦 Usando personas pré-geradas (tests/e2e-quality/personas.json)');
+    return pregenerated;
+  }
+
+  // Ollama local: contexto menor para não estourar timeout em CPU
+  // APIs externas podem receber mais contexto
+  const maxDocsLength = config.personaProvider === 'ollama' ? 1500 : 6000;
+
   const prompt = PERSONA_GENERATOR_PROMPT
     .replace('{count}', String(count))
-    .replace('{docs}', docs.slice(0, 6000)); // Limita pra não estourar contexto
+    .replace('{docs}', docs.slice(0, maxDocsLength));
 
   const response = await ai.generate(
     'Você gera dados de teste em JSON. Retorne APENAS JSON válido, sem markdown.',
