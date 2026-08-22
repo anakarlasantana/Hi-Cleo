@@ -20,11 +20,11 @@ export type MessageProcessor = MessageProcessorPort;
  * Se o envio falhar (Evolution API offline, rate limit, etc.),
  * a mensagem já está salva no banco — loga o erro mas não re-throw.
  */
-async function safeSend(messaging: any, options: { instance: string; to: string; text: string }, log: any): Promise<void> {
+async function safeSend(messaging: any, options: { instance: string; to: string; text: string }, logger: Logger): Promise<void> {
   try {
     await messaging.sendText(options);
   } catch (error: any) {
-    log.warn({
+    logger.warn({
       instance: options.instance,
       to: options.to.slice(0, 4) + '****',
       error: error.message,

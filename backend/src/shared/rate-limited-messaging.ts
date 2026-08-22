@@ -45,23 +45,19 @@ const DEFAULT_CONFIG: RateLimitConfig = {
   burstCooldownMs: 12000,
 };
 
-interface SendRecord {
-  timestamp: number;
-}
-
 /**
  * Controle de rate por instância usando sliding window em memória.
  * Para produção com múltiplos workers, substituir por Redis (ZRANGEBYSCORE).
  */
 class InstanceRateTracker {
-  private hourlyRecords: Map<string, SendRecord[]> = new Map();
-  private dailyRecords: Map<string, SendRecord[]> = new Map();
+  private hourlyRecords: Map<string, number[]> = new Map();
+  private dailyRecords: Map<string, number[]> = new Map();
   private burstCounters: Map<string, { count: number; lastSend: number }> = new Map();
 
   getHourlyCount(instance: string): number {
     const records = this.hourlyRecords.get(instance) || [];
     const oneHourAgo = Date.now() - 3_600_000;
-    const valid = records.filter(r => r.timestamp > oneHourAgo);
+    const valid = records.filter(ts => ts > oneHourAgo);
     this.hourlyRecords.set(instance, valid);
     return valid.length;
   }
@@ -69,7 +65,7 @@ class InstanceRateTracker {
   getDailyCount(instance: string): number {
     const records = this.dailyRecords.get(instance) || [];
     const oneDayAgo = Date.now() - 86_400_000;
-    const valid = records.filter(r => r.timestamp > oneDayAgo);
+    const valid = records.filter(ts => ts > oneDayAgo);
     this.dailyRecords.set(instance, valid);
     return valid.length;
   }
@@ -77,11 +73,11 @@ class InstanceRateTracker {
   record(instance: string): void {
     const now = Date.now();
     const hourly = this.hourlyRecords.get(instance) || [];
-    hourly.push({ timestamp: now });
+    hourly.push(now);
     this.hourlyRecords.set(instance, hourly);
 
     const daily = this.dailyRecords.get(instance) || [];
-    daily.push({ timestamp: now });
+    daily.push(now);
     this.dailyRecords.set(instance, daily);
 
     // Burst tracking
