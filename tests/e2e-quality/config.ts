@@ -159,8 +159,8 @@ export const config = {
     'docs/tecnico/arquitetura-ia.md',
   ],
 
-  /** Provider para o simulador de persona (ollama = local, grátis, sem rate limit) */
-  personaProvider: (process.env.E2E_PERSONA_PROVIDER || 'ollama') as 'ollama' | 'deepseek' | 'groq' | 'gemini',
+  /** Provider para o simulador de persona (gemini = grátis 1500 req/dia, boa qualidade PT-BR) */
+  personaProvider: (process.env.E2E_PERSONA_PROVIDER || 'gemini') as 'ollama' | 'deepseek' | 'groq' | 'gemini',
 
   /** Provider para o judge/evaluator (gemini = grátis, generoso, boa qualidade de avaliação) */
   judgeProvider: (process.env.E2E_JUDGE_PROVIDER || 'gemini') as 'ollama' | 'deepseek' | 'groq' | 'gemini',
