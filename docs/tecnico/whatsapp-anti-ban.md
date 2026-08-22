@@ -122,3 +122,11 @@ Métricas que devem ser monitoradas:
 - [Meta AI-Assisted Business Messaging Guidelines](https://developers.facebook.com/docs/whatsapp)
 - Dados de enforcement observados pela comunidade (Whapi.cloud, 50+ deployments)
 - Experiência própria: ban da instância Hi Cleo em 22/08/2026 por volume de testes automatizados
+
+## Validação
+
+O teste E2E de qualidade (`tests/e2e-quality/`) roda **sem WhatsApp conectado** graças ao padrão persist-then-dispatch. Resultado do primeiro run sem WhatsApp (22/08/2026):
+
+- 4/7 personas passaram (cenários técnicos 2/2, conversacionais 2/5)
+- Falhas são problemas reais da Cleo (não do setup de teste)
+- Prova que o sistema é testável de forma independente da infraestrutura de mensageria
