@@ -159,10 +159,10 @@ export const config = {
     'docs/tecnico/arquitetura-ia.md',
   ],
 
-  /** Provider para o simulador de persona (gemini = grátis 1500 req/dia, boa qualidade PT-BR) */
-  personaProvider: (process.env.E2E_PERSONA_PROVIDER || 'gemini') as 'ollama' | 'deepseek' | 'groq' | 'gemini',
+  /** Provider para o simulador de persona (ollama = local, sem quota, ideal para CPU com qwen3:4b) */
+  personaProvider: (process.env.E2E_PERSONA_PROVIDER || 'ollama') as 'ollama' | 'deepseek' | 'groq' | 'gemini',
 
-  /** Provider para o judge/evaluator (gemini = grátis, generoso, boa qualidade de avaliação) */
+  /** Provider para o judge/evaluator (gemini = melhor qualidade; usar ollama se quota esgotada) */
   judgeProvider: (process.env.E2E_JUDGE_PROVIDER || 'gemini') as 'ollama' | 'deepseek' | 'groq' | 'gemini',
 
   /** Provider legado — usado quando persona e judge compartilham o mesmo provider */
@@ -171,7 +171,7 @@ export const config = {
   /** Ollama — configuração do modelo local */
   ollama: {
     baseUrl: process.env.E2E_OLLAMA_BASE_URL || 'http://localhost:11434',
-    model: process.env.E2E_OLLAMA_MODEL || 'gemma3:1b',
+    model: process.env.E2E_OLLAMA_MODEL || 'qwen3:4b',
     /** Temperatura mais alta para personas (mais variação) */
     personaTemperature: Number(process.env.E2E_OLLAMA_PERSONA_TEMP) || 0.7,
     /** Temperatura mais baixa para o judge (mais consistente) */
