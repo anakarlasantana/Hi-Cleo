@@ -1,13 +1,8 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
-import dynamic from 'next/dynamic'
 import { Toaster } from '@/components/ui/toaster'
+import { Analytics } from './analytics'
 import './globals.css'
-
-const Analytics = dynamic(
-  () => import('@vercel/analytics/next').then((mod) => mod.Analytics),
-  { ssr: false }
-)
 
 const inter = Inter({ 
   subsets: ["latin"],
@@ -37,7 +32,7 @@ export default function RootLayout({
       <body className={`${inter.variable} font-sans antialiased`}>
         {children}
         <Toaster />
-        {process.env.NODE_ENV === 'production' && <Analytics />}
+        <Analytics />
       </body>
     </html>
   )
