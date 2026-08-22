@@ -180,8 +180,8 @@ export const config = {
     personaMaxTokens: Number(process.env.E2E_OLLAMA_PERSONA_MAX_TOKENS) || 80,
     /** Máximo de tokens para respostas do judge (avaliação pode ser mais longa) */
     judgeMaxTokens: Number(process.env.E2E_OLLAMA_JUDGE_MAX_TOKENS) || 300,
-    /** Timeout em ms (gemma3:1b é rápido em CPU, ~13-20s por resposta) */
-    timeout: Number(process.env.E2E_OLLAMA_TIMEOUT) || 60_000,
+    /** Timeout em ms (gemma3:1b é rápido em CPU, mas cold start pode demorar) */
+    timeout: Number(process.env.E2E_OLLAMA_TIMEOUT) || 120_000,
   },
 
   /** Conexão com o banco (para ler respostas da Cleo) */

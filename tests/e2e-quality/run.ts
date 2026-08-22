@@ -500,6 +500,16 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       console.log(`✅ Ollama saudável (${config.ollama.model})`);
+
+      // Warmup: pré-carrega o modelo na memória (evita cold start no primeiro teste)
+      console.log(`⏳ Aquecendo modelo ${config.ollama.model}...`);
+      await fetch(`${config.ollama.baseUrl}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: config.ollama.model, prompt: 'oi', stream: false, options: { num_predict: 5 } }),
+        signal: AbortSignal.timeout(120_000),
+      });
+      console.log(`✅ Modelo aquecido`);
     } catch (error: any) {
       console.error(`❌ Ollama indisponível em ${config.ollama.baseUrl}`);
       console.error(`   Erro: ${error.message}`);
