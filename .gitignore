@@ -11,3 +11,6 @@ nginx/ssl/*.key
 nginx/ssl/*.crt
 !nginx/ssl/.gitkeep
 backups/
+
+# Artefatos de sessão do Playwright MCP
+.playwright-mcp/

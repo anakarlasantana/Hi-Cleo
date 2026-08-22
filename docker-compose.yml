@@ -164,6 +164,27 @@ services:
       - hicleo-network
     restart: unless-stopped
 
+  # --- Testes E2E ---
+  # Roda com network_mode: host para acessar serviços locais (Ollama, DB, Backend)
+  # sem necessidade de configuração extra. Ativado apenas via: docker compose --profile e2e run --rm e2e-quality
+
+  e2e-quality:
+    build:
+      context: .
+      dockerfile: tests/e2e-quality/Dockerfile
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://hicleo:hicleo123@localhost:5434/hicleo
+      - BASE_URL=http://localhost:3001
+      - E2E_OLLAMA_BASE_URL=http://localhost:11434
+    depends_on:
+      backend:
+        condition: service_healthy
+    profiles:
+      - e2e
+
 # --- Rede ---
 
 networks:
