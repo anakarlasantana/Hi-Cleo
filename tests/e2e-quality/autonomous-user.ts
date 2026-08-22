@@ -214,8 +214,8 @@ export async function generateFirstMessage(
   persona: Persona,
   activationCode?: string,
 ): Promise<string> {
-  // Se é onboarding e tem código, a primeira msg É o código
-  if (persona.scenario === 'onboarding' && activationCode) {
+  // Se é onboarding ou trial_flow e tem código, a primeira msg É o código
+  if ((persona.scenario === 'onboarding' || persona.scenario === 'trial_flow') && activationCode) {
     return activationCode;
   }
 

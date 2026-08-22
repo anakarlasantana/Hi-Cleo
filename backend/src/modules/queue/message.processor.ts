@@ -222,22 +222,33 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     return;
   }
 
+  // === Persist inbound do dono + Lead de auditoria ===
+  // Salva mensagens do dono no banco para rastreabilidade e testes e2e
+  const ownerLead = await leadService.findOrCreate(user.id, phone, user.name || 'Dono');
+
+  // Salvar mensagem inbound do dono
+  await messageRepo.save(ownerLead.id, text, 'inbound');
+
   // Classificador local — resolve intents simples sem chamar IA
   const localIntent = classifyOwnerMessage(text);
   if (localIntent.resolved && localIntent.intent) {
     const response = await executeIntent(container, user, { type: localIntent.intent, entities: {}, originalText: text });
-    await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: response });
+    await messageRepo.save(ownerLead.id, response, 'outbound');
+    await safeSend(messaging, { instance: env.MONITOR_INSTANCE, to: phone, text: response }, container.logger);
     return;
   }
 
   const intent = await assistenteService.recognize(text);
   if (intent.confidence < 0.7) {
-    await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: 'Não entendi bem. Pode reformular? 🤔\n\nExemplos:\n• "quem tá sem resposta?"\n• "agenda retorno pro João amanhã"\n• "mostra meus clientes"' });
+    const fallback = 'Não entendi bem. Pode reformular? 🤔\n\nExemplos:\n• "quem tá sem resposta?"\n• "agenda retorno pro João amanhã"\n• "mostra meus clientes"';
+    await messageRepo.save(ownerLead.id, fallback, 'outbound');
+    await safeSend(messaging, { instance: env.MONITOR_INSTANCE, to: phone, text: fallback }, container.logger);
     return;
   }
 
   const response = await executeIntent(container, user, intent);
-  await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: response });
+  await messageRepo.save(ownerLead.id, response, 'outbound');
+  await safeSend(messaging, { instance: env.MONITOR_INSTANCE, to: phone, text: response }, container.logger);
 }
 
 async function handleUserWhatsAppMessage(container: any, instance: string, phone: string, text: string, pushName?: string, media?: any, messageKey?: string, webhookKey?: { remoteJid: string; fromMe: boolean; id: string }): Promise<void> {
