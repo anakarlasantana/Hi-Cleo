@@ -15,6 +15,23 @@ import { classifyClientMessage, classifyOwnerMessage } from '../ai/nodes/local-c
 
 export type MessageProcessor = MessageProcessorPort;
 
+/**
+ * Envia mensagem via WhatsApp (fire-and-forget após persistência).
+ * Se o envio falhar (Evolution API offline, rate limit, etc.),
+ * a mensagem já está salva no banco — loga o erro mas não re-throw.
+ */
+async function safeSend(messaging: any, options: { instance: string; to: string; text: string }, log: any): Promise<void> {
+  try {
+    await messaging.sendText(options);
+  } catch (error: any) {
+    log.warn({
+      instance: options.instance,
+      to: options.to.slice(0, 4) + '****',
+      error: error.message,
+    }, 'falha no envio WhatsApp (resposta já persistida no banco)');
+  }
+}
+
 export function createMessageProcessor(container: any, logger: Logger): MessageProcessorPort {
   const log = logger.child({ module: 'processor' });
 
@@ -283,8 +300,8 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
       // Transcrição falhou — enviar mensagem genérica ao invés de passar '[áudio]' pra IA
       const ownerName = user.name || 'o responsável';
       const fallbackReply = `Olá! Recebi seu áudio 🎙️ Vou repassar para ${ownerName} e te retornamos em breve!`;
-      await messaging.sendText({ instance, to: phone, text: fallbackReply });
       await messageRepo.save(lead.id, fallbackReply, 'outbound');
+      await safeSend(messaging, { instance, to: phone, text: fallbackReply }, container.logger);
       return;
     }
   }
@@ -300,15 +317,15 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
     if (!trialCheck.isValid) {
       if (trialCheck.reason === 'expired') {
         // Trial expirou — mensagem genérica pro cliente, aviso pro dono
-        await messaging.sendText({ instance, to: phone, text: `Olá! O responsável vai te responder em breve 😊` });
         await messageRepo.save(lead.id, `Olá! O responsável vai te responder em breve 😊`, 'outbound');
+        await safeSend(messaging, { instance, to: phone, text: `Olá! O responsável vai te responder em breve 😊` }, container.logger);
         return;
       }
 
       if (trialCheck.reason === 'limit_reached') {
         // Limite de respostas atingido
-        await messaging.sendText({ instance, to: phone, text: `Olá! O responsável vai te responder em breve 😊` });
         await messageRepo.save(lead.id, `Olá! O responsável vai te responder em breve 😊`, 'outbound');
+        await safeSend(messaging, { instance, to: phone, text: `Olá! O responsável vai te responder em breve 😊` }, container.logger);
 
         // Avisar o dono (uma vez — só se ainda não avisou)
         if (user.phone && trialCheck.responsesUsed === trialCheck.responsesLimit) {
@@ -342,8 +359,8 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
       businessHoursStart: start, businessHoursEnd: end,
     });
     if (customRule) {
-      await messaging.sendText({ instance, to: phone, text: customRule });
       await messageRepo.save(lead.id, customRule, 'outbound');
+      await safeSend(messaging, { instance, to: phone, text: customRule }, container.logger);
       return;
     }
   }
@@ -352,8 +369,8 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
   const localClassification = classifyClientMessage(messageText);
   if (localClassification.resolved && localClassification.intent === 'greeting') {
     const greetingReply = buildGreetingReply(business, user.name, pushName);
-    await messaging.sendText({ instance, to: phone, text: greetingReply });
     await messageRepo.save(lead.id, greetingReply, 'outbound');
+    await safeSend(messaging, { instance, to: phone, text: greetingReply }, container.logger);
     return;
   }
 
@@ -386,8 +403,8 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
       throw error;
     }
   }
-  await messaging.sendText({ instance, to: phone, text: reply });
   await messageRepo.save(lead.id, reply, 'outbound');
+  await safeSend(messaging, { instance, to: phone, text: reply }, container.logger);
 }
 
 function buildGreetingReply(business: any, ownerName: string, clientName?: string): string {
