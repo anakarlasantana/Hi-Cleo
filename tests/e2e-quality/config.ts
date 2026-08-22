@@ -162,8 +162,8 @@ export const config = {
   /** Provider para o simulador de persona (ollama = local, grátis, sem rate limit) */
   personaProvider: (process.env.E2E_PERSONA_PROVIDER || 'ollama') as 'ollama' | 'deepseek' | 'groq' | 'gemini',
 
-  /** Provider para o judge/evaluator (groq = grátis, rápido, melhor qualidade de avaliação) */
-  judgeProvider: (process.env.E2E_JUDGE_PROVIDER || 'groq') as 'ollama' | 'deepseek' | 'groq' | 'gemini',
+  /** Provider para o judge/evaluator (gemini = grátis, generoso, boa qualidade de avaliação) */
+  judgeProvider: (process.env.E2E_JUDGE_PROVIDER || 'gemini') as 'ollama' | 'deepseek' | 'groq' | 'gemini',
 
   /** Provider legado — usado quando persona e judge compartilham o mesmo provider */
   aiProvider: (process.env.E2E_AI_PROVIDER || 'ollama') as 'ollama' | 'deepseek' | 'groq' | 'gemini',
