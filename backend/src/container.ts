@@ -7,6 +7,7 @@ import { DeepSeekAdapter } from './modules/ai/adapters/deepseek.adapter.js';
 import { AiFallbackAdapter } from './modules/ai/adapters/ai-fallback.adapter.js';
 import { EvolutionApiAdapter } from './modules/evolution/evolution-api.adapter.js';
 import { EvolutionGoAdapter } from './modules/evolution/evolution-go.adapter.js';
+import { RateLimitedMessaging } from './shared/rate-limited-messaging.js';
 import { DrizzleActivationRepository, DrizzleUserRepository } from './modules/activation/activation.repository.js';
 import { DrizzleLeadRepository } from './modules/leads/leads.repository.js';
 import { DrizzleMessageRepository } from './modules/messages/messages.repository.js';
@@ -80,9 +81,20 @@ const ai = new AiFallbackAdapter(providers, logger, async (message) => {
   }
 }, env.AI_DAILY_CALL_BUDGET);
 
-const messaging = env.MESSAGING_PROVIDER === 'evolution-go'
-  ? new EvolutionGoAdapter(env.EVOLUTION_API_URL, env.EVOLUTION_API_KEY)
-  : new EvolutionApiAdapter(env.EVOLUTION_API_URL, env.EVOLUTION_API_KEY);
+const messaging = new RateLimitedMessaging(
+  env.MESSAGING_PROVIDER === 'evolution-go'
+    ? new EvolutionGoAdapter(env.EVOLUTION_API_URL, env.EVOLUTION_API_KEY)
+    : new EvolutionApiAdapter(env.EVOLUTION_API_URL, env.EVOLUTION_API_KEY),
+  logger,
+  {
+    maxPerHour: env.WA_RATE_LIMIT_PER_HOUR,
+    maxPerDay: env.WA_RATE_LIMIT_PER_DAY,
+    minDelayMs: env.WA_MIN_DELAY_MS,
+    maxDelayMs: env.WA_MAX_DELAY_MS,
+    burstMax: env.WA_BURST_MAX,
+    burstCooldownMs: env.WA_BURST_COOLDOWN_MS,
+  },
+);
 
 // --- Repositories ---
 

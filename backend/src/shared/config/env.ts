@@ -72,6 +72,14 @@ const envSchema = z.object({
   RATE_LIMIT_GLOBAL: z.coerce.number().default(200),
   RATE_LIMIT_PAYMENTS: z.coerce.number().default(5),
 
+  // Rate Limiting de saída — WhatsApp anti-ban
+  WA_RATE_LIMIT_PER_HOUR: z.coerce.number().default(25),
+  WA_RATE_LIMIT_PER_DAY: z.coerce.number().default(200),
+  WA_MIN_DELAY_MS: z.coerce.number().default(2000),
+  WA_MAX_DELAY_MS: z.coerce.number().default(5000),
+  WA_BURST_MAX: z.coerce.number().default(3),
+  WA_BURST_COOLDOWN_MS: z.coerce.number().default(12000),
+
   // Sentry (opcional — error tracking)
   SENTRY_DSN: z.string().url().optional(),
 });
