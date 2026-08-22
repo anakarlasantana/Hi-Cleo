@@ -171,17 +171,17 @@ export const config = {
   /** Ollama — configuração do modelo local */
   ollama: {
     baseUrl: process.env.E2E_OLLAMA_BASE_URL || 'http://localhost:11434',
-    model: process.env.E2E_OLLAMA_MODEL || 'qwen3:8b',
+    model: process.env.E2E_OLLAMA_MODEL || 'gemma3:1b',
     /** Temperatura mais alta para personas (mais variação) */
     personaTemperature: Number(process.env.E2E_OLLAMA_PERSONA_TEMP) || 0.7,
     /** Temperatura mais baixa para o judge (mais consistente) */
     judgeTemperature: Number(process.env.E2E_OLLAMA_JUDGE_TEMP) || 0.3,
     /** Máximo de tokens para respostas de persona (msgs WhatsApp são curtas) */
-    personaMaxTokens: Number(process.env.E2E_OLLAMA_PERSONA_MAX_TOKENS) || 150,
+    personaMaxTokens: Number(process.env.E2E_OLLAMA_PERSONA_MAX_TOKENS) || 80,
     /** Máximo de tokens para respostas do judge (avaliação pode ser mais longa) */
-    judgeMaxTokens: Number(process.env.E2E_OLLAMA_JUDGE_MAX_TOKENS) || 600,
-    /** Timeout em ms (qwen3:8b gera ~1.5 tok/s, precisa de margem generosa) */
-    timeout: Number(process.env.E2E_OLLAMA_TIMEOUT) || 300_000,
+    judgeMaxTokens: Number(process.env.E2E_OLLAMA_JUDGE_MAX_TOKENS) || 300,
+    /** Timeout em ms (gemma3:1b é rápido em CPU, ~13-20s por resposta) */
+    timeout: Number(process.env.E2E_OLLAMA_TIMEOUT) || 60_000,
   },
 
   /** Conexão com o banco (para ler respostas da Cleo) */
