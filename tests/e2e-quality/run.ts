@@ -1,23 +1,29 @@
 #!/usr/bin/env tsx
 /**
- * Teste E2E de Qualidade — Orquestrador
+ * Teste E2E de Qualidade — Orquestrador (modo persona-por-persona)
  *
  * Fluxo:
  * 1. Lê docs do produto (regras, personalidade)
  * 2. Gera personas variadas automaticamente via LLM
- * 3. Para cada persona: simula conversa completa com a Cleo real
- * 4. LLM-as-judge avalia qualidade de cada conversa
- * 5. Gera relatório final
+ * 3. Para CADA persona:
+ *    a. Simula conversa completa com a Cleo real
+ *    b. LLM-as-judge avalia qualidade
+ *    c. Se falhou → exibe erros e PAUSA para correção
+ *    d. Usuário escolhe: [c]ontinuar, [r]etry, [q]uit
+ * 4. Gera relatório final
+ *
+ * Modos:
+ *   npx tsx tests/e2e-quality/run.ts           → interativo (pausa nos erros)
+ *   npx tsx tests/e2e-quality/run.ts --no-pause → CI/CD (roda tudo sem parar)
  *
  * Cenários técnicos (payment_webhook, degraded_fallback) usam
  * chamadas diretas ao simulator em vez de autonomous-user.
- *
- * Uso: npx tsx tests/e2e-quality/run.ts
  */
 
 import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { createInterface } from 'readline';
 import { config, type Scenario } from './config.js';
 import { createPersonaClient, createJudgeClient, type AiClient } from './ai-client.js';
 import {
@@ -37,6 +43,7 @@ import {
   getMessages,
   waitForSecretaryResponse,
   cleanupAll,
+  getPool,
   type Turn,
 } from './simulator.js';
 import { generatePersonas, generateFirstMessage, generateNextMessage, type Persona } from './autonomous-user.js';
@@ -45,6 +52,26 @@ import { evaluateConversation, evaluateDeterministic, isFunctionalScenario, type
 const __dirname = typeof import.meta.dirname === 'string'
   ? import.meta.dirname
   : dirname(fileURLToPath(import.meta.url));
+
+// ─── CLI Flags ──────────────────────────────────────────────────────────────
+
+const NO_PAUSE = process.argv.includes('--no-pause');
+const PAUSE_ALWAYS = process.argv.includes('--pause-always');
+
+/** Flag --single <scenario>: roda apenas a persona do cenário especificado */
+const SINGLE_SCENARIO = (() => {
+  const idx = process.argv.indexOf('--single');
+  if (idx === -1) return null;
+  const value = process.argv[idx + 1];
+  if (!value || value.startsWith('--')) {
+    console.error('❌ --single requer um cenário. Ex: --single onboarding');
+    console.error('   Cenários disponíveis: onboarding, client_message, owner_command, edge_case,');
+    console.error('   trial_flow, payment_webhook, invite_flow, prospection_response,');
+    console.error('   material_flow, local_classifier, configure_rules, degraded_fallback');
+    process.exit(1);
+  }
+  return value as Scenario;
+})();
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -64,6 +91,20 @@ function loadDocs(): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Pergunta ao usuário via stdin e retorna a resposta.
+ * Usado para pausar entre personas quando há falha.
+ */
+function askUser(question: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise(resolve => {
+    rl.question(question, answer => {
+      rl.close();
+      resolve(answer.trim().toLowerCase());
+    });
+  });
 }
 
 function formatTable(results: ConversationResult[]): string {
@@ -105,6 +146,38 @@ function formatTable(results: ConversationResult[]): string {
   return [topSep, header, sep, ...rows, botSep].join('\n');
 }
 
+function formatSingleResult(result: ConversationResult): string {
+  const { persona, turns, verdict } = result;
+  const lines: string[] = [];
+
+  lines.push(`   💬 ${turns.length} turnos`);
+  lines.push(`   📊 Média: ${verdict.media.toFixed(2)} ${verdict.pass ? '✅ PASSOU' : '❌ FALHOU'}`);
+
+  const s = verdict.scores;
+  lines.push(`   📈 Scores: relevância=${s.relevancia.toFixed(2)} tom=${s.tom_de_voz.toFixed(2)} factual=${s.factualidade.toFixed(2)} completude=${s.completude.toFixed(2)} naturalidade=${s.naturalidade.toFixed(2)}`);
+
+  if (verdict.problemas.length > 0) {
+    lines.push('');
+    lines.push('   ⚠️  Problemas:');
+    verdict.problemas.forEach(p => lines.push(`      • ${p}`));
+  }
+
+  if (!verdict.pass && verdict.razao) {
+    lines.push(`   📝 Razão: ${verdict.razao}`);
+  }
+
+  if (!verdict.pass && turns.length > 0) {
+    lines.push('');
+    lines.push('   📜 Transcript:');
+    turns.forEach(t => {
+      const prefix = t.role === 'user' ? '   👤' : '   🤖';
+      lines.push(`   ${prefix} ${t.content.slice(0, 120)}${t.content.length > 120 ? '...' : ''}`);
+    });
+  }
+
+  return lines.join('\n');
+}
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 interface ConversationResult {
@@ -115,40 +188,29 @@ interface ConversationResult {
 
 // ─── Cenários técnicos (sem autonomous-user) ─────────────────────────────────
 
-/**
- * payment_webhook: Cria user com trial expirado, simula ativação de subscription
- * diretamente no banco (o webhook real do MP exige assinatura criptográfica).
- * Verifica se os dados de subscription estão corretos.
- */
 async function runPaymentWebhook(persona: Persona): Promise<ConversationResult> {
   const turns: Turn[] = [];
   await cleanupPhone(persona.phone);
 
-  // Setup: criar user com trial expirado
   const userId = await createTestUser(persona.phone, persona.name, {
     onboardingComplete: true,
   });
 
-  // Expirar trial
   await setTrialExpired(persona.phone);
 
-  // Simular o que o webhook faria: ativar subscription diretamente no banco
   const beforePayment = new Date();
   turns.push({ role: 'user', content: '[SIMULAÇÃO] Pagamento aprovado — ativando subscription', timestamp: beforePayment });
 
-  // Ativar subscription (simula o que paymentService.handleApprovedPayment faz)
-  const db = await import('pg').then(m => new m.default.Pool({ connectionString: config.databaseUrl, max: 1 }));
+  const db = getPool();
   await db.query(
     `UPDATE users SET plan = 'basic', subscription_status = 'active',
      subscription_started_at = NOW(), subscription_expires_at = NOW() + INTERVAL '30 days'
      WHERE id = $1`,
     [userId],
   );
-  await db.end();
 
   await sleep(1000);
 
-  // Verificar no banco se subscription ativou
   const subscription = await getSubscriptionStatus(persona.phone);
   const checks = [
     { label: 'Subscription existe no banco', passed: subscription !== null },
@@ -163,16 +225,10 @@ async function runPaymentWebhook(persona: Persona): Promise<ConversationResult> 
   return { persona, turns, verdict };
 }
 
-/**
- * degraded_fallback: Cria user com plano ativo, envia mensagem como cliente
- * na instância do dono e valida que ALGUMA resposta chegou.
- * Testa que a Cleo sempre responde (seja via IA ou fallback gracioso).
- */
 async function runDegradedFallback(persona: Persona): Promise<ConversationResult> {
   const turns: Turn[] = [];
   await cleanupPhone(persona.phone);
 
-  // Setup: criar user "dono" com onboarding completo e plano ativo
   const ownerPhone = `55489998${persona.phone.slice(-5)}`;
   await cleanupPhone(ownerPhone);
   const userId = await createTestUser(ownerPhone, 'Dono Fallback Test', {
@@ -181,17 +237,14 @@ async function runDegradedFallback(persona: Persona): Promise<ConversationResult
     onboardingComplete: true,
   });
 
-  // Criar sessão WhatsApp do dono vinculada à instância de teste
   const ownerInstance = 'test-e2e';
   await createWhatsappSession(userId, ownerInstance);
 
-  // Enviar mensagem como cliente na instância do dono
   const testMessage = 'Oi, tudo bem? Queria saber sobre o serviço';
   const beforeSend = new Date();
   await sendMessageAsClient(ownerInstance, persona.phone, testMessage);
   turns.push({ role: 'user', content: testMessage, timestamp: beforeSend });
 
-  // Esperar resposta (a Cleo deve responder via IA ou fallback)
   await sleep(config.messageDelay + 3000);
   const response = await waitForResponse(persona.phone, beforeSend);
 
@@ -206,8 +259,6 @@ async function runDegradedFallback(persona: Persona): Promise<ConversationResult
   }
 
   const verdict = evaluateDeterministic('degraded_fallback', checks);
-
-  // Cleanup do owner phone também
   await cleanupPhone(ownerPhone);
 
   return { persona, turns, verdict };
@@ -218,17 +269,15 @@ async function runDegradedFallback(persona: Persona): Promise<ConversationResult
 async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: Persona): Promise<ConversationResult> {
   const turns: Turn[] = [];
 
-  // Limpar dados anteriores
   await cleanupPhone(persona.phone);
 
-  // Setup específico por cenário
   let activationCode: string | undefined;
 
   switch (persona.scenario) {
     case 'onboarding': {
       try {
         activationCode = await startTrial(persona.phone, persona.name);
-      } catch (error: any) {
+      } catch {
         await cleanupPhone(persona.phone);
         await sleep(1000);
         activationCode = await startTrial(persona.phone, persona.name);
@@ -239,7 +288,7 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
     case 'trial_flow': {
       try {
         activationCode = await startTrial(persona.phone, persona.name);
-      } catch (error: any) {
+      } catch {
         await cleanupPhone(persona.phone);
         await sleep(1000);
         activationCode = await startTrial(persona.phone, persona.name);
@@ -248,7 +297,6 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
     }
 
     case 'invite_flow': {
-      // Criar user com onboarding completo e plano ativo
       await createTestUser(persona.phone, persona.name, {
         plan: 'basic',
         subscriptionStatus: 'active',
@@ -258,7 +306,6 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
     }
 
     case 'prospection_response': {
-      // Criar user, expirar trial, marcar como prospected
       await createTestUser(persona.phone, persona.name, {
         onboardingComplete: true,
       });
@@ -268,20 +315,17 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
     }
 
     case 'material_flow': {
-      // Criar user completo
       await createTestUser(persona.phone, persona.name, {
         plan: 'basic',
         subscriptionStatus: 'active',
         onboardingComplete: true,
       });
-      // Enviar documento antes da conversa começar
       await sendMaterial(persona.phone, 'catalogo-produtos.pdf', 'application/pdf');
-      await sleep(2000); // Dar tempo pro sistema processar o documento
+      await sleep(2000);
       break;
     }
 
     case 'local_classifier': {
-      // Criar user completo — mensagens simples não precisam de IA
       await createTestUser(persona.phone, persona.name, {
         plan: 'basic',
         subscriptionStatus: 'active',
@@ -291,7 +335,6 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
     }
 
     case 'configure_rules': {
-      // Criar user completo
       await createTestUser(persona.phone, persona.name, {
         plan: 'basic',
         subscriptionStatus: 'active',
@@ -301,14 +344,13 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
     }
 
     case 'client_message': {
-      // Cliente manda mensagem para o dono — precisa de user + whatsapp_session
       const ownerPhone = `55489990${persona.phone.slice(-5)}`;
+      await cleanupPhone(ownerPhone);
       const userId = await createTestUser(ownerPhone, 'Dono Teste', {
         plan: 'basic',
         subscriptionStatus: 'active',
         onboardingComplete: true,
       });
-      // Usar instância de teste (criada no Evolution API: test-e2e)
       const ownerInstance = 'test-e2e';
       await createWhatsappSession(userId, ownerInstance);
       (persona as any)._ownerInstance = ownerInstance;
@@ -317,7 +359,6 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
 
     case 'owner_command':
     case 'edge_case': {
-      // Cenários originais que precisam de user pré-existente
       await createTestUser(persona.phone, persona.name, {
         plan: 'basic',
         subscriptionStatus: 'active',
@@ -327,10 +368,8 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
     }
   }
 
-  // Definir max de turnos por cenário (técnicos são mais curtos)
   const maxTurns = getMaxTurns(persona.scenario);
 
-  // Helper: envia na instância correta dependendo do cenário
   const isClientScenario = persona.scenario === 'client_message';
   const ownerInstance = (persona as any)._ownerInstance as string | undefined;
 
@@ -348,50 +387,44 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
   await send(persona.phone, firstMsg);
   turns.push({ role: 'user', content: firstMsg, timestamp: beforeSend });
 
-  // Aguarda resposta da Cleo
   await sleep(config.messageDelay);
   const firstResponse = await waitForResponse(persona.phone, beforeSend);
   if (firstResponse) {
     turns.push({ role: 'assistant', content: firstResponse, timestamp: new Date() });
   }
 
-  // Loop de conversa (usuário autônomo decide o que mandar)
+  // Loop de conversa
   for (let turn = 0; turn < maxTurns - 1; turn++) {
-    // Gera próxima mensagem do usuário
     const nextMsg = await generateNextMessage(personaAi, persona, turns);
-    if (!nextMsg) break; // Conversa acabou naturalmente
+    if (!nextMsg) break;
 
     const beforeNext = new Date();
     await send(persona.phone, nextMsg);
     turns.push({ role: 'user', content: nextMsg, timestamp: beforeNext });
 
-    // Aguarda resposta
     await sleep(config.messageDelay);
     const response = await waitForResponse(persona.phone, beforeNext);
     if (response) {
       turns.push({ role: 'assistant', content: response, timestamp: new Date() });
     } else {
-      // Cleo não respondeu (pode ser normal em alguns cenários)
       break;
     }
   }
 
-  // Avaliar a conversa completa
   const verdict = await evaluateConversation(judgeAi, persona, turns, config.passThreshold);
 
   return { persona, turns, verdict };
 }
 
-/** Retorna max de turnos baseado no cenário */
 function getMaxTurns(scenario: Scenario): number {
   switch (scenario) {
     case 'local_classifier':
-      return 2; // Saudação + resposta, fim
+      return 2;
     case 'invite_flow':
     case 'configure_rules':
     case 'material_flow':
     case 'prospection_response':
-      return 4; // Conversas curtas e objetivas
+      return 4;
     case 'trial_flow':
       return 6;
     default:
@@ -399,27 +432,51 @@ function getMaxTurns(scenario: Scenario): number {
   }
 }
 
-/** Cenários técnicos que NÃO usam autonomous-user */
 const TECHNICAL_SCENARIOS: Scenario[] = ['payment_webhook', 'degraded_fallback'];
 
 function isTechnicalScenario(scenario: Scenario): boolean {
   return TECHNICAL_SCENARIOS.includes(scenario);
 }
 
+// ─── Execução de uma persona com retry ──────────────────────────────────────
+
+async function executePersona(
+  personaAi: AiClient,
+  judgeAi: AiClient,
+  persona: Persona,
+): Promise<ConversationResult> {
+  if (persona.scenario === 'payment_webhook') {
+    return runPaymentWebhook(persona);
+  } else if (persona.scenario === 'degraded_fallback') {
+    return runDegradedFallback(persona);
+  } else {
+    return runConversation(personaAi, judgeAi, persona);
+  }
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  console.log('╔══════════════════════════════════════════════════════╗');
-  console.log('║   Hi Cleo — Teste E2E de Qualidade (Autônomo)       ║');
-  console.log('╠══════════════════════════════════════════════════════╣');
+  const interactiveMode = !NO_PAUSE && process.stdin.isTTY;
+
+  console.log('╔══════════════════════════════════════════════════════════════╗');
+  console.log('║   Hi Cleo — Teste E2E de Qualidade (Persona-por-Persona)    ║');
+  console.log('╠══════════════════════════════════════════════════════════════╣');
   console.log(`║  Backend:      ${config.baseUrl}`);
   console.log(`║  Persona:      ${config.personaProvider} (${config.personaProvider === 'ollama' ? config.ollama.model : 'API'})`);
   console.log(`║  Judge:        ${config.judgeProvider} (${config.judgeProvider === 'ollama' ? config.ollama.model : 'API'})`);
   console.log(`║  Conversas:    ${config.conversationCount}`);
   console.log(`║  Max turnos:   ${config.maxTurnsPerConversation}`);
   console.log(`║  Threshold:    ${config.passThreshold}`);
-  console.log('╚══════════════════════════════════════════════════════╝');
+  console.log(`║  Modo:         ${interactiveMode ? '🖥️  Interativo (pausa nos erros)' : '🤖 Automático (sem pausa)'}`);
+  console.log('╚══════════════════════════════════════════════════════════════╝');
   console.log('');
+
+  if (interactiveMode) {
+    console.log('💡 Dica: ao falhar, você pode corrigir o código e digitar [r] para re-executar a mesma persona.');
+    console.log('   Use --no-pause para modo CI/CD (sem pausa).');
+    console.log('');
+  }
 
   // 1. Verificar saúde do backend
   try {
@@ -489,129 +546,212 @@ async function main(): Promise<void> {
 
   const allPersonas = [...personas, ...technicalPersonas];
 
-  // 6. Rodar conversas
-  const results: ConversationResult[] = [];
+  // Filtro --single: roda apenas o cenário especificado
+  const filteredPersonas = SINGLE_SCENARIO
+    ? allPersonas.filter(p => p.scenario === SINGLE_SCENARIO)
+    : allPersonas;
 
-  for (let i = 0; i < allPersonas.length; i++) {
-    const persona = allPersonas[i];
-    console.log(`━━━ [${i + 1}/${allPersonas.length}] ${persona.name} (${persona.scenario}) ━━━`);
+  if (SINGLE_SCENARIO && filteredPersonas.length === 0) {
+    console.error(`❌ Nenhuma persona encontrada para o cenário "${SINGLE_SCENARIO}"`);
+    console.error('   Verifique se o cenário está no personas.json ou se é um técnico (payment_webhook, degraded_fallback).');
+    await closeDb();
+    process.exit(1);
+  }
 
-    try {
-      let result: ConversationResult;
-
-      if (persona.scenario === 'payment_webhook') {
-        result = await runPaymentWebhook(persona);
-      } else if (persona.scenario === 'degraded_fallback') {
-        result = await runDegradedFallback(persona);
-      } else {
-        result = await runConversation(personaAi, judgeAi, persona);
-      }
-
-      results.push(result);
-
-      // Mostrar resumo da conversa
-      console.log(`   💬 ${result.turns.length} turnos`);
-      console.log(`   📊 Média: ${result.verdict.media} ${result.verdict.pass ? '✅' : '❌'}`);
-      if (result.verdict.problemas.length > 0) {
-        result.verdict.problemas.forEach(p => console.log(`   ⚠️  ${p}`));
-      }
-    } catch (error: any) {
-      console.error(`   ❌ Erro: ${error.message}`);
-      const defaultScores = isFunctionalScenario(persona.scenario)
-        ? { relevancia: 0, tom_de_voz: 0, factualidade: 0, completude: 0, naturalidade: 0, corretude_funcional: 0 }
-        : { relevancia: 0, tom_de_voz: 0, factualidade: 0, completude: 0, naturalidade: 0 };
-
-      results.push({
-        persona,
-        turns: [],
-        verdict: {
-          scores: defaultScores,
-          media: 0,
-          pass: false,
-          razao: `Erro na execução: ${error.message}`,
-          problemas: [error.message],
-        },
-      });
-    }
+  if (SINGLE_SCENARIO) {
+    console.log(`🎯 Modo --single: rodando apenas cenário "${SINGLE_SCENARIO}" (${filteredPersonas.length} persona)`);
     console.log('');
+  }
+
+  // 6. Rodar conversas PERSONA POR PERSONA
+  const results: ConversationResult[] = [];
+  let aborted = false;
+
+  for (let i = 0; i < filteredPersonas.length; i++) {
+    const persona = filteredPersonas[i];
+
+    console.log('');
+    console.log('━'.repeat(70));
+    console.log(`  🎭 [${i + 1}/${filteredPersonas.length}] ${persona.name}`);
+    console.log(`     Cenário: ${persona.scenario}`);
+    console.log(`     ${persona.description}`);
+    console.log('━'.repeat(70));
+
+    // Loop de retry para a mesma persona
+    let shouldRetry = true;
+    while (shouldRetry) {
+      shouldRetry = false;
+
+      try {
+        const result = await executePersona(personaAi, judgeAi, persona);
+        results.push(result);
+
+        // Mostrar resultado detalhado
+        console.log('');
+        console.log(formatSingleResult(result));
+        console.log('');
+
+        // Decisão: pausar ou continuar?
+        const shouldPause = interactiveMode && (
+          !result.verdict.pass || PAUSE_ALWAYS
+        );
+
+        if (shouldPause) {
+          console.log('┌─────────────────────────────────────────────────────────┐');
+          if (!result.verdict.pass) {
+            console.log('│  ❌ Persona FALHOU. Corrija o código e escolha:         │');
+          } else {
+            console.log('│  ✅ Persona PASSOU. Escolha:                            │');
+          }
+          console.log('│                                                         │');
+          console.log('│  [c] Continuar para a próxima persona                   │');
+          console.log('│  [r] Re-executar esta persona (após correção)           │');
+          console.log('│  [q] Encerrar e gerar relatório parcial                 │');
+          console.log('└─────────────────────────────────────────────────────────┘');
+
+          const answer = await askUser('\n  👉 Escolha (c/r/q): ');
+
+          if (answer === 'r' || answer === 'retry') {
+            console.log('\n  🔄 Re-executando persona...\n');
+            // Remove o resultado anterior (será substituído pelo retry)
+            results.pop();
+            shouldRetry = true;
+          } else if (answer === 'q' || answer === 'quit') {
+            console.log('\n  ⏹️  Encerrando teste...\n');
+            aborted = true;
+            break;
+          }
+          // 'c' ou qualquer outra coisa = continuar
+        }
+      } catch (error: any) {
+        console.error(`   ❌ Erro na execução: ${error.message}`);
+
+        const defaultScores = isFunctionalScenario(persona.scenario)
+          ? { relevancia: 0, tom_de_voz: 0, factualidade: 0, completude: 0, naturalidade: 0, corretude_funcional: 0 }
+          : { relevancia: 0, tom_de_voz: 0, factualidade: 0, completude: 0, naturalidade: 0 };
+
+        const errorResult: ConversationResult = {
+          persona,
+          turns: [],
+          verdict: {
+            scores: defaultScores,
+            media: 0,
+            pass: false,
+            razao: `Erro na execução: ${error.message}`,
+            problemas: [error.message],
+          },
+        };
+
+        results.push(errorResult);
+        console.log('');
+        console.log(formatSingleResult(errorResult));
+
+        if (interactiveMode) {
+          console.log('');
+          console.log('┌─────────────────────────────────────────────────────────┐');
+          console.log('│  💥 Erro de execução. Corrija e escolha:                │');
+          console.log('│                                                         │');
+          console.log('│  [c] Continuar para a próxima persona                   │');
+          console.log('│  [r] Re-executar esta persona (após correção)           │');
+          console.log('│  [q] Encerrar e gerar relatório parcial                 │');
+          console.log('└─────────────────────────────────────────────────────────┘');
+
+          const answer = await askUser('\n  👉 Escolha (c/r/q): ');
+
+          if (answer === 'r' || answer === 'retry') {
+            console.log('\n  🔄 Re-executando persona...\n');
+            results.pop();
+            shouldRetry = true;
+          } else if (answer === 'q' || answer === 'quit') {
+            console.log('\n  ⏹️  Encerrando teste...\n');
+            aborted = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (aborted) break;
   }
 
   // 7. Relatório final
   console.log('');
-  console.log('═══════════════════════════════════════════════════════════════════════════════════════════════════════');
+  console.log('═'.repeat(100));
   console.log('                                    RELATÓRIO FINAL');
-  console.log('═══════════════════════════════════════════════════════════════════════════════════════════════════════');
+  if (aborted) {
+    console.log(`                            (parcial — ${results.length}/${filteredPersonas.length} personas executadas)`);
+  }
+  console.log('═'.repeat(100));
   console.log('');
-  console.log(formatTable(results));
-  console.log('');
 
-  const passed = results.filter(r => r.verdict.pass).length;
-  const total = results.length;
-  const avgScore = results.reduce((sum, r) => sum + r.verdict.media, 0) / total;
-
-  console.log(`📊 Resultado: ${passed}/${total} conversas passaram (threshold: ${config.passThreshold})`);
-  console.log(`📊 Score médio: ${avgScore.toFixed(2)}`);
-
-  // Separar resultados por tipo
-  const conversationalResults = results.filter(r => !isTechnicalScenario(r.persona.scenario));
-  const technicalResults = results.filter(r => isTechnicalScenario(r.persona.scenario));
-
-  if (technicalResults.length > 0) {
-    const techPassed = technicalResults.filter(r => r.verdict.pass).length;
-    console.log(`📊 Técnicos: ${techPassed}/${technicalResults.length} passaram`);
-  }
-
-  if (conversationalResults.length > 0) {
-    const convPassed = conversationalResults.filter(r => r.verdict.pass).length;
-    const convAvg = conversationalResults.reduce((sum, r) => sum + r.verdict.media, 0) / conversationalResults.length;
-    console.log(`📊 Conversacionais: ${convPassed}/${conversationalResults.length} passaram (média: ${convAvg.toFixed(2)})`);
-  }
-
-  // Problemas encontrados
-  const allProblems = results.flatMap(r => r.verdict.problemas);
-  if (allProblems.length > 0) {
+  if (results.length > 0) {
+    console.log(formatTable(results));
     console.log('');
-    console.log('⚠️  Problemas encontrados:');
-    [...new Set(allProblems)].forEach(p => console.log(`   • ${p}`));
-  }
 
-  // Conversas que falharam (detalhes)
-  const failed = results.filter(r => !r.verdict.pass);
-  if (failed.length > 0) {
-    console.log('');
-    console.log('❌ Conversas que falharam:');
-    for (const f of failed) {
-      console.log(`\n   [${f.persona.name}] — ${f.verdict.razao}`);
-      if (f.turns.length > 0) {
-        console.log('   Transcript:');
-        f.turns.slice(0, 6).forEach(t => {
-          const prefix = t.role === 'user' ? '   👤' : '   🤖';
-          console.log(`   ${prefix} ${t.content.slice(0, 100)}`);
-        });
-        if (f.turns.length > 6) console.log(`   ... (${f.turns.length - 6} turnos omitidos)`);
+    const passed = results.filter(r => r.verdict.pass).length;
+    const total = results.length;
+    const avgScore = results.reduce((sum, r) => sum + r.verdict.media, 0) / total;
+
+    console.log(`📊 Resultado: ${passed}/${total} conversas passaram (threshold: ${config.passThreshold})`);
+    console.log(`📊 Score médio: ${avgScore.toFixed(2)}`);
+
+    // Separar resultados por tipo
+    const conversationalResults = results.filter(r => !isTechnicalScenario(r.persona.scenario));
+    const technicalResults = results.filter(r => isTechnicalScenario(r.persona.scenario));
+
+    if (technicalResults.length > 0) {
+      const techPassed = technicalResults.filter(r => r.verdict.pass).length;
+      console.log(`📊 Técnicos: ${techPassed}/${technicalResults.length} passaram`);
+    }
+
+    if (conversationalResults.length > 0) {
+      const convPassed = conversationalResults.filter(r => r.verdict.pass).length;
+      const convAvg = conversationalResults.reduce((sum, r) => sum + r.verdict.media, 0) / conversationalResults.length;
+      console.log(`📊 Conversacionais: ${convPassed}/${conversationalResults.length} passaram (média: ${convAvg.toFixed(2)})`);
+    }
+
+    // Problemas encontrados
+    const allProblems = results.flatMap(r => r.verdict.problemas);
+    if (allProblems.length > 0) {
+      console.log('');
+      console.log('⚠️  Problemas encontrados:');
+      [...new Set(allProblems)].forEach(p => console.log(`   • ${p}`));
+    }
+
+    // Conversas que falharam (resumo)
+    const failed = results.filter(r => !r.verdict.pass);
+    if (failed.length > 0) {
+      console.log('');
+      console.log('❌ Personas que falharam:');
+      for (const f of failed) {
+        console.log(`   • [${f.persona.name}] (${f.persona.scenario}) — ${f.verdict.razao}`);
       }
     }
-  }
 
-  console.log('');
-  console.log('═══════════════════════════════════════════════════════════════════════════════════════════════════════');
+    console.log('');
+    console.log('═'.repeat(100));
 
-  // Cleanup
-  const allPhones = allPersonas.map(p => p.phone);
-  // Incluir owner phones criados para cenários client_message e degraded_fallback
-  for (const p of allPersonas) {
-    if (p.scenario === 'client_message') {
-      allPhones.push(`55489990${p.phone.slice(-5)}`);
+    // Cleanup
+    const allPhones = results.map(r => r.persona.phone);
+    for (const r of results) {
+      if (r.persona.scenario === 'client_message') {
+        allPhones.push(`55489990${r.persona.phone.slice(-5)}`);
+      }
+      if (r.persona.scenario === 'degraded_fallback') {
+        allPhones.push(`55489998${r.persona.phone.slice(-5)}`);
+      }
     }
-    if (p.scenario === 'degraded_fallback') {
-      allPhones.push(`55489998${p.phone.slice(-5)}`);
-    }
-  }
-  await cleanupAll(allPhones);
-  await closeDb();
+    await cleanupAll(allPhones);
+    await closeDb();
 
-  // Exit code baseado no resultado
-  process.exit(passed === total ? 0 : 1);
+    // Exit code
+    const allPassed = passed === total;
+    process.exit(allPassed ? 0 : 1);
+  } else {
+    console.log('   Nenhuma persona foi executada.');
+    await closeDb();
+    process.exit(1);
+  }
 }
 
 main().catch(err => {

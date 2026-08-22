@@ -139,8 +139,8 @@ export const config = {
   /** Nome da instância Evolution (deve bater com MONITOR_INSTANCE) */
   instance: process.env.MONITOR_INSTANCE || 'secretary',
 
-  /** Delay entre mensagens (ms) — tempo pro backend processar via fila */
-  messageDelay: Number(process.env.E2E_MESSAGE_DELAY) || 5000,
+  /** Delay entre mensagens (ms) — tempo pro backend processar via fila + rate limiter de saída (2-5s extra) */
+  messageDelay: Number(process.env.E2E_MESSAGE_DELAY) || 8000,
 
   /** Número de conversas autônomas a gerar */
   conversationCount: Number(process.env.E2E_CONVERSATION_COUNT) || 5,
@@ -176,11 +176,11 @@ export const config = {
     personaTemperature: Number(process.env.E2E_OLLAMA_PERSONA_TEMP) || 0.7,
     /** Temperatura mais baixa para o judge (mais consistente) */
     judgeTemperature: Number(process.env.E2E_OLLAMA_JUDGE_TEMP) || 0.3,
-    /** Máximo de tokens para respostas de persona (msgs WhatsApp são curtas, mas geração de personas precisa mais) */
-    personaMaxTokens: Number(process.env.E2E_OLLAMA_PERSONA_MAX_TOKENS) || 2000,
+    /** Máximo de tokens para respostas de persona (msgs WhatsApp são curtas) */
+    personaMaxTokens: Number(process.env.E2E_OLLAMA_PERSONA_MAX_TOKENS) || 150,
     /** Máximo de tokens para respostas do judge (avaliação pode ser mais longa) */
-    judgeMaxTokens: Number(process.env.E2E_OLLAMA_JUDGE_MAX_TOKENS) || 2000,
-    /** Timeout em ms (modelo local pode ser mais lento, especialmente na geração de personas) */
+    judgeMaxTokens: Number(process.env.E2E_OLLAMA_JUDGE_MAX_TOKENS) || 600,
+    /** Timeout em ms (qwen3:8b gera ~1.5 tok/s, precisa de margem generosa) */
     timeout: Number(process.env.E2E_OLLAMA_TIMEOUT) || 300_000,
   },
 

@@ -16,7 +16,7 @@ export interface Turn {
 const { Pool } = pg;
 let pool: pg.Pool | null = null;
 
-function getPool(): pg.Pool {
+export function getPool(): pg.Pool {
   if (!pool) {
     pool = new Pool({ connectionString: config.databaseUrl, max: 3 });
   }

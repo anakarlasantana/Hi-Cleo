@@ -28,4 +28,4 @@ ENV NODE_PATH=/app/backend/node_modules
 
 WORKDIR /app/backend
 
-CMD ["./node_modules/.bin/tsx", "../tests/e2e-quality/run.ts"]
+CMD ["./node_modules/.bin/tsx", "../tests/e2e-quality/run.ts", "--no-pause"]
