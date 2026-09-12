@@ -28,4 +28,8 @@ ENV NODE_PATH=/app/backend/node_modules
 
 WORKDIR /app/backend
 
-CMD ["./node_modules/.bin/tsx", "../tests/e2e-quality/run.ts", "--no-pause"]
+# ENTRYPOINT fixo: args passados via `docker compose run e2e-quality <args>`
+# são anexados a este comando (CMD vira só o default).
+# Sem entrypoint, o override do CMD virava `node --single` → "bad option".
+ENTRYPOINT ["./node_modules/.bin/tsx", "../tests/e2e-quality/run.ts"]
+CMD ["--no-pause"]

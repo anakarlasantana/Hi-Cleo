@@ -33,12 +33,15 @@ function createOllamaClient(options: {
         `${baseUrl}/api/chat`,
         {
           model,
+          // Desativa o modo "thinking" (qwen3 é thinking model por padrão):
+          // com num_predict baixo (80), o budget inteiro era consumido pelo
+          // raciocínio interno antes de qualquer token de saída → content vazio.
+          think: false,
           messages: [
             { role: 'system', content: system },
             { role: 'user', content: user },
           ],
           stream: false,
-          think: false,
           options: {
             temperature: options.temperature,
             num_predict: options.maxTokens,
@@ -126,15 +129,38 @@ function createGeminiClient(options: {
 
   return {
     async generate(system, user) {
-      const response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
-        {
-          contents: [{ parts: [{ text: `${system}\n\n${user}` }] }],
-          generationConfig: { temperature: options.temperature, maxOutputTokens: options.maxTokens },
-        },
-        { timeout: 60_000 },
-      );
-      return response.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+      let lastError: unknown;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          const response = await axios.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
+            {
+              contents: [{ parts: [{ text: `${system}\n\n${user}` }] }],
+              generationConfig: { temperature: options.temperature, maxOutputTokens: options.maxTokens },
+            },
+            { timeout: 60_000 },
+          );
+          // Concatena todas as parts (modelos com "thinking" podem emitir partes de pensamento)
+          const parts = response.data.candidates?.[0]?.content?.parts as
+            | { text?: string; thought?: boolean }[]
+            | undefined;
+          const text = (parts ?? [])
+            .filter(p => p.text && p.thought !== true)
+            .map(p => p.text)
+            .join('')
+            .trim();
+          return text;
+        } catch (err) {
+          lastError = err;
+          const status = (err as { response?: { status?: number } }).response?.status;
+          // Retenta apenas em erros transitórios (5xx) ou rate limit (429)
+          if (status !== undefined && status < 500 && status !== 429) break;
+          const waitMs = 2000 * 2 ** attempt;
+          console.warn(`   ⚠️  Gemini indisponível (HTTP ${status ?? 'erro'}) — retry em ${waitMs / 1000}s (${attempt + 1}/4)...`);
+          await new Promise(r => setTimeout(r, waitMs));
+        }
+      }
+      throw lastError;
     },
   };
 }
@@ -170,9 +196,14 @@ export function createPersonaClient(): AiClient {
  * Default: Ollama local (grátis, temperatura baixa para consistência).
  */
 export function createJudgeClient(): AiClient {
+  // Judges via API (Gemini thinking consome tokens internamente) precisam de
+  // janela maior que o default local (300) para não truncar o JSON de saída.
+  const maxTokens = config.judgeProvider !== 'ollama'
+    ? Math.max(config.ollama.judgeMaxTokens, 2048)
+    : config.ollama.judgeMaxTokens;
   return createClientForProvider(config.judgeProvider, {
     temperature: config.ollama.judgeTemperature,
-    maxTokens: config.ollama.judgeMaxTokens,
+    maxTokens,
   });
 }
 

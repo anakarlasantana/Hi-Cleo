@@ -48,5 +48,10 @@
     "name": "Bruno Nascimento",
     "scenario": "configure_rules",
     "description": "Dono de pet shop que quer mudar o horário de atendimento da Cleo para não responder nos domingos."
+  },
+  {
+    "name": "Ricardo Teixeira",
+    "scenario": "disconnect_collaborator",
+    "description": "Dono de distribuidora com plano Equipe. Precisa remover o acesso de um colaborador que saiu da empresa e pede à Cleo diretamente pelo chat."
   }
 ]

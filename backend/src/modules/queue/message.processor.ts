@@ -76,19 +76,33 @@ export function createMessageProcessor(container: any, logger: Logger): MessageP
 async function handleSecretaryMessage(container: any, phone: string, text: string, media?: any, messageKey?: string, webhookKey?: { remoteJid: string; fromMe: boolean; id: string }): Promise<void> {
   const { messaging, activationService, onboardingService, assistenteService, userRepo, termsConsentService, messageRepo, leadService, trialRepo } = container;
 
+  /**
+   * Responde pela instância secretary seguindo o padrão persist-then-dispatch:
+   * salva a resposta no banco (quando há lead para vincular) ANTES de enviar,
+   * e tolera falha do WhatsApp (safeSend) — sem isso, um 500 da Evolution API
+   * derrubava o job e a resposta se perdia silenciosamente.
+   */
+  const respond = async (replyText: string, leadId?: string): Promise<void> => {
+    if (leadId) {
+      await messageRepo.save(leadId, replyText, 'outbound');
+    }
+    await safeSend(messaging, { instance: env.MONITOR_INSTANCE, to: phone, text: replyText }, container.logger);
+  };
+
   // === Detecção de resposta de prospecção pós-trial ===
   const trialAttempt = await trialRepo.findByPhone(phone);
   if (trialAttempt && trialAttempt.prospection_status === 'contacted') {
     const lowerText = text.toLowerCase();
 
+    // Lead para persistência das respostas (quando o trial já tem user vinculado)
+    const trialLeadId = trialAttempt.trial_user_id
+      ? (await leadService.findOrCreate(trialAttempt.trial_user_id, phone, phone)).id
+      : undefined;
+
     // Opt-out: resposta negativa
     if (/\b(não|nao|para|cancela|remove|sai|chega|pare)\b/.test(lowerText)) {
       await trialRepo.updateProspectionStatus(trialAttempt.id, 'not_interested');
-      await messaging.sendText({
-        instance: env.MONITOR_INSTANCE,
-        to: phone,
-        text: 'Entendido! Não vou mais entrar em contato. Se mudar de ideia: hicleo.com.br 😊',
-      });
+      await respond('Entendido! Não vou mais entrar em contato. Se mudar de ideia: hicleo.com.br 😊', trialLeadId);
       return;
     }
 
@@ -96,11 +110,7 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     if (/\b(sim|quero|como|quanto|assinar|plano|continuar|voltar|reativar)\b/.test(lowerText)) {
       await trialRepo.updateProspectionStatus(trialAttempt.id, 'interested');
       const checkoutUrl = env.CHECKOUT_URL || 'https://hicleo.com.br/checkout';
-      await messaging.sendText({
-        instance: env.MONITOR_INSTANCE,
-        to: phone,
-        text: `Ótimo! 🎉 Acesse aqui pra escolher seu plano: ${checkoutUrl}\n\nQualquer dúvida, manda aqui que eu ajudo!`,
-      });
+      await respond(`Ótimo! 🎉 Acesse aqui pra escolher seu plano: ${checkoutUrl}\n\nQualquer dúvida, manda aqui que eu ajudo!`, trialLeadId);
       return;
     }
 
@@ -116,11 +126,11 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
       // Diferenciar: código já usado vs expirado vs não existe
       const existing = await container.activationRepo.findCodeByValue(code);
       if (existing && existing.used) {
-        await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: '✅ Esse código já foi ativado! Se você já completou a configuração, basta conectar seu WhatsApp na página que ficou aberta no computador.\n\nSe precisa de ajuda, me diz aqui!' });
+        await respond('✅ Esse código já foi ativado! Se você já completou a configuração, basta conectar seu WhatsApp na página que ficou aberta no computador.\n\nSe precisa de ajuda, me diz aqui!');
       } else if (existing && new Date(existing.expires_at) < new Date()) {
-        await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: '⏰ Esse código expirou. Acesse o site e solicite um novo código de ativação.' });
+        await respond('⏰ Esse código expirou. Acesse o site e solicite um novo código de ativação.');
       } else {
-        await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: '❌ Código não encontrado. Verifique se digitou corretamente (formato: ATIVAR-XXXX).' });
+        await respond('❌ Código não encontrado. Verifique se digitou corretamente (formato: ATIVAR-XXXX).');
       }
       return;
     }
@@ -128,15 +138,21 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     const user = await activationService.activateUser(code, phone, text);
     const userName = user.name || 'parceiro(a)';
     const introMessage = onboardingService.getIntroMessage(userName);
-    await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: introMessage });
+    // Persiste a resposta ANTES de enviar — sem isso, falha do WhatsApp perdia o onboarding
+    const activationLead = await leadService.findOrCreate(user.id, phone, userName);
+    await respond(introMessage, activationLead.id);
     return;
   }
 
   const user = await userRepo.findByPhone(phone);
   if (!user) {
-    await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: 'Não encontrei seu cadastro. Se você já pagou, envie seu código de ativação (formato: ATIVAR-XXXX).' });
+    await respond('Não encontrei seu cadastro. Se você já pagou, envie seu código de ativação (formato: ATIVAR-XXXX).');
     return;
   }
+
+  // Lead de auditoria do dono — criado cedo para persistir TODAS as respostas
+  // da secretária (onboarding, termos, comandos) no padrão persist-then-dispatch
+  const ownerLead = await leadService.findOrCreate(user.id, phone, user.name || 'Dono');
 
   const onboardingComplete = await onboardingService.isComplete(user.id);
   if (!onboardingComplete) {
@@ -145,17 +161,17 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     if (media?.type === 'audio' && (text === '[áudio]' || !text)) {
       // Aviso de áudio longo (>5 min)
       if (media.durationSeconds && media.durationSeconds > 300) {
-        await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: '⏳ Recebi um áudio longo, pode demorar alguns segundos pra eu processar...' });
+        await respond('⏳ Recebi um áudio longo, pode demorar alguns segundos pra eu processar...', ownerLead.id);
       }
       const transcribed = await transcribeAudio(phone, media.rawMessage, webhookKey, media.durationSeconds);
       if (!transcribed) {
-        await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: 'Não consegui entender o áudio. Pode mandar por texto? 😊' });
+        await respond('Não consegui entender o áudio. Pode mandar por texto? 😊', ownerLead.id);
         return;
       }
       messageText = transcribed;
     }
     const response = await onboardingService.processMessage(user.id, messageText);
-    await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: response });
+    await respond(response, ownerLead.id);
     return;
   }
 
@@ -165,15 +181,14 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     const accepted = await interpretConfirmation(container.ai, text);
     if (accepted) {
       await termsConsentService.recordConsent(user.id, CURRENT_TERMS_VERSION);
-      await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: '✅ Termos aceitos! Pode continuar usando normalmente.' });
+      await respond('✅ Termos aceitos! Pode continuar usando normalmente.', ownerLead.id);
       return;
     }
 
-    await messaging.sendText({
-      instance: env.MONITOR_INSTANCE,
-      to: phone,
-      text: `Atualizamos nossos Termos de Uso. Para continuar usando a Cleo, acesse e aceite os novos termos: ${env.SITE_URL}/termos\n\nApós ler, me mande "aceito" ou "ok" pra continuar.`,
-    });
+    await respond(
+      `Atualizamos nossos Termos de Uso. Para continuar usando a Cleo, acesse e aceite os novos termos: ${env.SITE_URL}/termos\n\nApós ler, me mande "aceito" ou "ok" pra continuar.`,
+      ownerLead.id,
+    );
     return;
   }
 
@@ -182,20 +197,20 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     if (media.type === 'audio') {
       // Aviso de áudio longo (>5 min)
       if (media.durationSeconds && media.durationSeconds > 300) {
-        await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: '⏳ Recebi um áudio longo, pode demorar alguns segundos pra eu processar...' });
+        await respond('⏳ Recebi um áudio longo, pode demorar alguns segundos pra eu processar...', ownerLead.id);
       }
       const transcribed = await transcribeAudio(phone, media.rawMessage, webhookKey, media.durationSeconds);
       if (transcribed) {
         const intent = await assistenteService.recognize(transcribed);
         if (intent.confidence < 0.7) {
-          await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: 'Não entendi bem o áudio. Pode reformular? 🤔\n\nExemplos:\n• "quem tá sem resposta?"\n• "agenda retorno pro João amanhã"\n• "mostra meus clientes"' });
+          await respond('Não entendi bem o áudio. Pode reformular? 🤔\n\nExemplos:\n• "quem tá sem resposta?"\n• "agenda retorno pro João amanhã"\n• "mostra meus clientes"', ownerLead.id);
           return;
         }
         const response = await executeIntent(container, user, intent);
-        await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: response });
+        await respond(response, ownerLead.id);
         return;
       }
-      await messaging.sendText({ instance: env.MONITOR_INSTANCE, to: phone, text: 'Não consegui entender o áudio. Pode mandar por texto? 😊' });
+      await respond('Não consegui entender o áudio. Pode mandar por texto? 😊', ownerLead.id);
       return;
     }
 
@@ -214,17 +229,12 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     const mediaLabel = media.type === 'document' ? `📄 ${media.fileName || 'documento'}` :
       media.type === 'image' ? '🖼️ imagem' : '🎬 vídeo';
 
-    await messaging.sendText({
-      instance: env.MONITOR_INSTANCE,
-      to: phone,
-      text: `✅ Material recebido: ${mediaLabel}\n\nQuando quiser enviar pra alguém, me diga: "manda material pro [nome]"`,
-    });
+    await respond(
+      `✅ Material recebido: ${mediaLabel}\n\nQuando quiser enviar pra alguém, me diga: "manda material pro [nome]"`,
+      ownerLead.id,
+    );
     return;
   }
-
-  // === Persist inbound do dono + Lead de auditoria ===
-  // Salva mensagens do dono no banco para rastreabilidade e testes e2e
-  const ownerLead = await leadService.findOrCreate(user.id, phone, user.name || 'Dono');
 
   // Salvar mensagem inbound do dono
   await messageRepo.save(ownerLead.id, text, 'inbound');

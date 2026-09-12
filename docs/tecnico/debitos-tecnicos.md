@@ -996,6 +996,118 @@ _Estimativa: 0.75 dia_
 
 ---
 
+## 🧪 COBERTURA DE TESTES E2E — LACUNAS
+
+> Análise de cobertura do `tests/e2e-quality` vs fluxos que impactam a experiência do usuário.
+> Modelo atual: personas autônomas + LLM-as-judge (conversacionais) e verificações determinísticas (técnicos).
+>
+> **Já coberto:** onboarding, client_message, owner_command (genérico), edge_case, trial_flow,
+> payment_webhook, invite_flow, prospection_response, material_flow, local_classifier,
+> configure_rules, degraded_fallback.
+
+### 60. E2E — Assinatura expirada: Cleo 100% inoperante
+
+**Status:** ✅ **Implementado** (set/2026) — cenário `subscription_expired` passando no `tests/e2e-quality`.
+**Prioridade:** 🔴 Alta (bug silencioso grave se vazar resposta)
+**Cenário:** Assinante pago com `subscription_expires_at` no passado. Cliente manda mensagem → a Cleo NÃO pode responder nada (nem dono, nem cliente).
+**Tipo:** `deterministic` — setup: user com expiração no passado + sessão ativa → `sendMessageAsClient` → check de que **não** existe resposta outbound no banco.
+**Cobertura extra:** o setup do cenário exigiu correção real em produção — `terms.repository.ts` retornava camelCase (bug que forçava aceite de termos em loop, bloqueando qualquer comando de dono).
+
+### 61. E2E — Renovação de assinatura (lembretes + re-pagamento)
+
+**Status:** ✅ **Implementado** (set/2026) — cenário `subscription_renewal` passando (renovação antecipada = expiração somada a partir da data antiga).
+**Prioridade:** 🔴 Alta (receita)
+**Cenário:** Lembrete -3d e -1d com link de checkout (subscription cron) + renovação antecipada soma a partir da expiração atual (não penaliza quem paga adiantado).
+**Tipo:** `deterministic` — check do lembrete no banco (messages outbound) + simular pagamento e validar nova `subscription_expires_at` estendida corretamente.
+**Pendente:** lembretes -3d/-1d do cron de billing (cobertos apenas via renovação; simular o cron é item opcional).
+
+### 62. E2E — Cancelamento + reativação (grace period 30 dias)
+
+**Status:** ✅ **Implementado** (chamada real ao `POST /api/cancellation/request`, status → `cancelled`, `access_until` ≈ start+30d). Reativação/purge pós-30d **não** cobertos.
+**Prioridade:** 🔴 Alta (risco legal/CDC)
+**Cenário:** Dono solicita cancelamento → acesso mantido até fim do período → confirmação via WhatsApp (data limite, reembolso 7 dias CDC) → reativação em 30 dias sem perda de dados → purga após 30 dias.
+**Tipo:** `hybrid` — conversa pedindo cancelamento + checks no DB (`cancellations`, status da subscription).
+
+### 63. E2E — Disconnect de colaborador (`disconnect_user`)
+
+**Status:** ✅ **Implementado** (híbrido, passa 0.92): força primeira mensagem `desconecta <phone>`, cria colaborador via `createCollaborator`, valida `whatsapp_sessions.status='disconnected'` e vaga liberada.
+**Prioridade:** 🔴 Alta
+**Cenário:** Owner diz "desconecta 11999887766" → sessão do colaborador removida, slot liberado, invite revogado (status "revoked").
+**Tipo:** `hybrid` — reaproveitar setup do `invite_flow` (colaborador conectado) + checks determinísticos.
+**Cobertura extra:** expôs bug em `recognize-intent.ts` — fallback offline não extraía `phone` de comandos (`Qual número...?` mesmo com número na mensagem) nem reconhecia sinônimos ("cancela número", "remove acesso", "desvincula" etc.); corrigido com `extractPhoneEntity` + expansão de keywords + testes unitários (21 casos).
+
+### 64. E2E — Agendar follow-up + disparo do cron
+
+**Status:** Sem cobertura do intent `schedule_followup` nem do `follow-up.cron`
+**Prioridade:** 🟡 Média-Alta (funcionalidade flagship do marketing)
+**Cenário:** "agenda retorno pro João amanhã 14h" → registro em `follow_ups` → joga `scheduled_at` pro passado via SQL → cron dispara lembrete "🔔 Lembrete: ... Contato: ..." no formato correto (omite linha se sem telefone).
+**Tipo:** `hybrid` — comando via persona + checks determinísticos (`getFollowUps` já existe no simulator).
+
+### 65. E2E — Contatos ignorados (ciclo completo)
+
+**Status:** Sem cobertura dos intents `ignore_contact`, `list_ignored`, `stop_ignoring`
+**Prioridade:** 🟡 Média-Alta (falha = Cleo respondendo contato pessoal do dono)
+**Cenário:** "ignora 11999..." → contato manda msg → Cleo NÃO responde → "quem tá ignorado?" lista → "para de ignorar 11999..." → contato volta a ser respondido.
+**Tipo:** `hybrid` (conversacional + check de ausência/presença de resposta).
+
+### 66. E2E — Intents de consulta específicos
+
+**Status:** `owner_command` é genérico; intents isolados sem cobertura
+**Prioridade:** 🟡 Média
+**Cenários:** `help` ("o que você faz?"), `list_leads`, `leads_today`, `hot_leads`, `lead_status` ("como tá o João?" — exige lead pré-semeado no banco).
+**Tipo:** `hybrid`, max 3-4 turnos por intent.
+
+### 67. E2E — Onboarding do colaborador (lado convidado)
+
+**Status:** Sem cobertura (invite_flow para no envio do convite)
+**Prioridade:** 🟡 Média
+**Cenário:** Colaborador recebe token → aceita termos LGPD → onboarding leve (nome + horário) → QR Code. Exercita endpoints `/invites/validate/:token`, `/invites/:token/accept`, `/invites/:token/qrcode`.
+**Tipo:** `deterministic` (chamadas HTTP diretas, estilo `runPaymentWebhook`).
+
+### 68. E2E — Fora do horário comercial (`fora_do_horario`)
+
+**Status:** Sem cobertura da regra (só indireto via edge_case)
+**Prioridade:** 🟢 Baixa-Média
+**Cenário:** Business hours 08:00–18:00 + mensagem de cliente fora do expediente → resposta customizada configurada no onboarding.
+**Tipo:** `deterministic` (mockar/temporizar timestamp).
+
+### 69. E2E — Comando por áudio (transcrição Whisper)
+
+**Status:** Sem cobertura de `transcribeAudio`
+**Prioridade:** 🟢 Baixa (difícil simular — Evolution busca mídia real)
+**Cenário:** Webhook com `audioMessage` → transcrição → intent executada. Provavelmente requer mock da Evolution/media.
+
+### 70. E2E — Primeira mensagem / boas-vindas (`primeira_mensagem`)
+
+**Status:** Sem teste explícito (só indireto em client_message)
+**Prioridade:** 🟢 Baixa
+**Cenário:** Contato novo manda primeira mensagem → mensagem de boas-vindas configurada é disparada.
+**Tipo:** `deterministic`/`hybrid`.
+
+### 71. E2E — Alerta de desconexão (connection-monitor)
+
+**Status:** Sem cobertura do `connection-monitor.cron`
+**Prioridade:** 🟢 Baixa (crítico em produção, mas requer mock da Evolution)
+**Cenário:** Sessão cai → marca no banco → WhatsApp ao dono: "Sua conexão caiu... link pra reconectar".
+
+**Implementação sugerida (ordem):** #64, #65 (seguinte bloco prioritário), depois #66, #67; itens baixos: #68-71. _(Atualizado: #60-#63 concluídos em set/2026.)_
+Cada cenário segue o padrão existente: entrada em `Scenario` + metadata em `config.ts`, expectativa em `judge.ts` (`FUNCTIONAL_SCENARIOS`/`getScenarioExpectation`), instruções de persona em `autonomous-user.ts`, setup em `scenarios/conversational.ts` (ou runner em `scenarios/technical.ts` se determinístico) e persona em `personas.json`.
+
+**Fixes de infra do E2E (set/2026):** judge Gemini agora usa `maxTokens ≥ 2048` (modelo 3.6 consome tokens de "thinking" e truncava o JSON em 300), com retry + backoff em 429/5xx, parse tolerante a fences/think-tags/trailing commas e retry com prompt estrito. `E2E_DEBUG=1` loga a resposta bruta em falha. `run.ts` refatorado em módulos (`cli.ts`, `runner.ts`, `report.ts`, `interactive.ts`, `scenarios/technical.ts`, `scenarios/conversational.ts`) — ver "Como adicionar um novo cenário" no README dos testes.
+
+### 72. Bug — Respostas da instância `secretary` perdidas quando o envio WhatsApp falha
+
+**Status:** ✅ **Corrigido** (set/2026)
+**Prioridade:** 🔴 Crítica (produção)
+
+**Problema:** Em `message.processor.ts`, o `handleSecretaryMessage` enviava todas as respostas via `messaging.sendText` diretamente — sem persistir antes e sem try/catch. Se a Evolution API falhasse (instância `secretary` desconectada, HTTP 500), a exceção matava o job da fila (→ retries → DLQ) e a resposta NUNCA era persistida: onboarding, ativação, respostas a prospecção e comandos do dono simplesmente desapareciam. O fluxo de cliente (`handleUserWhatsAppMessage`) já usava persist-then-dispatch + `safeSend`; o secretary não.
+
+**Correção:** helper `respond()` (persiste via `messageRepo.save` quando há leadId, depois `safeSend`) aplicado a TODOS os envios do `handleSecretaryMessage`: opt-out/interesse de prospecção, erros de código de ativação, mensagem de intro de ativação (com `leadService.findOrCreate`), respostas de onboarding (incl. transcrição de áudio), respostas de consentimento de termos, comandos de áudio do dono e confirmação de material recebido. `ownerLead` agora é criado mais cedo (antes dos checks de onboarding/termos) para que toda resposta ao dono seja persistida.
+
+**Detecção:** cenário E2E `onboarding` falhando — resposta ausente no banco com Evolution offline.
+
+---
+
 ## Resumo
 
 | Status | Itens |
@@ -1003,6 +1115,7 @@ _Estimativa: 0.75 dia_
 | ✅ Concluídos | #1-11, #13, #14 (código), #17, #18, #20, #21, #30, #31, #33-40, #51, Migração Supabase → PostgreSQL + Drizzle ORM |
 | 🔴 Bloqueante | #22 (deploy) |
 | 🟡 Pós-lançamento | #14 (config), #16, #19 |
+| 🧪 Testes E2E (lacunas) | #64-71 (ver seção "Cobertura de Testes E2E"; #60-63 ✅ testes E2E implementados e passando) |
 | ⚪ Futuro | #15, #23-29, #32 (LangGraph) |
 
 ---

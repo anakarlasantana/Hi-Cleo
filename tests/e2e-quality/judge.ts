@@ -43,6 +43,10 @@ const FUNCTIONAL_SCENARIOS: Scenario[] = [
   'configure_rules',
   'degraded_fallback',
   'prospection_response',
+  'disconnect_collaborator',
+  'subscription_expired',
+  'subscription_renewal',
+  'cancellation_flow',
 ];
 
 /** Cenários conversacionais puros (apenas 5 dimensões) */
@@ -145,6 +149,10 @@ EXPECTATIVAS POR CENÁRIO:
 - local_classifier: Saudação respondida rapidamente sem chamar IA pesada, resposta adequada e curta
 - configure_rules: Configuração alterada ou confirmada, feedback claro ao dono
 - degraded_fallback: ALGUMA resposta foi enviada mesmo com IA indisponível (fallback gracioso)
+- disconnect_collaborator: Sessão do colaborador desconectada, slot liberado, confirmação clara ao dono
+- subscription_expired: Nenhuma resposta ao cliente após expiração (Cleo 100% inoperante)
+- subscription_renewal: Nova expiração soma a partir da data anterior (não penaliza renovação antecipada)
+- cancellation_flow: Cancelamento processado, acesso mantido até fim do período, dados preservados
 
 CRITÉRIOS DE FALHA GRAVE (score 0 na dimensão):
 - Inventar preço, horário ou dado que não foi configurado
@@ -186,6 +194,14 @@ function getScenarioExpectation(scenario: Scenario): string {
       return 'Dono pediu mudança de configuração. ESPERADO: configuração alterada e feedback confirmando a mudança.';
     case 'degraded_fallback':
       return 'IA indisponível. ESPERADO: ALGUMA resposta chegou (fallback gracioso, não silêncio).';
+    case 'disconnect_collaborator':
+      return 'Dono pediu para desconectar um colaborador. ESPERADO: Cleo confirma a desconexão, avisa que a vaga foi liberada.';
+    case 'subscription_expired':
+      return 'Assinatura expirada. ESPERADO: NENHUMA resposta ao cliente (Cleo 100% inoperante).';
+    case 'subscription_renewal':
+      return 'Renovação antecipada. ESPERADO: expiração somada a partir da data anterior, dados intactos.';
+    case 'cancellation_flow':
+      return 'Cancelamento solicitado. ESPERADO: acesso mantido até fim do período, confirmação enviada, dados preservados.';
     default:
       return '';
   }
@@ -219,26 +235,28 @@ export async function evaluateConversation(
       .replace('{transcript}', transcript);
   }
 
-  const response = await ai.generate(
+  let response = await ai.generate(
     'Você é um avaliador imparcial. Retorne APENAS JSON válido, sem markdown.',
     prompt,
   );
 
-  // Parse da resposta
-  let jsonStr = response
-    .replace(/<think>[\s\S]*?<\/think>/g, '')
-    .replace(/```json?\n?/g, '')
-    .replace(/```/g, '')
-    .trim();
+  // Parse tolerante com 1 retry (alguns modelos/trancripts poluídos geram lixo na 1ª tentativa)
+  let parsed: { scores: Record<string, number>; razao: string; problemas: string[] } | null = null;
+  for (let attempt = 0; attempt < 2 && !parsed; attempt++) {
+    if (attempt > 0) {
+      console.warn(`   ⚠️  Judge retornou JSON inválido — tentando novamente (${attempt + 1}/2)...`);
+      response = await ai.generate(
+        'ATENÇÃO: responda ESTRITAMENTE com um único objeto JSON válido, sem markdown, sem explicações antes ou depois.',
+        prompt,
+      );
+    }
+    parsed = tryParseJudgeResponse(response);
+  }
 
-  // Se tem lixo antes do {, corta
-  const objStart = jsonStr.indexOf('{');
-  if (objStart > 0) jsonStr = jsonStr.slice(objStart);
-
-  let parsed: { scores: Record<string, number>; razao: string; problemas: string[] };
-  try {
-    parsed = JSON.parse(jsonStr);
-  } catch {
+  if (!parsed) {
+    if (process.env.E2E_DEBUG) {
+      console.error(`   🐛 Resposta bruta do judge (início): ${response.slice(0, 300)}`);
+    }
     // Se falhou o parse, retorna score neutro com o erro
     const defaultScores: BaseScores = {
       relevancia: 0.5,
@@ -269,6 +287,35 @@ export async function evaluateConversation(
     razao: parsed.razao,
     problemas: parsed.problemas || [],
   };
+}
+
+/**
+ * Tenta extrair o JSON de avaliação da resposta do judge.
+ * Tolerante a: tags <think>, markdown fences, lixo antes do { e depois do } final,
+ * e trailing commas. Retorna null se não conseguir.
+ */
+function tryParseJudgeResponse(
+  response: string,
+): { scores: Record<string, number>; razao: string; problemas: string[] } | null {
+  let jsonStr = response
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    .replace(/```(?:json)?\s*/g, '')
+    .trim();
+
+  // Isola o maior bloco JSON: do primeiro { ao último }
+  const start = jsonStr.indexOf('{');
+  const end = jsonStr.lastIndexOf('}');
+  if (start === -1 || end <= start) return null;
+  jsonStr = jsonStr.slice(start, end + 1);
+
+  // Remove trailing commas (alguns modelos adicionam vírgula antes de } / ])
+  jsonStr = jsonStr.replace(/,\s*([}\]])/g, '$1');
+
+  try {
+    return JSON.parse(jsonStr);
+  } catch {
+    return null;
+  }
 }
 
 /**

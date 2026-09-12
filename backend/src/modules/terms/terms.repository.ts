@@ -3,6 +3,17 @@ import { db } from '../../shared/config/database.js';
 import { termsConsent } from '../../shared/schema.js';
 import type { TermsConsent, TermsConsentRepository } from './terms.port.js';
 
+/** Mapeia a row do Drizzle (camelCase) para o tipo da porta (snake_case) */
+function toTermsConsent(row: typeof termsConsent.$inferSelect): TermsConsent {
+  return {
+    id: row.id,
+    user_id: row.userId ?? '',
+    terms_version: row.termsVersion,
+    accepted_at: row.acceptedAt instanceof Date ? row.acceptedAt.toISOString() : String(row.acceptedAt),
+    ip_address: row.ipAddress ?? undefined,
+  };
+}
+
 export class DrizzleTermsConsentRepository implements TermsConsentRepository {
   async getLatestConsent(userId: string): Promise<TermsConsent | null> {
     const [data] = await db
@@ -12,7 +23,7 @@ export class DrizzleTermsConsentRepository implements TermsConsentRepository {
       .orderBy(desc(termsConsent.acceptedAt))
       .limit(1);
 
-    return (data as unknown as TermsConsent) || null;
+    return data ? toTermsConsent(data) : null;
   }
 
   async insertConsent(userId: string, termsVersion: string, ipAddress?: string): Promise<void> {
@@ -30,6 +41,6 @@ export class DrizzleTermsConsentRepository implements TermsConsentRepository {
       .where(eq(termsConsent.userId, userId))
       .orderBy(desc(termsConsent.acceptedAt));
 
-    return data as unknown as TermsConsent[];
+    return data.map(toTermsConsent);
   }
 }

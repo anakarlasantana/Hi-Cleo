@@ -39,7 +39,11 @@ export type Scenario =
   | 'material_flow'
   | 'local_classifier'
   | 'configure_rules'
-  | 'degraded_fallback';
+  | 'degraded_fallback'
+  | 'subscription_expired'
+  | 'subscription_renewal'
+  | 'cancellation_flow'
+  | 'disconnect_collaborator';
 
 /** Tipo de avaliação para cada cenário */
 export type EvaluationType = 'llm_judge' | 'deterministic' | 'hybrid';
@@ -130,6 +134,30 @@ export const scenarios: ScenarioMeta[] = [
     requiresSpecialSetup: true,
     evaluationType: 'deterministic',
   },
+  {
+    name: 'subscription_expired',
+    description: 'Assinatura expirada — Cleo fica 100% inoperante (silêncio total para clientes)',
+    requiresSpecialSetup: true,
+    evaluationType: 'deterministic',
+  },
+  {
+    name: 'subscription_renewal',
+    description: 'Renovação antecipada — novo período soma a partir da expiração atual',
+    requiresSpecialSetup: true,
+    evaluationType: 'deterministic',
+  },
+  {
+    name: 'cancellation_flow',
+    description: 'Cancelamento — acesso mantido até fim do período, reembolso CDC, dados preservados',
+    requiresSpecialSetup: true,
+    evaluationType: 'deterministic',
+  },
+  {
+    name: 'disconnect_collaborator',
+    description: 'Dono desconecta colaborador via chat — sessão removida e slot liberado',
+    requiresSpecialSetup: true,
+    evaluationType: 'hybrid',
+  },
 ];
 
 export const config = {
@@ -159,7 +187,7 @@ export const config = {
     'docs/tecnico/arquitetura-ia.md',
   ],
 
-  /** Provider para o simulador de persona (ollama = local, sem quota, ideal para CPU com qwen3:4b) */
+  /** Provider para o simulador de persona (ollama = local, sem quota, ideal para CPU com qwen3:1.7b) */
   personaProvider: (process.env.E2E_PERSONA_PROVIDER || 'ollama') as 'ollama' | 'deepseek' | 'groq' | 'gemini',
 
   /** Provider para o judge/evaluator (gemini = melhor qualidade; usar ollama se quota esgotada) */
@@ -171,7 +199,12 @@ export const config = {
   /** Ollama — configuração do modelo local */
   ollama: {
     baseUrl: process.env.E2E_OLLAMA_BASE_URL || 'http://localhost:11434',
-    model: process.env.E2E_OLLAMA_MODEL || 'qwen3:4b',
+    /**
+     * Modelo do persona local.
+     * ADVERTÊNCIA: qwen3:4b trava na maioria dos hardwares locais (uso mais de
+     * 3 min sem completar geração) — usar qwen3:1.7b como padrão.
+     */
+    model: process.env.E2E_OLLAMA_MODEL || 'qwen3:1.7b',
     /** Temperatura mais alta para personas (mais variação) */
     personaTemperature: Number(process.env.E2E_OLLAMA_PERSONA_TEMP) || 0.7,
     /** Temperatura mais baixa para o judge (mais consistente) */

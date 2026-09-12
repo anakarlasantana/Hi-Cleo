@@ -123,17 +123,35 @@ Isso é possível graças ao padrão **persist-then-dispatch** implementado no `
 
 ```
 tests/e2e-quality/
-├── run.ts              # Orquestrador (persona-por-persona)
-├── config.ts           # Configuração + definição de cenários
-├── ai-client.ts        # Cliente de IA (Ollama/DeepSeek/Groq/Gemini)
-├── simulator.ts        # Webhooks + coleta de respostas do banco
-├── autonomous-user.ts  # LLM que age como usuário real
-├── judge.ts            # LLM que avalia qualidade + avaliação determinística
-├── personas.json       # Personas pré-geradas (evita geração via IA)
-├── Dockerfile          # Container para rodar via Docker Compose
-├── run-e2e.sh          # Script wrapper (verifica deps + roda)
-└── README.md           # Este arquivo
+├── run.ts                    # Orquestrador (main slim: health checks, personas, loop, relatório)
+├── cli.ts                    # Parse de flags (--no-pause, --pause-always, --single)
+├── config.ts                 # Configuração + definição de cenários
+├── types.ts                  # Tipos compartilhados (ConversationResult)
+├── ai-client.ts              # Clientes de IA (Ollama/DeepSeek/Groq/Gemini)
+├── simulator.ts              # Webhooks + acesso ao banco (envio, leitura, fixtures)
+├── autonomous-user.ts        # LLM que age como usuário real
+├── judge.ts                  # LLM que avalia qualidade + avaliação determinística
+├── runner.ts                 # Dispatch de persona (técnica vs conversacional) + loop de retry
+├── report.ts                 # Tabela de resultados, detalhe por persona e relatório final
+├── interactive.ts            # Menus de pausa/retry via stdin
+├── scenarios/
+│   ├── technical.ts          # Cenários determinísticos (payment, expiração, cancelamento...)
+│   └── conversational.ts     # Cenários conversacionais (setup por cenário + loop de conversa)
+├── personas.json             # Personas pré-geradas (evita geração via IA)
+├── tsconfig.json             # Type-check isolado dos testes
+├── Dockerfile                # Container para rodar via Docker Compose
+├── run-e2e.sh                # Script wrapper (verifica deps + roda)
+└── README.md                 # Este arquivo
 ```
+
+**Personas técnicas** (fixtures fixas de telefone/nome dos cenários determinísticos) moram em `run.ts` na constante `TECHNICAL_PERSONAS`.
+
+### Como adicionar um novo cenário
+
+1. Registre em `config.ts` (tipo `Scenario` + entrada no array `scenarios` com `evaluationType`).
+2. Se conversacional: adicione o setup no `switch` de `scenarios/conversational.ts` (e instruções da persona em `autonomous-user.ts`). Se determinístico: crie um runner em `scenarios/technical.ts`, registre em `TECHNICAL_SCENARIOS` e no `switch` de `runner.ts`.
+3. Se for cenário funcional, adicione-o em `FUNCTIONAL_SCENARIOS` e `getScenarioExpectation()` em `judge.ts`.
+4. Opcional: adicione uma persona pré-gerada em `personas.json`.
 
 ## Requisitos
 

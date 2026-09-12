@@ -274,6 +274,16 @@ export async function createTestUser(
        ON CONFLICT DO NOTHING`,
       [userId],
     );
+
+    // Sem registro de consentimento, o backend intercepta TODA mensagem do dono
+    // pedindo aceite dos termos (requiresConsent) — o que impediria qualquer
+    // cenário de comando do dono de ser testado.
+    await db.query(
+      `INSERT INTO terms_consent (id, user_id, terms_version, accepted_at)
+       VALUES (gen_random_uuid(), $1, '1.0.0', NOW())
+       ON CONFLICT DO NOTHING`,
+      [userId],
+    );
   }
 
   if (options?.plan || options?.subscriptionStatus) {
@@ -478,6 +488,193 @@ export async function cleanupAll(phones: string[]): Promise<void> {
   for (const phone of phones) {
     await cleanupPhone(phone);
   }
+}
+
+// ─── Assinatura, cancelamento e colaboradores ────────────────────────────────
+
+/**
+ * Marca assinatura como expirada e desconecta TODAS as sessões do usuário.
+ * Replica o efeito final de subscriptionService.checkExpirations() (cron):
+ * status 'expired' + expiração no passado + sessões desconectadas.
+ */
+export async function setSubscriptionExpired(phone: string): Promise<void> {
+  const db = getPool();
+  await db.query(
+    `UPDATE users SET subscription_status = 'expired',
+     subscription_expires_at = NOW() - INTERVAL '1 day'
+     WHERE phone = $1`,
+    [phone],
+  );
+  await db.query(
+    `UPDATE whatsapp_sessions SET status = 'disconnected', disconnected_at = NOW()
+     WHERE user_id IN (SELECT id FROM users WHERE phone = $1)
+       AND status = 'active'`,
+    [phone],
+  );
+}
+
+/** Ajusta a expiração da assinatura para uma data futura específica (em dias) */
+export async function setSubscriptionExpiresInDays(phone: string, days: number): Promise<void> {
+  const db = getPool();
+  await db.query(
+    `UPDATE users SET subscription_expires_at = NOW() + ($2 || ' days')::INTERVAL
+     WHERE phone = $1`,
+    [phone, String(days)],
+  );
+}
+
+/**
+ * Simula renovação antecipada aplicando a MESMA regra de
+ * SubscriptionService.activate: se a assinatura ainda está ativa,
+ * estende a partir da expiração atual; senão, a partir de agora.
+ *
+ * LIMITAÇÃO: o caminho completo (webhook HMAC do MercadoPago → activate)
+ * depende do gateway real e não é simulável offline. Este cenário valida
+ * o contrato da regra de renovação (não penalizar quem paga adiantado)
+ * e a integridade dos dados após renovar.
+ */
+export async function renewSubscriptionSimulated(
+  phone: string,
+  billingPeriod: 'monthly' | 'yearly' = 'monthly',
+): Promise<{ previousExpiry: Date | null; newExpiry: Date | null }> {
+  const db = getPool();
+
+  const before = await db.query(
+    `SELECT subscription_expires_at FROM users WHERE phone = $1`,
+    [phone],
+  );
+  const previousExpiry: Date | null = before.rows[0]?.subscription_expires_at ?? null;
+  const days = billingPeriod === 'monthly' ? 30 : 365;
+
+  await db.query(
+    `UPDATE users SET
+       subscription_status = 'active',
+       subscription_started_at = NOW(),
+       billing_period = $3,
+       subscription_expires_at = CASE
+         WHEN subscription_expires_at IS NOT NULL AND subscription_expires_at > NOW()
+           THEN subscription_expires_at + ($2 || ' days')::INTERVAL
+         ELSE NOW() + ($2 || ' days')::INTERVAL
+       END
+     WHERE phone = $1`,
+    [phone, String(days), billingPeriod],
+  );
+
+  const after = await db.query(
+    `SELECT subscription_expires_at FROM users WHERE phone = $1`,
+    [phone],
+  );
+  return { previousExpiry, newExpiry: after.rows[0]?.subscription_expires_at ?? null };
+}
+
+/** Chama o endpoint real de cancelamento do backend */
+export async function requestCancellationHttp(
+  userId: string,
+  phone: string,
+  reason = 'teste e2e',
+): Promise<{ httpStatus: number; body: any }> {
+  try {
+    const response = await axios.post(
+      `${config.baseUrl}/api/cancellation/request`,
+      { userId, phone, reason },
+      { headers: { 'Content-Type': 'application/json' }, timeout: 10_000 },
+    );
+    return { httpStatus: response.status, body: response.data };
+  } catch (err: any) {
+    return { httpStatus: err.response?.status ?? 0, body: err.response?.data ?? { error: err.message } };
+  }
+}
+
+/** Consulta registro de cancelamento do usuário no banco */
+export async function getCancellationRecord(userId: string): Promise<{
+  cancelledAt: Date;
+  accessUntil: Date;
+  refundEligible: boolean;
+  reactivatedAt: Date | null;
+} | null> {
+  const db = getPool();
+  const result = await db.query(
+    `SELECT cancelled_at, access_until, refund_eligible, reactivated_at
+     FROM cancellations WHERE user_id = $1
+     ORDER BY cancelled_at DESC LIMIT 1`,
+    [userId],
+  );
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  return {
+    cancelledAt: new Date(row.cancelled_at),
+    accessUntil: new Date(row.access_until),
+    refundEligible: row.refund_eligible,
+    reactivatedAt: row.reactivated_at ? new Date(row.reactivated_at) : null,
+  };
+}
+
+/** Consulta dados básicos do usuário (para checks de cancelamento/assinatura) */
+export async function getUserSnapshot(phone: string): Promise<{
+  subscriptionStatus: string;
+  subscriptionStartedAt: Date | null;
+  subscriptionExpiresAt: Date | null;
+  plan: string | null;
+  hasBusiness: boolean;
+} | null> {
+  const db = getPool();
+  const result = await db.query(
+    `SELECT u.subscription_status, u.subscription_started_at, u.subscription_expires_at, u.plan,
+            EXISTS (SELECT 1 FROM businesses b WHERE b.user_id = u.id) AS has_business
+     FROM users u WHERE u.phone = $1`,
+    [phone],
+  );
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  return {
+    subscriptionStatus: row.subscription_status,
+    subscriptionStartedAt: row.subscription_started_at ? new Date(row.subscription_started_at) : null,
+    subscriptionExpiresAt: row.subscription_expires_at ? new Date(row.subscription_expires_at) : null,
+    plan: row.plan,
+    hasBusiness: row.has_business,
+  };
+}
+
+/** Status das sessões WhatsApp de um usuário */
+export async function getSessionsStatus(userId: string): Promise<Array<{ instance: string; status: string }>> {
+  const db = getPool();
+  const result = await db.query(
+    `SELECT instance_name AS instance, status FROM whatsapp_sessions WHERE user_id = $1`,
+    [userId],
+  );
+  return result.rows;
+}
+
+/**
+ * Cria um colaborador (user vinculado a um owner via owner_user_id)
+ * com sessão WhatsApp ativa — para cenários de disconnect de colaborador.
+ */
+export async function createCollaborator(
+  ownerUserId: string,
+  phone: string,
+  name: string,
+  instance: string,
+): Promise<string> {
+  const db = getPool();
+  const userResult = await db.query(
+    `INSERT INTO users (phone, name, owner_user_id, subscription_status, created_at)
+     VALUES ($1, $2, $3, 'active', NOW())
+     RETURNING id`,
+    [phone, name, ownerUserId],
+  );
+  const collaboratorId: string = userResult.rows[0].id;
+  await createWhatsappSession(collaboratorId, instance);
+  return collaboratorId;
+}
+
+/** Status de todas as sessões de um usuário (id de colaborador, por exemplo) */
+export async function getSessionStatusByUserId(userId: string): Promise<string | null> {
+  const db = getPool();
+  const result = await db.query(
+    `SELECT status FROM whatsapp_sessions WHERE user_id = $1 ORDER BY connected_at DESC LIMIT 1`,
+    [userId],
+  );
+  return result.rows[0]?.status ?? null;
 }
 
 // ─── Utilitários internos ────────────────────────────────────────────────────

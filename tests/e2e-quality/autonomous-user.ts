@@ -132,6 +132,8 @@ function getFirstMessageInstructions(scenario: Scenario): string {
       return 'Mande APENAS uma saudação simples e curta: "oi", "bom dia", "boa tarde", "olá", "e aí". Nada além disso.';
     case 'configure_rules':
       return 'Peça para mudar alguma configuração. Exemplos: "muda meu horário pra 9 às 18", "quero que a Cleo responda mais formal", "pausa o atendimento hoje".';
+    case 'disconnect_collaborator':
+      return 'O dono quer remover o acesso de um colaborador. MANDE de cara o comando com o número completo do colaborador (ex: "desconecta 5548999887766" ou "pode tirar o acesso do 5548999887766").';
     default:
       return 'Gere uma mensagem natural e curta.';
   }
@@ -160,6 +162,8 @@ function getScenarioInstructions(scenario: Scenario): string {
       return 'Mande outra saudação simples ou encerre com [FIM] se já recebeu resposta.';
     case 'configure_rules':
       return 'Se a Cleo confirmou, encerre. Se pediu detalhes, forneça. Pode pedir outra mudança de config.';
+    case 'disconnect_collaborator':
+      return 'Se a Cleo confirmou a desconexão, agradeça e encerre com [FIM]. Se pediu confirmação, confirme ("isso, pode desconectar"). Se pediu o número, forneça o telefone completo.';
     default:
       return 'Continue a conversa naturalmente.';
   }
@@ -208,7 +212,30 @@ export async function generatePersonas(ai: AiClient, docs: string, count: number
   }));
 }
 
-/** Gera a primeira mensagem do usuário */
+/** Mensagem de fallback por cenário, caso o persona LLM retorne vazio após retentativas */
+function getFallbackFirstMessage(scenario: Scenario): string {
+  switch (scenario) {
+    case 'local_classifier':
+      return 'bom dia';
+    case 'edge_case':
+      return 'oi 🙂';
+    case 'client_message':
+      return 'oi, quanto custa?';
+    case 'owner_command':
+      return 'como tá meu negócio hoje?';
+    case 'disconnect_collaborator':
+      return 'quero remover um colaborador';
+    default:
+      return 'oi';
+  }
+}
+
+/**
+ * Gera a PRIMEIRA mensagem do usuário, com retentativa caso o LLM retorne vazio
+ * (qwen3:1.7b local frequentemente devolve só thinking-tag → string vazia).
+ * Se todas as tentativas falharem, usa uma mensagem de fallback do cenário —
+ * um teste nunca deve morrer antes de começar por causa do simulador.
+ */
 export async function generateFirstMessage(
   ai: AiClient,
   persona: Persona,
@@ -226,8 +253,19 @@ export async function generateFirstMessage(
     .replace('{scenario}', persona.scenario)
     .replace('{first_message_instructions}', instructions);
 
-  const response = await ai.generate('Gere apenas texto puro, sem aspas.', prompt);
-  return response.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/^(Usuário|Você|User):\s*/i, '').trim();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = await ai.generate('Gere apenas texto puro, sem aspas.', prompt);
+    const cleaned = response
+      .replace(/<think>[\s\S]*?<\/think>/g, '')
+      .replace(/^(Usuário|Você|User):\s*/i, '')
+      .trim();
+    if (cleaned) return cleaned;
+    console.warn(`   ⚠️  Persona LLM retornou mensagem vazia (tentativa ${attempt + 1}/3)`);
+  }
+
+  const fallback = getFallbackFirstMessage(persona.scenario);
+  console.warn(`   ⚠️  Usando mensagem de fallback para o cenário ${persona.scenario}: "${fallback}"`);
+  return fallback;
 }
 
 /** Gera a próxima mensagem do usuário baseada no histórico */
@@ -248,18 +286,23 @@ export async function generateNextMessage(
     .replace('{scenario_instructions}', scenarioInstructions)
     .replace('{history}', history);
 
-  const response = await ai.generate('Gere apenas texto puro, sem aspas nem prefixos.', prompt);
+  // qwen3 local às vezes devolve só thinking-tag → string vazia; retenta antes
+  // de encerrar a conversa prematuramente.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = await ai.generate('Gere apenas texto puro, sem aspas nem prefixos.', prompt);
 
-  // Se a LLM decidiu que a conversa acabou
-  if (response.includes('[FIM]') || response.trim() === '') {
-    return null;
+    // Se a LLM decidiu que a conversa acabou
+    if (response.includes('[FIM]')) return null;
+
+    // Limpa thinking tags e prefixos indesejados
+    const cleaned = response
+      .replace(/<think>[\s\S]*?<\/think>/g, '')
+      .replace(/^(Usuário|Você|User):\s*/i, '')
+      .trim();
+
+    if (cleaned) return cleaned;
+    console.warn(`   ⚠️  Persona LLM retornou resposta vazia (tentativa ${attempt + 1}/3)`);
   }
 
-  // Limpa thinking tags e prefixos indesejados
-  const cleaned = response
-    .replace(/<think>[\s\S]*?<\/think>/g, '')
-    .replace(/^(Usuário|Você|User):\s*/i, '')
-    .trim();
-
-  return cleaned || null;
+  return null;
 }
