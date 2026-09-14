@@ -255,6 +255,7 @@ export async function createTestUser(
     plan?: string;
     subscriptionStatus?: string;
     onboardingComplete?: boolean;
+    servicesInfo?: string;
   },
 ): Promise<string> {
   const db = getPool();
@@ -299,11 +300,11 @@ export async function createTestUser(
   if (options?.onboardingComplete) {
     await db.query(
       `INSERT INTO businesses (id, user_id, name, type, tone_of_voice, target_audience,
-       business_hours_start, business_hours_end, created_at)
+       business_hours_start, business_hours_end, services, created_at)
        VALUES (gen_random_uuid(), $1, $2, 'Serviços gerais', 'friendly_professional', 'Público geral',
-       '08:00', '18:00', NOW())
+       '08:00', '18:00', $3, NOW())
        ON CONFLICT (user_id) DO NOTHING`,
-      [userId, name],
+      [userId, name, options?.servicesInfo || null],
     );
   }
 
@@ -316,6 +317,16 @@ export async function createTestUser(
  */
 export async function createWhatsappSession(userId: string, instanceName: string): Promise<void> {
   const db = getPool();
+  // Instance names são únicas no mundo real (Evolution API), mas a tabela não tem
+  // constraint UNIQUE. Cenários reutilizam o nome 'test-e2e' — sem este cleanup,
+  // findByInstance (WHERE status='active' LIMIT 1, sem ORDER BY) pode resolver
+  // para a sessão ATIVA de um cenário anterior e testar o usuário errado
+  // (bug observado: subscription_expired respondia após expiração).
+  await db.query(
+    `UPDATE whatsapp_sessions SET status = 'disconnected', disconnected_at = NOW()
+     WHERE instance_name = $1`,
+    [instanceName],
+  );
   await db.query(
     `INSERT INTO whatsapp_sessions (id, user_id, instance_name, status, connected_at)
      VALUES (gen_random_uuid(), $1, $2, 'active', NOW())

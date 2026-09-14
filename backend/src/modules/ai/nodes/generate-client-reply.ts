@@ -1,6 +1,6 @@
 import type { AiPort } from '../../../shared/ports/ai.port.js';
 import type { Message } from '../../../shared/types/index.js';
-import { sanitizeForAiPrompt } from '../../../shared/middleware/sanitize.js';
+import { sanitizeForAiPrompt, stripThinkingTags } from '../../../shared/middleware/sanitize.js';
 import { CLIENT_REPLY_PROMPT } from '../prompts/client-reply.prompts.js';
 
 /**
@@ -69,11 +69,42 @@ export async function generateClientReply(
       `Mensagem do cliente${clientName ? ` (${clientName})` : ''}: "${sanitized}"`,
     ]);
 
-    return response.trim();
+    // Nunca vazar raciocínio interno (<think>) para o cliente final — mesmo se
+    // o modelo estourar max_tokens e deixar a tag aberta
+    const cleaned = stripThinkingTags(response);
+    if (!cleaned) return buildFallbackReply(business, isOutsideHours);
+
+    // Anti-repetição: se a resposta for idêntica à última da Cleo (loop robótico),
+    // regenerar UMA vez pedindo variação explícita. Se repetir de novo, desiste —
+    // melhor repetir uma vez do que não responder.
+    const lastCleoReply = recentMessages?.find((m) => m.direction === 'outbound')?.text;
+    if (lastCleoReply && normalizeForCompare(cleaned) === normalizeForCompare(lastCleoReply)) {
+      try {
+        const retry = await ai.generateContent([
+          prompt,
+          `Mensagem do cliente${clientName ? ` (${clientName})` : ''}: "${sanitized}"\n\nIMPORTANTE: você já respondeu exatamente isso antes: "${cleaned}". NÃO repita. Varie a redação e adicione algo útil (ex: reforçar que vai avisar ${business.ownerName} assim que possível).`,
+        ]);
+        const retryCleaned = stripThinkingTags(retry);
+        if (retryCleaned && normalizeForCompare(retryCleaned) !== normalizeForCompare(lastCleoReply)) {
+          return retryCleaned;
+        }
+      } catch {
+        // falhou a regeneração — devolve a resposta original
+      }
+    }
+
+    return cleaned;
   } catch {
     // Fallback: resposta genérica segura
     return buildFallbackReply(business, isOutsideHours);
   }
+}
+
+/** Normalização para comparar respostas: ignora caixa, espaços, pontuação e emojis */
+function normalizeForCompare(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[\s\p{P}\p{So}\p{Sk}]/gu, '');
 }
 
 function buildFallbackReply(business: BusinessContext, isOutsideHours: boolean): string {
@@ -82,20 +113,20 @@ function buildFallbackReply(business: BusinessContext, isOutsideHours: boolean):
   if (isOutsideHours) {
     switch (toneOfVoice) {
       case 'formal':
-        return `Prezado(a), o(a) ${ownerName} não está disponível no momento. Retornaremos no próximo dia útil.`;
+        return `Prezado(a), ${ownerName} não está disponível no momento. Retornaremos no próximo dia útil.`;
       case 'casual':
-        return `Eii! O(a) ${ownerName} já foi descansar 😴 Mas relaxa, anotei e te retornamos amanhã!`;
+        return `Eii! ${ownerName} já foi descansar 😴 Mas relaxa, anotei e te retornamos amanhã!`;
       default:
-        return `Olá! O(a) ${ownerName} não está disponível agora, mas anotei sua mensagem e retornamos em breve 📝`;
+        return `Olá! ${ownerName} não está disponível agora, mas anotei sua mensagem e retornamos em breve 📝`;
     }
   }
 
   switch (toneOfVoice) {
     case 'formal':
-      return `Boa tarde! Sou assistente do(a) ${ownerName}. Sua mensagem foi registrada e retornaremos em breve.`;
+      return `Boa tarde! Sou a assistente de ${ownerName}. Sua mensagem foi registrada e retornaremos em breve.`;
     case 'casual':
-      return `E aí! 👋 Tô aqui pelo(a) ${ownerName}. Já anotei e a gente te responde logo!`;
+      return `E aí! 👋 Sou a assistente de ${ownerName}. Já anotei e a gente te responde logo!`;
     default:
-      return `Olá! 😊 Sou assistente do(a) ${ownerName}. Já anotei seu contato e vamos te retornar em breve!`;
+      return `Olá! 😊 Sou a assistente de ${ownerName}. Já anotei seu contato e vamos te retornar em breve!`;
   }
 }

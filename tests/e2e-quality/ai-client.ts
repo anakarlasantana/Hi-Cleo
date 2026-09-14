@@ -104,16 +104,29 @@ function createGroqClient(options: {
   const client = new Groq({ apiKey });
   return {
     async generate(system, user) {
+      const model = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
+      // Controle de "thinking" por família de modelo:
+      // - gpt-oss: reasoning_effort=low (openai reasoning format)
+      // - qwen3.x: reasoning_format='hidden' (Groq roda o raciocínio fora do content)
+      const isQwen = model.startsWith('qwen/');
       const response = await client.chat.completions.create({
-        model: 'qwen/qwen3.6-27b',
+        model,
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: user },
         ],
         temperature: options.temperature,
-        max_tokens: options.maxTokens,
+        // Reasoning models precisam de folga nos tokens senão devolvem
+        // content vazio (todo o budget vai pro raciocínio interno)
+        max_tokens: Math.min(options.maxTokens, 2048),
+        ...(isQwen
+          ? ({ reasoning_format: 'hidden' } as any)
+          : ({ reasoning_effort: 'low' } as any)),
       });
-      return response.choices[0]?.message?.content?.trim() || '';
+      const message = response.choices[0]?.message;
+      // Alguns modelos devolvem raciocínio em <think>…</think> misturado ao content
+      const content = (message?.content || '').replace(/<think>[\s\S]*?<\/think>/g, '');
+      return content.trim();
     },
   };
 }

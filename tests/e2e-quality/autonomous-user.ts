@@ -84,6 +84,8 @@ REGRAS:
 - NÃO seja perfeito demais — gente real é vaga, manda msgs curtas, às vezes confusa
 - Responda ao que a Cleo disse na última mensagem
 - Tenha um OBJETIVO claro baseado no seu cenário
+- NUNCA comece a mensagem com "/" (barra) — usuários de WhatsApp não enviam comandos assim
+- Se a Cleo repetir a pergunta, é porque sua resposta anterior não serviu — responda DIRETAMENTE o que ela pediu, com outras palavras
 - Quando sentir que a conversa acabou naturalmente, responda apenas: [FIM]
 
 CENÁRIO: {scenario}
@@ -286,6 +288,20 @@ export async function generateNextMessage(
     .replace('{scenario_instructions}', scenarioInstructions)
     .replace('{history}', history);
 
+  const lastUserMessage = [...turns].reverse().find(t => t.role === 'user')?.content.trim();
+  // Última mensagem da Cleo — detecta "eco" (modelo pequeno repetindo a fala da
+  // Cleo como se fosse do usuário, ex: responder a pergunta com a própria pergunta)
+  const lastCleoMessage = [...turns].reverse().find(t => t.role !== 'user')?.content.trim();
+
+  const isEcho = (msg: string): boolean => {
+    if (!lastCleoMessage) return false;
+    const msgNorm = msg.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, '').trim();
+    const cleoNorm = lastCleoMessage.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, '').trim();
+    if (!msgNorm || !cleoNorm) return false;
+    // Eco = contém trecho longo (>25 chars) da fala da Cleo
+    return msgNorm.includes(cleoNorm.slice(0, 40)) || cleoNorm.includes(msgNorm);
+  };
+
   // qwen3 local às vezes devolve só thinking-tag → string vazia; retenta antes
   // de encerrar a conversa prematuramente.
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -294,15 +310,24 @@ export async function generateNextMessage(
     // Se a LLM decidiu que a conversa acabou
     if (response.includes('[FIM]')) return null;
 
-    // Limpa thinking tags e prefixos indesejados
+    // Limpa thinking tags, prefixos indesejados e comandos "/" (alucinação comum
+    // de modelos pequenos — usuários reais de WhatsApp não mandam "/comandos")
     const cleaned = response
       .replace(/<think>[\s\S]*?<\/think>/g, '')
       .replace(/^(Usuário|Você|User):\s*/i, '')
+      .replace(/^\/+/, '')
       .trim();
 
-    if (cleaned) return cleaned;
+    if (cleaned && cleaned !== lastUserMessage && !isEcho(cleaned)) return cleaned;
+    if (cleaned === lastUserMessage || isEcho(cleaned)) {
+      const why = cleaned === lastUserMessage ? 'repetiu a mensagem anterior' : 'ecoou a fala da Cleo';
+      console.warn(`   ⚠️  Persona LLM ${why} (tentativa ${attempt + 1}/3) — regenerando`);
+      continue;
+    }
     console.warn(`   ⚠️  Persona LLM retornou resposta vazia (tentativa ${attempt + 1}/3)`);
   }
 
+  // 3 tentativas esgotadas (vazia ou repetida) — encerra a conversa em vez de
+  // alimentar um loop artificial que distorce o teste
   return null;
 }

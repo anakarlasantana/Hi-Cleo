@@ -1,6 +1,7 @@
 import axios from 'axios';
 import type { AiPort } from '../../../shared/ports/ai.port.js';
 import { env } from '../../../shared/config/env.js';
+import { stripThinkingTags } from '../../../shared/middleware/sanitize.js';
 
 export const DEEPSEEK_MODELS = ['deepseek-chat', 'deepseek-v4-flash', 'deepseek-reasoner'];
 
@@ -40,7 +41,8 @@ export class DeepSeekAdapter implements AiPort {
       },
     );
 
-    return response.data.choices[0]?.message?.content?.trim() || '';
+    const content = response.data.choices[0]?.message?.content?.trim() || '';
+    return stripThinkingTags(content);
   }
 
   /**

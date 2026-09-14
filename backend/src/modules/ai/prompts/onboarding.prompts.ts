@@ -94,3 +94,25 @@ export const ONBOARDING_RETRY_MESSAGES: Record<string, string> = {
   outside_hours_behavior: 'Não entendi! O que faço quando chegar mensagem fora do horário?\n\n1️⃣ Aviso que retorna no próximo dia útil\n2️⃣ Não respondo nada, só anoto\n\nManda 1 ou 2 (ou escreve a mensagem que quer):',
   confirm_summary: 'Tá tudo certo com o resumo? Manda *ok* pra confirmar ou me diz o que quer ajustar!',
 };
+
+/**
+ * Mensagens de retry ESCALADAS — usadas a partir da 2ª falha consecutiva no mesmo step.
+ * Evitam o "loop robótico" de repetir a mesma mensagem: são mais diretas,
+ * explicam o erro com outras palavras e dão exemplo concreto de resposta.
+ */
+export const ONBOARDING_RETRY_ESCALATED_MESSAGES: Record<string, string> = {
+  confirm_name: 'Acho que não captei 😅 Me manda SÓ seu nome ou apelido, assim: *Carla* ou *João*. Pode ser?',
+  business_type: 'Ainda não consegui entender 😅 Escreve numa frase só o que você faz, tipo: *\"Tenho um salão de beleza\"* ou *\"Sou dentista\"*.',
+  target_audience: 'Não captei quem são seus clientes 😅 Responde assim, por exemplo: *\"Mulheres de 20 a 50 anos\"* ou *\"Pequenas empresas\"*.',
+  tone_of_voice: 'Vamos simplificar 😊 Responde SÓ com um número:\
+\
+*1* = Profissional e cordial\
+*2* = Descontraído mas profissional\
+*3* = Super informal',
+  business_hours: 'Vamos simplificar 😊 Manda os dias E o horário numa frase só, tipo: *\"Segunda a sexta, das 9h às 18h\"*.',
+  outside_hours_behavior: 'Vamos simplificar 😊 Responde SÓ com um número:\
+\
+*1* = Aviso que você retorna no próximo dia útil\
+*2* = Não respondo nada, só anoto',
+  confirm_summary: 'Pra gente finalizar: manda *ok* se tá tudo certo, ou me diz o que quer ajustar (nome, negócio, público, tom, horário...).',
+};

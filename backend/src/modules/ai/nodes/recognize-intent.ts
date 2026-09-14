@@ -27,12 +27,23 @@ export async function recognizeIntent(ai: AiPort, text: string): Promise<Recogni
       if (phone) entities.phone = phone;
     }
 
-    return {
+    const aiResult = {
       type: parsed.type as IntentType,
       confidence: parsed.confidence || 0.5,
       entities,
       originalText: text,
     };
+
+    // IA insegura? Tentar o fallback por keywords antes de desistir — evita
+    // "Não entendi bem" para frases que keywords resolvem (ex: "como tá meu negócio hoje?")
+    if (aiResult.confidence < 0.7) {
+      const keywordResult = fallbackRecognize(text);
+      if (keywordResult.confidence > aiResult.confidence && keywordResult.type !== 'unknown') {
+        return keywordResult;
+      }
+    }
+
+    return aiResult;
   } catch {
     return fallbackRecognize(text);
   }

@@ -130,6 +130,9 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
         plan: 'basic',
         subscriptionStatus: 'active',
         onboardingComplete: true,
+        // Preço e horário de sábado configurados — a persona de cliente pergunta
+        // exatamente isso, e a Cleo só pode responder se o dado existir.
+        servicesInfo: 'Corte masculino: R$ 40. Atende aos sábados das 9h às 17h.',
       });
       const ownerInstance = 'test-e2e';
       await createWhatsappSession(userId, ownerInstance);

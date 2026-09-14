@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import { db } from '../../shared/config/database.js';
 import { whatsappSessions } from '../../shared/schema.js';
 import type { SessionRepository } from './webhooks.port.js';
@@ -9,6 +9,9 @@ export class DrizzleSessionRepository implements SessionRepository {
       .select({ user_id: whatsappSessions.userId })
       .from(whatsappSessions)
       .where(and(eq(whatsappSessions.instanceName, instanceName), eq(whatsappSessions.status, 'active')))
+      // Sem UNIQUE em instance_name: se houver duplicatas (reconexões/testes),
+      // preferir a sessão ativa mais recente em vez de uma linha arbitrária.
+      .orderBy(desc(whatsappSessions.connectedAt))
       .limit(1);
 
     if (!data || !data.user_id) return null;

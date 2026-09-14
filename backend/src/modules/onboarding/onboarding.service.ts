@@ -3,7 +3,7 @@ import type { RuleRepository } from '../rules/rules.port.js';
 import type { AiPort } from '../../shared/ports/ai.port.js';
 import type { OnboardingState } from '../../shared/types/index.js';
 import { interpretOnboardingResponse } from '../ai/nodes/interpret-onboarding.js';
-import { ONBOARDING_RETRY_MESSAGES } from '../ai/prompts/onboarding.prompts.js';
+import { ONBOARDING_RETRY_MESSAGES, ONBOARDING_RETRY_ESCALATED_MESSAGES } from '../ai/prompts/onboarding.prompts.js';
 import { env } from '../../shared/config/env.js';
 import { db } from '../../shared/config/database.js';
 import { businesses } from '../../shared/schema.js';
@@ -28,7 +28,13 @@ export class OnboardingService {
   }
 
   getIntroMessage(userName: string): string {
-    return `Oi, ${userName}! 👋 Que bom ter você aqui.\n\nAntes de começar a trabalhar pra você, preciso te conhecer melhor. Vou te fazer algumas perguntas rápidas sobre o seu negócio pra poder atender seus clientes do jeito certo.\n\nSão só 5 perguntinhas — leva menos de 2 minutos! Pode responder por texto ou áudio, como preferir. 🎙️\n\nVamos lá?`;
+    return `Oi, ${userName}! 👋 Que bom ter você aqui.
+
+Antes de começar a trabalhar pra você, preciso te conhecer melhor. Vou te fazer algumas perguntas rápidas sobre o seu negócio pra poder atender seus clientes do jeito certo.
+
+São só 5 perguntinhas — leva menos de 2 minutos! Pode responder por texto ou áudio, como preferir. 🎙️
+
+Vamos lá?`;
   }
 
   async processMessage(userId: string, message: string): Promise<string> {
@@ -42,7 +48,7 @@ export class OnboardingService {
       case 'awaiting_intro_confirmation':
         return this.handleIntroConfirmation(userId, state);
       case 'confirm_name':
-        return this.handleStep(userId, state, message, 'confirm_name', isPartialEdit ? 'confirm_summary' : 'business_type');
+        return this.handleConfirmName(userId, state, message, isPartialEdit ? 'confirm_summary' : 'business_type');
       case 'business_type':
         return this.handleStep(userId, state, message, 'business_type', isPartialEdit ? 'confirm_summary' : 'target_audience');
       case 'target_audience':
@@ -73,9 +79,54 @@ export class OnboardingService {
     currentStep: string,
     nextStep: string,
   ): Promise<string> {
-    const result = await interpretOnboardingResponse(this.ai, currentStep, message, state.data);
+    // Guards determinísticos: nunca depender só da IA para rejeitar lixo óbvio.
+    // - Comandos (/algo) não são dados (ex: aceitar "/criar-nome-x" como nome)
+    // - Perguntas ("quanto custa?") não são respostas de coleta de dados
+    // - Nomes não têm 200 caracteres nem interrogação
+    const isCommand = message.trim().startsWith('/');
+    // "Pergunta" de verdade: começa com palavra interrogativa. Mensagens como
+    // "1️⃣ Aviso que retorno... tipo: 'Oi, tudo bem? ...'" são RESPOSTAS que
+    // citam um texto com "?" no meio — não podem ser desviadas como pergunta.
+    const startsWithChoice = /^[1-3\d⭐️*•️⃣]/.test(message.trim());
+    const hasInterrogative = /\b(como|quem|qual|quais|quanto|quantos|quando|onde|por\s?que|oq|o que|o q)\b/i.test(message);
+    const isQuestion = message.includes('?') && !startsWithChoice && hasInterrogative;
+    // Respostas naturais como "pode me chamar de Ana Paula" ou "a Ana mesmo 😊"
+    // passam do limite/têm emoji — mas claramente são um nome. Só rejeitar
+    // quando NÃO parece resposta de nome (deixa a IA extrair o nome).
+    const nameHintRegex = /(chama|chamar|nome|apodo|sou eu|é a |é o )/i;
+    const suggestedName = (state.data.nome || '').trim().toLowerCase();
+    const mentionsSuggested = suggestedName.length > 1
+      && message.toLowerCase().includes(suggestedName.split(' ')[0]);
+    const invalidName = currentStep === 'confirm_name'
+      && !mentionsSuggested
+      && !nameHintRegex.test(message)
+      && (message.trim().length > 40 || isQuestion);
+    const isClearlyInvalid = isCommand || isQuestion || invalidName;
+
+    const result = isClearlyInvalid
+      ? { valid: false, extractedData: {} as Record<string, string>, retryMessage: undefined }
+      : await interpretOnboardingResponse(this.ai, currentStep, message, state.data);
 
     if (!result.valid) {
+      // Escalonar após falhas repetidas no mesmo step: mensagem muda e fica mais
+      // didática (com exemplo concreto), evitando o "loop robótico" de retry idêntico.
+      const retryKey = `_retries_${currentStep}`;
+      const retryCount = Number(state.data[retryKey] || 0) + 1;
+      await this.onboardingRepo.updateStep(userId, state.step as any, { ...state.data, [retryKey]: String(retryCount) });
+
+      if (retryCount >= 2 && ONBOARDING_RETRY_ESCALATED_MESSAGES[currentStep]) {
+        return ONBOARDING_RETRY_ESCALATED_MESSAGES[currentStep];
+      }
+
+      // Perguntas do usuário: acolher a dúvida e redirecionar para o onboarding
+      // (não tratar como erro genérico — o usuário está engajado, só curioso)
+      if (isQuestion && !isCommand) {
+        const retry = ONBOARDING_RETRY_MESSAGES[currentStep] || 'Pode me responder?';
+        return `Boa pergunta! Vou te explicar tudo assim que terminarmos sua configuração — falta pouco! 😊\
+\
+Antes disso: ${retry}`;
+      }
+
       // Usar retryMessage da IA apenas se for útil (>20 chars e não genérico)
       const aiRetry = result.retryMessage?.trim();
       const isUsefulRetry = aiRetry && aiRetry.length > 20 && !this.isGenericRetry(aiRetry);
@@ -83,17 +134,47 @@ export class OnboardingService {
     }
 
     const newData = { ...state.data, ...result.extractedData };
-    // Limpar flag de edição ao voltar para confirm_summary
+    // Limpar flag de edição e contador de retry ao avançar
     if (nextStep === 'confirm_summary' && newData._editing) {
       delete newData._editing;
     }
+    delete newData[`_retries_${currentStep}`];
     await this.onboardingRepo.updateStep(userId, nextStep as any, newData);
     return this.getNextStepMessage(nextStep, newData);
   }
 
   private async handleIntroConfirmation(userId: string, state: OnboardingState): Promise<string> {
+    // Se já sabemos o nome (da ativação/perfil), confirmar em vez de perguntar do zero —
+    // perguntar "como posso te chamar?" logo após saudar a pessoa pelo nome soa robótico
+    const suggestedName = state.data.nome?.trim();
     await this.onboardingRepo.updateStep(userId, 'confirm_name', state.data);
+    if (suggestedName) {
+      return `Vi que seu nome é ${suggestedName} — posso te chamar assim, ou prefere outro jeito?`;
+    }
     return 'Pra começar, como posso te chamar?';
+  }
+
+  /**
+   * Confirmação de nome com sugestão conhecida (vinda da ativação).
+   * "sim"/"isso" → usa o nome sugerido; qualquer outra resposta segue o fluxo normal.
+   */
+  private async handleConfirmName(
+    userId: string,
+    state: OnboardingState,
+    message: string,
+    nextStep: string,
+  ): Promise<string> {
+    const suggestedName = state.data.nome?.trim();
+    if (suggestedName) {
+      const affirmation = /^(sim|isso|isso mesmo|pode|pode sim|claro|ok|okay|tá|ta|tá bom|ta bom|exato|correto|yes|bora|perfeito)[\s!.,]*$/i;
+      if (affirmation.test(message.trim())) {
+        const newData: Record<string, string> = { ...state.data, nome_confirmado: suggestedName };
+        delete newData._editing;
+        await this.onboardingRepo.updateStep(userId, nextStep as any, newData);
+        return this.getNextStepMessage(nextStep, newData);
+      }
+    }
+    return this.handleStep(userId, state, message, 'confirm_name', nextStep);
   }
 
   private async handleConfirmSummary(userId: string, state: OnboardingState, message: string): Promise<string> {
@@ -124,7 +205,22 @@ export class OnboardingService {
     await this.saveBusinessProfileAndRules(userId, state.data);
     const connectUrl = `${env.SITE_URL}/conectar`;
     const userName = state.data.nome_confirmado || 'parceiro(a)';
-    return `Ótimo, ${userName}! Suas preferências estão salvas 👏\n\nAgora falta o *último e mais importante passo* pra eu começar a trabalhar por você:\n\n📱 *Conecte seu WhatsApp comigo*\n\n1️⃣ Volte para a tela que ficou aberta no computador — o QR Code já deve estar lá\n2️⃣ No celular, vá em *WhatsApp > Dispositivos Vinculados > Vincular Dispositivo*\n3️⃣ Escaneie o QR Code da tela\n\n💡 Se a tela não estiver mais aberta, acesse pelo computador:\n${connectUrl}\n\nÉ o mesmo processo do WhatsApp Web — leva 30 segundos!\n\nAssim que você conectar, eu te aviso aqui e começo a cuidar dos seus clientes automaticamente 🚀`;
+    return `Ótimo, ${userName}! Suas preferências estão salvas 👏
+
+Agora falta o *último e mais importante passo* pra eu começar a trabalhar por você:
+
+📱 *Conecte seu WhatsApp comigo*
+
+1️⃣ Volte para a tela que ficou aberta no computador — o QR Code já deve estar lá
+2️⃣ No celular, vá em *WhatsApp > Dispositivos Vinculados > Vincular Dispositivo*
+3️⃣ Escaneie o QR Code da tela
+
+💡 Se a tela não estiver mais aberta, acesse pelo computador:
+${connectUrl}
+
+É o mesmo processo do WhatsApp Web — leva 30 segundos!
+
+Assim que você conectar, eu te aviso aqui e começo a cuidar dos seus clientes automaticamente 🚀`;
   }
 
   /**
@@ -171,9 +267,16 @@ export class OnboardingService {
       case 'target_audience':
         return `Atualmente: *${data.publico_alvo}*. Quem são seus clientes geralmente?`;
       case 'tone_of_voice':
-        return `Atualmente: *${this.getToneLabel(data.tom_de_voz || 'friendly_professional')}*.\n\nComo quer que eu fale?\n1️⃣ Profissional e cordial\n2️⃣ Descontraído mas profissional\n3️⃣ Super informal`;
+        return `Atualmente: *${this.getToneLabel(data.tom_de_voz || 'friendly_professional')}*.
+
+Como quer que eu fale?
+1️⃣ Profissional e cordial
+2️⃣ Descontraído mas profissional
+3️⃣ Super informal`;
       case 'business_hours':
-        return `Atualmente: *${data.horario_descricao || `${data.horario_inicio}-${data.horario_fim}`}*.\n\nMe diz os novos dias e horários (ex: "Seg a Sex, 9h às 18h"):`;
+        return `Atualmente: *${data.horario_descricao || `${data.horario_inicio}-${data.horario_fim}`}*.
+
+Me diz os novos dias e horários (ex: "Seg a Sex, 9h às 18h"):`;
       case 'outside_hours_behavior':
         return 'O que faço quando chegar mensagem fora do horário?\n\n1️⃣ Aviso que retorna no próximo dia útil\n2️⃣ Não respondo nada, só anoto\n\nOu me diz a mensagem que quer:';
       default:
@@ -184,7 +287,17 @@ export class OnboardingService {
   private getNextStepMessage(step: string, data: Record<string, string>): string {
     switch (step) {
       case 'business_type':
-        return `Boa, ${data.nome_confirmado}! Prazer em te conhecer 🤝\n\nMe conta o que você faz — pode ser bem direto:\n\nExemplos:\n• Corretor de imóveis\n• Professor de inglês\n• Clínica de estética\n• Loja de roupas\n\nPode mandar do seu jeito 😊`;
+        return `Boa, ${data.nome_confirmado}! Prazer em te conhecer 🤝
+
+Me conta o que você faz — pode ser bem direto:
+
+Exemplos:
+• Corretor de imóveis
+• Professor de inglês
+• Clínica de estética
+• Loja de roupas
+
+Pode mandar do seu jeito 😊`;
       case 'target_audience':
         return 'Legal! Entendi sobre o seu trabalho ✨\n\nE quem são seus clientes geralmente?\n\nExemplos:\n• Casais procurando apartamento\n• Mulheres 25-45 anos\n• Empresas pequenas\n\nSe não tiver certeza, manda o que vier na cabeça:';
       case 'tone_of_voice':
@@ -197,7 +310,16 @@ export class OnboardingService {
         const tone = this.getToneLabel(data.tom_de_voz || 'friendly_professional');
         const outside = data.fora_horario === 'silent' ? 'só anoto, sem resposta' : 'aviso que retorna';
         const hours = data.horario_descricao || `${data.horario_inicio}-${data.horario_fim}`;
-        return `Pronto! Aqui tá meu resumo sobre você:\n\n👤 *${data.nome_confirmado}*\n💼 ${data.negocio}\n🎯 Clientes: ${data.publico_alvo}\n💬 Tom: ${tone}\n🕐 Horário: ${hours}\n📩 Fora do horário: ${outside}\n\nTá tudo certo? Manda *ok* pra confirmar ou me diz o que quer ajustar!`;
+        return `Pronto! Aqui tá meu resumo sobre você:
+
+👤 *${data.nome_confirmado}*
+💼 ${data.negocio}
+🎯 Clientes: ${data.publico_alvo}
+💬 Tom: ${tone}
+🕐 Horário: ${hours}
+📩 Fora do horário: ${outside}
+
+Tá tudo certo? Manda *ok* pra confirmar ou me diz o que quer ajustar!`;
       }
       default:
         return '';

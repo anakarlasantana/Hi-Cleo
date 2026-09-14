@@ -101,6 +101,15 @@ export function sanitizeForAiPrompt(text: string): string {
 /**
  * Mascara dados pessoais para logs seguros (LGPD).
  */
+/**
+ * Remove blocos de raciocínio (<think>...</think>) de respostas de modelos
+ * reasoning (Qwen, DeepSeek-R1). Cobre tag NÃO fechada também — quando o modelo
+ * estoura max_tokens, o bloco de pensamento fica aberto e vazaria ao usuário.
+ */
+export function stripThinkingTags(text: string): string {
+  return text.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').trim();
+}
+
 export function maskPhone(phone: string): string {
   if (!phone || phone.length < 6) return '****';
   return phone.slice(0, 4) + '*'.repeat(phone.length - 6) + phone.slice(-2);

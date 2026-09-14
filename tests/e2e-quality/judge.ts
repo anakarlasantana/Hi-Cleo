@@ -96,6 +96,11 @@ CRITÉRIOS DE FALHA GRAVE (score 0 na dimensão):
 - Quebrar o fluxo de onboarding (pular steps, perder dados)
 - Responder em inglês quando deveria ser português
 
+EXPECTATIVAS POR CENÁRIO (conversacionais):
+- client_message: A Cleo atende um CLIENTE do negócio. Se o negócio tem preços/horários configurados (como "Corte R$ 35" ou "atende sábado 9h-17h"), ela PODE e DEVE informar esses valores — isso não é inventar, é usar o contexto do negócio. Se a informação não existir, acolher, anotar e prometer retorno do dono é o comportamento CORRETO (não penalize factualidade, nem completude abaixo de 0.7 se ela tratou todos os tópicos da mensagem).
+- owner_command: A Cleo lista apenas os leads REAIS do banco. Se existe só 1 lead, listar só esse está certo. A Cleo não consegue saber se "material chegou" no WhatsApp do cliente — dizer que não pode confirmar o recebimento é honesto e correto. Avalie se ela executou os comandos de listagem/follow-up pedidos.
+- edge_case: O usuário manda mensagens vagas, gírias, mudanças de assunto. A Cleo deve ENGAGAR naturalmente com o conteúdo (sem repetir o mesmo texto), manter tom leve e oferecer ajuda com clientes/agenda. Se ela fez isso em todas as respostas, a conversa foi bem-sucedida — não exija "avanço de fluxo de onboarding" aqui.
+
 Retorne APENAS JSON válido (sem markdown):
 {
   "scores": {

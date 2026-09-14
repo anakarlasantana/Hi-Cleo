@@ -179,6 +179,125 @@ describe('OnboardingService', () => {
     });
   });
 
+  describe('confirm_name — nome sugerido da ativação', () => {
+    it('asks for confirmation with the known name instead of asking from scratch', async () => {
+      onboardingRepo.seed('user-1', {
+        id: 'state-1', user_id: 'user-1', step: 'awaiting_intro_confirmation',
+        data: { nome: 'Carla Mendes', negocio: 'Salão de beleza' },
+        updated_at: '2025-01-01T00:00:00Z',
+      });
+
+      const response = await service.processMessage('user-1', 'bora');
+
+      expect(response).toContain('Carla Mendes');
+      expect(response).toContain('posso te chamar assim');
+    });
+
+    it('confirms suggested name on affirmation and advances', async () => {
+      onboardingRepo.seed('user-1', {
+        id: 'state-1', user_id: 'user-1', step: 'confirm_name',
+        data: { nome: 'Carla Mendes' },
+        updated_at: '2025-01-01T00:00:00Z',
+      });
+
+      await service.processMessage('user-1', 'isso mesmo');
+
+      const state = await onboardingRepo.getState('user-1');
+      expect(state?.data.nome_confirmado).toBe('Carla Mendes');
+      expect(state?.step).toBe('business_type');
+    });
+
+    it('accepts a different name when user rejects the suggestion', async () => {
+      onboardingRepo.seed('user-1', {
+        id: 'state-1', user_id: 'user-1', step: 'confirm_name',
+        data: { nome: 'Carla Mendes' },
+        updated_at: '2025-01-01T00:00:00Z',
+      });
+
+      await service.processMessage('user-1', 'não, me chama de Carlinha');
+
+      const state = await onboardingRepo.getState('user-1');
+      expect(state?.data.nome_confirmado).toBe('não, me chama de Carlinha'); // mock retorna a msg; IA real extrairia 'Carlinha'
+    });
+
+    it('asks from scratch when no suggested name exists', async () => {
+      onboardingRepo.seed('user-1', {
+        id: 'state-1', user_id: 'user-1', step: 'awaiting_intro_confirmation',
+        data: {},
+        updated_at: '2025-01-01T00:00:00Z',
+      });
+
+      const response = await service.processMessage('user-1', 'bora');
+
+      expect(response).toBe('Pra começar, como posso te chamar?');
+    });
+
+    it('rejects questions as name, redirecting politely', async () => {
+      onboardingRepo.seed('user-1', {
+        id: 'state-1', user_id: 'user-1', step: 'confirm_name',
+        data: {},
+        updated_at: '2025-01-01T00:00:00Z',
+      });
+
+      const response = await service.processMessage('user-1', 'Oi, Cleo! Pra começar, como posso te chamar?');
+
+      expect(response).toContain('Boa pergunta');
+      const state = await onboardingRepo.getState('user-1');
+      expect(state?.data.nome_confirmado).toBeUndefined();
+      expect(state?.step).toBe('confirm_name');
+    });
+  });
+
+  describe('confirm_name — inputs inválidos', () => {
+    const seedConfirmName = () => {
+      onboardingRepo.seed('user-1', {
+        id: 'state-1', user_id: 'user-1', step: 'confirm_name',
+        data: {},
+        updated_at: '2025-01-01T00:00:00Z',
+      });
+    };
+
+    it('rejects slash commands deterministically, without saving as name', async () => {
+      seedConfirmName();
+
+      const response = await service.processMessage('user-1', '/criar-nome-para-o-sala-de-beleza');
+
+      expect(response).toContain('nome');
+      const state = await onboardingRepo.getState('user-1');
+      // Continua no mesmo step e NÃO salvou o comando como nome
+      expect(state?.step).toBe('confirm_name');
+      expect(state?.data.nome_confirmado).toBeUndefined();
+    });
+
+    it('escalates to a more didactic message on repeated failures instead of looping identical text', async () => {
+      seedConfirmName();
+
+      const first = await service.processMessage('user-1', '/cmd');
+      const second = await service.processMessage('user-1', '/cmd');
+
+      // Segunda falha consecutiva usa mensagem escalada (diferente da primeira)
+      expect(second).not.toBe(first);
+      expect(second).toContain('*Carla*'); // exemplo concreto na mensagem escalada de confirm_name
+
+      const state = await onboardingRepo.getState('user-1');
+      expect(state?.data.nome_confirmado).toBeUndefined();
+      expect(state?.data._retries_confirm_name).toBe('2');
+    });
+
+    it('clears retry counter after a valid answer', async () => {
+      seedConfirmName();
+
+      await service.processMessage('user-1', '/cmd');
+      await service.processMessage('user-1', '/cmd');
+      await service.processMessage('user-1', 'Carla');
+
+      const state = await onboardingRepo.getState('user-1');
+      expect(state?.data.nome_confirmado).toBe('Carla');
+      expect(state?.data._retries_confirm_name).toBeUndefined();
+      expect(state?.step).toBe('business_type');
+    });
+  });
+
   describe('tone_of_voice step', () => {
     it('parses option 1 as formal', async () => {
       onboardingRepo.seed('user-1', {

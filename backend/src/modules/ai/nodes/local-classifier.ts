@@ -22,11 +22,11 @@ export interface ClassificationResult {
 // --- Padrões de saudação (clientes) ---
 
 const GREETING_PATTERNS = [
-  /^(oi|olá|ola|hey|eai|e ai|eaí)\s*[!?.]*$/i,
-  /^(bom dia|boa tarde|boa noite)\s*[!?.]*$/i,
-  /^(opa|fala|salve|beleza)\s*[!?.]*$/i,
-  /^(tudo bem|tudo bom|td bem|tudo certo)\s*[?!.]*$/i,
-  /^(hi|hello|hey there)\s*[!?.]*$/i,
+  /^(oi|olá|ola|hey|eai|e ai|eaí)\s*[!?.,]*$/i,
+  /^(bom dia|boa tarde|boa noite)\s*[!?.,]*$/i,
+  /^(opa|fala|salve|beleza)\s*[!?.,]*$/i,
+  /^(tudo bem|tudo bom|td bem|tudo certo)\s*[?!.,]*$/i,
+  /^(hi|hello|hey there)\s*[!?.,]*$/i,
 ];
 
 // --- Keywords do dono (bypass intent recognition) ---

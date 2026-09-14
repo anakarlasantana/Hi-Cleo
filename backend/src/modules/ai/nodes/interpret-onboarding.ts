@@ -18,6 +18,14 @@ export async function interpretOnboardingResponse(
   const prompt = ONBOARDING_PROMPTS[step];
   if (!prompt) return { valid: true, extractedData: {} };
 
+  // Steps de escolha numérica: se a resposta começa com dígito ("2", "2 😊",
+  // "2, mas bem leve"), resolver localmente — não depende da IA, que pode
+  // rejeitar por rigor excessivo ou estar indisponível.
+  if ((step === 'tone_of_voice' || step === 'outside_hours_behavior') && /^[\d]/.test(message.trim())) {
+    const local = fallbackInterpret(step, message);
+    if (local.valid) return local;
+  }
+
   try {
     const sanitized = sanitizeForAiPrompt(message);
     const contextStr = Object.keys(context).length > 0
@@ -46,6 +54,16 @@ function fallbackInterpret(step: string, message: string): InterpretedResponse {
   const lower = trimmed.toLowerCase();
   const retry = ONBOARDING_RETRY_MESSAGES[step];
 
+  // Comandos (/algo) e perguntas nunca são dados válidos nos steps de coleta.
+  // confirm_summary é exceção para perguntas ("tá certo?" é confirmação válida).
+  if (trimmed.startsWith('/') || (trimmed.includes('?') && step !== 'confirm_summary')) {
+    return { valid: false, extractedData: {}, retryMessage: retry };
+  }
+  // Nome não pode ser frase longa
+  if (step === 'confirm_name' && trimmed.length > 40) {
+    return { valid: false, extractedData: {}, retryMessage: retry };
+  }
+
   switch (step) {
     case 'confirm_name':
       if (trimmed.length < 2) return { valid: false, extractedData: {}, retryMessage: retry };
@@ -60,20 +78,22 @@ function fallbackInterpret(step: string, message: string): InterpretedResponse {
       return { valid: true, extractedData: { publico_alvo: trimmed } };
 
     case 'tone_of_voice': {
-      if (lower === '1' || lower.includes('formal') || lower.includes('cordial')) {
+      // Aceita "2", "2 😊", "2, mas bem leve", além de palavras-chave
+      const choice = lower.match(/^(\d)/)?.[1];
+      if (choice === '1' || lower.includes('formal') || lower.includes('cordial')) {
         return { valid: true, extractedData: { tom_de_voz: 'formal' } };
       }
-      if (lower === '3' || lower.includes('informal') || lower.includes('amigo')) {
+      if (choice === '3' || lower.includes('informal') || lower.includes('amigo')) {
         return { valid: true, extractedData: { tom_de_voz: 'casual' } };
       }
-      if (lower === '2' || lower.includes('descontraíd') || lower.includes('profissional')) {
+      if (choice === '2' || lower.includes('descontraíd') || lower.includes('profissional')) {
         return { valid: true, extractedData: { tom_de_voz: 'friendly_professional' } };
       }
       return { valid: false, extractedData: {}, retryMessage: retry };
     }
 
     case 'business_hours': {
-      const timePattern = /(\d{1,2})[:h]?(\d{2})?\s*[-aàáeé]+\s*(\d{1,2})[:h]?(\d{2})?/i;
+      const timePattern = /(\d{1,2})[:h]?(\d{2})?\s*(?:às|as|até|ate|a|e|-|–|—)+\s*(\d{1,2})[:h]?(\d{2})?/i;
       const match = trimmed.match(timePattern);
       if (match) {
         return {
@@ -89,10 +109,11 @@ function fallbackInterpret(step: string, message: string): InterpretedResponse {
     }
 
     case 'outside_hours_behavior': {
-      if (lower === '2' || lower.includes('não respond') || lower.includes('nao respond')) {
+      const choice = lower.match(/^(\d)/)?.[1];
+      if (choice === '2' || lower.includes('não respond') || lower.includes('nao respond')) {
         return { valid: true, extractedData: { fora_horario: 'silent' } };
       }
-      if (lower === '1' || lower.includes('avis') || lower.includes('retorn')) {
+      if (choice === '1' || lower.includes('avis') || lower.includes('retorn')) {
         return { valid: true, extractedData: { fora_horario: 'notify' } };
       }
       if (trimmed.length > 10) {

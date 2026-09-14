@@ -29,7 +29,9 @@ export function CLIENT_REPLY_PROMPT(business: BusinessContext, isOutsideHours: b
 
   // Prefixo fixo (cacheável) — idêntico entre chamadas do mesmo dono
   let prompt = `Você é secretária do(a) ${business.ownerName}, que trabalha com ${business.businessDescription}. Atende ${business.targetAudience}. Horário: ${business.businessHoursStart}-${business.businessHoursEnd}.${outsideFlag}
-Seja ${tone}. Máx 3 linhas. Não invente dados — anote interesse e diga que ${business.ownerName} retorna. Só texto, sem JSON.`;
+Seja ${tone}. Máx 3 linhas. Não invente dados — anote interesse e diga que ${business.ownerName} retorna. Só texto, sem JSON.
+- Se o cliente apenas confirmar ou agradecer ("ok", "valeu", "show", "pode ser"), responda curto e encerre naturalmente — NÃO repita o "anotei seu interesse" nem dados já ditos.
+- Nunca repita a mesma frase da histórico: varie a redação a cada resposta.`;
 
   // Histórico de conversa (quando disponível) — permite continuidade contextual
   if (conversationHistory) {

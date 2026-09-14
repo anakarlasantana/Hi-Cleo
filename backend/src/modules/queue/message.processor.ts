@@ -12,6 +12,7 @@ import { generateClientReply, type BusinessContext } from '../ai/nodes/generate-
 import { checkBusinessHours } from '../../shared/utils/business-hours.js';
 import { getDegradedReplyForClient, getDegradedReplyForOwner, type FallbackContext } from '../../shared/utils/fallback-templates.js';
 import { classifyClientMessage, classifyOwnerMessage } from '../ai/nodes/local-classifier.js';
+import { stripThinkingTags } from '../../shared/middleware/sanitize.js';
 
 export type MessageProcessor = MessageProcessorPort;
 
@@ -137,7 +138,12 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
 
     const user = await activationService.activateUser(code, phone, text);
     const userName = user.name || 'parceiro(a)';
-    const introMessage = onboardingService.getIntroMessage(userName);
+    // Confirmar a ativação explicitamente (crucial pro trial: a pessoa acabou de
+    // mandar o código e precisa saber que funcionou antes do onboarding começar)
+    const activationNote = user.subscription_status === 'trial'
+      ? '✅ *Ativação concluída!* Seu teste grátis de 7 dias começou agora. 🎉\n\n'
+      : '✅ *Ativação concluída!* Sua conta está pronta. 🎉\n\n';
+    const introMessage = activationNote + onboardingService.getIntroMessage(userName);
     // Persiste a resposta ANTES de enviar — sem isso, falha do WhatsApp perdia o onboarding
     const activationLead = await leadService.findOrCreate(user.id, phone, userName);
     await respond(introMessage, activationLead.id);
@@ -182,6 +188,16 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     if (accepted) {
       await termsConsentService.recordConsent(user.id, CURRENT_TERMS_VERSION);
       await respond('✅ Termos aceitos! Pode continuar usando normalmente.', ownerLead.id);
+      return;
+    }
+
+    // Se a usuária fez uma PERGUNTA em vez de responder, acolher a dúvida e
+    // explicar o passo de aceite em vez de reenviar o mesmo texto (loop robótico).
+    if (text.includes('?')) {
+      await respond(
+        'É bem simples 😊 Abre o link acima, lê rapidinho e depois me responde aqui com a palavra *aceito* (ou "ok"). Se tiver qualquer dúvida sobre os termos ou sobre a conexão, manda aqui que eu te ajudo!',
+        ownerLead.id,
+      );
       return;
     }
 
@@ -239,6 +255,30 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
   // Salvar mensagem inbound do dono
   await messageRepo.save(ownerLead.id, text, 'inbound');
 
+  // Agradecimento/encerramento ("obrigada", "valeu") — NÃO é pedido novo.
+  // Responder de forma humilde e fechar, em vez de re-executar comandos que o
+  // texto menciona por cortesia ("...ninguém sem resposta então" dispararia
+  // de novo a consulta). Perguntas e comandos reais não caem aqui.
+  const hasCommandSignal = /(agend|convida|ignora|desconecta|manda|lembra|mostra|envia)/i.test(text);
+  const isClosing = !hasCommandSignal
+    && !text.includes('?')
+    && /(obrigad[oa]|valeu|pode deixar|tá bom assim|ta bom assim|tá certo|ta certo|^show[!. 😊🙏👍]*$|entendi|deixa pra lá|então tá|tudo certo|resolvido)/i.test(text);
+  if (isClosing) {
+    try {
+      const aiReply = await assistenteService.generateConversationalReply(user.name || 'um profissional', text);
+      const clean = stripThinkingTags(aiReply).slice(0, 250).trim();
+      if (clean.length > 5) {
+        await messageRepo.save(ownerLead.id, clean, 'outbound');
+        await safeSend(messaging, { instance: env.MONITOR_INSTANCE, to: phone, text: clean }, container.logger);
+        return;
+      }
+    } catch { /* IA indisponível — fallback estático abaixo */ }
+    const reply = 'De nada! Qualquer coisa é só chamar 😊';
+    await messageRepo.save(ownerLead.id, reply, 'outbound');
+    await safeSend(messaging, { instance: env.MONITOR_INSTANCE, to: phone, text: reply }, container.logger);
+    return;
+  }
+
   // Classificador local — resolve intents simples sem chamar IA
   const localIntent = classifyOwnerMessage(text);
   if (localIntent.resolved && localIntent.intent) {
@@ -250,6 +290,17 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
 
   const intent = await assistenteService.recognize(text);
   if (intent.confidence < 0.7) {
+    // Mensagem vaga/small talk do dono — engajar com IA (resposta variada e
+    // contextual) antes de cair no menu fixo, evitando loop robótico.
+    try {
+      const aiReply = await assistenteService.generateConversationalReply(user.name || 'um profissional', text);
+      const clean = stripThinkingTags(aiReply).slice(0, 300).trim();
+      if (clean.length > 10) {
+        await messageRepo.save(ownerLead.id, clean, 'outbound');
+        await safeSend(messaging, { instance: env.MONITOR_INSTANCE, to: phone, text: clean }, container.logger);
+        return;
+      }
+    } catch { /* IA indisponível — segue pro fallback fixo */ }
     const fallback = 'Não entendi bem. Pode reformular? 🤔\n\nExemplos:\n• "quem tá sem resposta?"\n• "agenda retorno pro João amanhã"\n• "mostra meus clientes"';
     await messageRepo.save(ownerLead.id, fallback, 'outbound');
     await safeSend(messaging, { instance: env.MONITOR_INSTANCE, to: phone, text: fallback }, container.logger);
@@ -363,6 +414,14 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
 
     // Trial válido — incrementar contador de respostas
     await container.trialRepo.incrementResponses(user.id);
+  }
+
+  // === GUARD: assinatura inativa (expirada/cancelada/suspensa) =================
+  // Cleo fica 100% INOPERANTE para clientes: nenhuma resposta automática.
+  // NOTA: o objeto user usa camelCase vindo do drizzle (subscriptionStatus).
+  const subStatus = (user as any).subscriptionStatus ?? (user as any).subscription_status;
+  if (subStatus !== 'active' && subStatus !== 'trial') {
+    return;
   }
 
   const now = new Date();
@@ -502,17 +561,39 @@ async function executeIntent(container: any, user: any, intent: { type: string; 
       const list = leads.slice(0, 10).map((l: any, i: number) => `${i + 1}. *${l.name}* (${l.phone})`).join('\n');
       return `📋 Seus clientes:\n\n${list}`;
     }
-    case 'leads_today': {
-      const leads = await leadService.listToday(user.id);
-      if (leads.length === 0) return 'Nenhum cliente novo hoje. 📭';
-      const list = leads.map((l: any, i: number) => `${i + 1}. *${l.name}*`).join('\n');
-      return `📋 Clientes novos de hoje:\n\n${list}`;
-    }
+    case 'leads_today':
     case 'no_reply': {
-      const leads = await leadService.listNoReply(user.id);
-      if (leads.length === 0) return 'Todos os clientes estão com retorno em dia! ✅';
-      const list = leads.slice(0, 10).map((l: any, i: number) => `${i + 1}. *${l.name}* (${l.phone})`).join('\n');
-      return `⚠️ Clientes esperando retorno:\n\n${list}`;
+      // Mensagens combinadas ("clientes novos de hoje E quem está sem resposta")
+      // precisam responder as duas partes — senão a dona repete o pedido e a
+      // Cleo entra em loop respondendo sempre a mesma metade.
+      const original = (intent.originalText || '').toLowerCase();
+      const asksToday = intent.type === 'leads_today' || /(hoje|novos|chegou)/.test(original);
+      const asksNoReply = intent.type === 'no_reply' || /(sem resposta|sem retorno|não respond|nao respond|pendente)/.test(original);
+
+      const sections: string[] = [];
+
+      if (asksToday) {
+        const today = await leadService.listToday(user.id);
+        sections.push(
+          today.length === 0
+            ? '📭 Clientes novos de hoje: nenhum por enquanto.'
+            : `📋 Clientes novos de hoje:
+
+${today.map((l: any, i: number) => `${i + 1}. *${l.name}*`).join('\n')}`,
+        );
+      }
+      if (asksNoReply) {
+        const pending = await leadService.listNoReply(user.id);
+        sections.push(
+          pending.length === 0
+            ? '✅ Retorno em dia: ninguém esperando resposta.'
+            : `⚠️ Clientes esperando retorno:
+
+${pending.slice(0, 10).map((l: any, i: number) => `${i + 1}. *${l.name}* (${l.phone})`).join('\n')}`,
+        );
+      }
+
+      return sections.join('\\n\\n');
     }
     case 'hot_leads': {
       const leads = await leadService.listByStatus(user.id, 'hot');
@@ -528,6 +609,12 @@ async function executeIntent(container: any, user: any, intent: { type: string; 
       if (leads.length === 0) return `Não encontrei nenhum contato com o nome "${name}". Verifique e tente novamente.`;
 
       const targetLead = leads[0];
+
+      // Sem data nem horário no pedido → não inventar ("amanhã 9h" do nada).
+      // Perguntar antes pro dono confirmar.
+      if (!intent.entities.date && !intent.entities.time) {
+        return `Pra quando você quer que eu lembre de falar com *${targetLead.name}*? Me diz o dia e horário (ex: "amanhã 14h" ou "sexta 10h").`;
+      }
 
       // Calcular data do follow-up (amanhã por padrão, ou data informada)
       let scheduledDate: Date;
@@ -568,7 +655,7 @@ async function executeIntent(container: any, user: any, intent: { type: string; 
 
       // Verificar se quer mudar horário
       if (lower.includes('horário') || lower.includes('hora')) {
-        const timePattern = /(\d{1,2})[:h]?(\d{2})?\s*[-aàáeé]+\s*(\d{1,2})[:h]?(\d{2})?/i;
+        const timePattern = /(\d{1,2})[:h]?(\d{2})?\s*(?:às|as|até|ate|a|e|-|–|—)+\s*(\d{1,2})[:h]?(\d{2})?/i;
         const match = lower.match(timePattern);
 
         if (match) {
@@ -612,7 +699,10 @@ async function executeIntent(container: any, user: any, intent: { type: string; 
       };
 
       const statusLabel = statusLabels[targetLead.status] || targetLead.status;
-      const createdAt = new Date(targetLead.created_at).toLocaleDateString('pt-BR');
+      const createdDate = targetLead.created_at ? new Date(targetLead.created_at) : null;
+      const createdAt = createdDate && !isNaN(createdDate.getTime())
+        ? createdDate.toLocaleDateString('pt-BR')
+        : 'hoje';
 
       let response = `📋 *${targetLead.name}*\n\n📱 ${targetLead.phone}\n📊 Status: ${statusLabel}\n📅 Contato desde: ${createdAt}`;
 
@@ -702,6 +792,15 @@ async function executeIntent(container: any, user: any, intent: { type: string; 
       const name = intent.entities.name || '';
       const phone = intent.entities.phone || '';
       if (!name && !phone) return 'Qual contato você quer ignorar? Me diz o nome ou número.';
+      // Guard: sem telefone, só ignora nome que corresponda a um lead existente.
+      // Evita excluir lixo ("13", "contato") quando a IA interpreta errado
+      // conversa casual do dono como comando.
+      if (!phone) {
+        const matches = await leadService.searchByName(user.id, name);
+        if (matches.length === 0) {
+          return `Não encontrei nenhum contato chamado "${name}" na sua lista. Se é um número, me manda o telefone completo com DDD.`;
+        }
+      }
       await exclusionRepo.add(user.id, phone || name, name);
       return `✅ Pronto! O contato *${name || phone}* foi marcado como pessoal.`;
     }
@@ -715,10 +814,33 @@ async function executeIntent(container: any, user: any, intent: { type: string; 
       const name = intent.entities.name || '';
       const phone = intent.entities.phone || '';
       if (!name && !phone) return 'Qual contato você quer voltar a acompanhar?';
+      // Guard: sem telefone, confirmar que o nome existe entre os ignorados
+      // antes de "confirmar" uma ação que talvez o dono não pediu.
+      if (!phone) {
+        const ignored = await exclusionRepo.list(user.id);
+        const found = ignored.some((c: any) =>
+          (c.name || '').toLowerCase().includes(name.toLowerCase()));
+        if (!found) {
+          return `Não encontrei "${name}" na sua lista de ignorados. Quer que eu liste quem está lá?`;
+        }
+      }
       await exclusionRepo.remove(user.id, phone || name);
       return `✅ Voltei a acompanhar *${name || phone}*.`;
     }
-    default:
+    default: {
+      // Intent não reconhecida ou small talk — resposta conversacional via IA
+      // (variada, engajando com o que o dono disse) em vez de texto fixo robótico.
+      try {
+        const aiReply = await container.assistenteService.generateConversationalReply(
+          user.name || 'um profissional',
+          intent.originalText || '',
+        );
+        const clean = stripThinkingTags(aiReply).slice(0, 300).trim();
+        if (clean.length > 10) return clean;
+      } catch {
+        // IA indisponível — cai no fallback padrão
+      }
       return 'Entendi o que você quer, mas essa função ainda está sendo preparada. Em breve! 🚧';
+    }
   }
 }
