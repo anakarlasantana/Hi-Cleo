@@ -66,8 +66,9 @@ echo "✅ Backend saudável"
 
 # Verifica se o Ollama está acessível
 echo "🔍 Verificando Ollama..."
-if ! curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
-  echo "❌ Ollama não está rodando em localhost:11434"
+OLLAMA_URL="${E2E_OLLAMA_BASE_URL:-http://127.0.0.1:11434}"
+if ! curl -sf "$OLLAMA_URL/api/tags" > /dev/null 2>&1; then
+  echo "❌ Ollama não está rodando em $OLLAMA_URL"
   echo "   Inicie com: ollama serve"
   exit 1
 fi

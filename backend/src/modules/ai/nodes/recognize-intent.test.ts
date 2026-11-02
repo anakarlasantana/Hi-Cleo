@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { recognizeIntent } from './recognize-intent.js';
+import { normalizePhoneEntity, recognizeIntent } from './recognize-intent.js';
 import type { AiPort } from '../../../shared/ports/ai.port.js';
 
 /**
@@ -302,5 +302,25 @@ describe('recognizeIntent — uma oração não vira vários pedidos', () => {
 
     expect(result.type).toBe('unknown');
     expect(result.additionalIntents ?? []).toEqual([]);
+  });
+});
+
+/**
+ * Regressão do E2E (disconnect_collaborator): a IA devolvia
+ * `entities.phone = "[TELEFONE]"` e a Cleo respondia
+ * "não encontrei [TELEFONE] nas suas conexões". Só dígito válido pode passar.
+ */
+describe('normalizePhoneEntity — placeholder da IA não é telefone', () => {
+  it('rejeita placeholders e texto', () => {
+    expect(normalizePhoneEntity('[TELEFONE]')).toBeUndefined();
+    expect(normalizePhoneEntity('número do colaborador')).toBeUndefined();
+    expect(normalizePhoneEntity('')).toBeUndefined();
+    expect(normalizePhoneEntity('123')).toBeUndefined();
+  });
+
+  it('normaliza números válidos com e sem DDI', () => {
+    expect(normalizePhoneEntity('48999122999')).toBe('5548999122999');
+    expect(normalizePhoneEntity('5548999122999')).toBe('5548999122999');
+    expect(normalizePhoneEntity('(48) 99912-2999')).toBe('5548999122999');
   });
 });

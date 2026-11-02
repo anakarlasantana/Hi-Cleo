@@ -12,8 +12,11 @@ import {
   createCollaborator,
   createTestUser,
   createWhatsappSession,
+  getProspectionStatus,
   getSessionStatusByUserId,
   markAsProspected,
+  seedProspectedTrial,
+  seedTestLead,
   seedClientLeads,
   sendMaterial,
   sendMessage,
@@ -87,31 +90,47 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
     }
 
     case 'prospection_response': {
-      await createTestUser(persona.phone, persona.name, {
+      const trialUserId = await createTestUser(persona.phone, persona.name, {
         onboardingComplete: true,
       });
+      // Precisa existir linha em trial_attempts: é ela que o backend consulta
+      // (prospection_status === 'contacted') para tratar a resposta do ex-prospect.
+      await seedProspectedTrial(trialUserId, persona.phone, persona.name);
       await setTrialExpired(persona.phone);
       await markAsProspected(persona.phone);
       break;
     }
 
     case 'material_flow': {
-      await createTestUser(persona.phone, persona.name, {
+      const ownerUserId = await createTestUser(persona.phone, persona.name, {
         plan: 'solo',
         subscriptionStatus: 'active',
         onboardingComplete: true,
       });
+      // A persona cita o “aluno João”: o contato precisa existir, senão a Cleo
+      // responde “não encontrei João” e o cenário não testa o reenvio.
+      await seedTestLead(ownerUserId, 'João Silva', '5548988770001');
       await sendMaterial(persona.phone, 'catalogo-produtos.pdf', 'application/pdf');
       await sleep(2000);
       break;
     }
 
     case 'local_classifier': {
-      await createTestUser(persona.phone, persona.name, {
+      // O cenário é um CLIENTE do negócio mandando “bom dia” — antes ele era
+      // enviado como se fosse o DONO, então a Cleo respondia “quer ver os
+      // clientes sem resposta?” (resposta de dono) e o cenário falhava por
+      // testar o caminho errado.
+      const ownerPhone = `55489990${persona.phone.slice(-5)}`;
+      await cleanupPhone(ownerPhone);
+      const userId = await createTestUser(ownerPhone, 'Dono Teste', {
         plan: 'solo',
         subscriptionStatus: 'active',
         onboardingComplete: true,
+        servicesInfo: 'Corte masculino: R$ 40. Atende de seg a sáb, 9h às 19h.',
       });
+      const ownerInstance = 'test-e2e';
+      await createWhatsappSession(userId, ownerInstance);
+      (persona as any)._ownerInstance = ownerInstance;
       break;
     }
 
@@ -175,7 +194,7 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
 
   const maxTurns = getMaxTurns(persona.scenario);
 
-  const isClientScenario = persona.scenario === 'client_message';
+  const isClientScenario = persona.scenario === 'client_message' || persona.scenario === 'local_classifier';
   const ownerInstance = (persona as any)._ownerInstance as string | undefined;
 
   async function send(phone: string, text: string): Promise<void> {
@@ -223,6 +242,20 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
   }
 
   const verdict = await evaluateConversation(judgeAi, persona, turns, config.passThreshold);
+
+  // Prospecção: o backend precisa ter CLASSIFICADO a resposta (interessado ou
+  // não). Sem isso o fluxo não rodou, mesmo que a conversa pareça boa.
+  if (persona.scenario === 'prospection_response') {
+    const status = await getProspectionStatus(persona.phone);
+    const classified = status === 'interested' || status === 'not_interested';
+
+    if (!classified) {
+      verdict.problemas.push(`Resposta da prospecção não foi classificada (status: ${status ?? 'sem registro'})`);
+      verdict.pass = false;
+    } else {
+      turns.push({ role: 'assistant', content: `[CHECK] Prospecção classificada como ${status}`, timestamp: new Date() });
+    }
+  }
 
   // Verificação determinística complementar (cenário híbrido): a sessão do
   // colaborador precisa estar desconectada no banco, independente do que a

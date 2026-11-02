@@ -1,6 +1,6 @@
 import type { AiPort } from '../../shared/ports/ai.port.js';
 import type { Message, RecognizedIntent } from '../../shared/types/index.js';
-import { formatConversationHistory, normalizeForCompare } from '../../shared/utils/conversation-history.js';
+import { formatConversationHistory, normalizeForCompare, repeatsSentence } from '../../shared/utils/conversation-history.js';
 import { recognizeIntent } from '../ai/nodes/recognize-intent.js';
 
 /** Quantas mensagens de histórico entram no prompt (economia de tokens). */
@@ -56,7 +56,11 @@ export class AssistenteService {
 
     // Histórico vem em ordem DESC: o primeiro outbound é a última fala da Cleo.
     const lastCleoReply = recentMessages.find((msg) => msg.direction === 'outbound')?.text;
-    if (!lastCleoReply || normalizeForCompare(first) !== normalizeForCompare(lastCleoReply)) {
+    const repeated = !!lastCleoReply
+      && (normalizeForCompare(first) === normalizeForCompare(lastCleoReply)
+        || repeatsSentence(first, lastCleoReply));
+
+    if (!lastCleoReply || !repeated) {
       return first;
     }
 
@@ -94,7 +98,8 @@ export class AssistenteService {
       'Responda DIRETAMENTE ao que ele disse, em 1-2 frases curtas, com humor e naturalidade — como uma pessoa responderia.',
       'Quando fizer sentido, ofereça em UMA frase curta algo concreto que você pode fazer agora (ex: "quer ver quem tá sem resposta?").',
       'Você só sabe fazer isto: ver clientes (novos, quentes, sem resposta, status de um contato), agendar lembretes/retornos, guardar e reenviar materiais e ajustar configurações da conta. NUNCA ofereça outra capacidade (tocar música, playlist, previsão do tempo, pedir comida, etc.).',
-      'NUNCA liste um menu de comandos nem repita ofertas, piadas ou perguntas que já aparecem no histórico.',
+      'NUNCA liste um menu de comandos nem repita ofertas, piadas ou perguntas que já aparecem no histórico. '
+        + 'Se você JÁ ofereceu ajuda nesta conversa, apenas responda ao que a pessoa disse, sem oferecer de novo.',
       'Não invente dados (números, nomes, preços). Não diga que é uma IA.',
       'Responda em português brasileiro.',
     ].join(' ');

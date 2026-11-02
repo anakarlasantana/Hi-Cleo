@@ -219,7 +219,10 @@ services:
     environment:
       - DATABASE_URL=postgresql://hicleo:hicleo123@localhost:5434/hicleo
       - BASE_URL=http://localhost:3001
-      - E2E_OLLAMA_BASE_URL=http://localhost:11434
+      # Ollama roda no HOST e escuta só em 127.0.0.1. Em Docker Desktop (e no
+      # Linux com extra_hosts) `network_mode: host` NÃO compartilha o loopback
+      # do host → usamos host.docker.internal (Docker Desktop resolve nativo).
+      - E2E_OLLAMA_BASE_URL=http://host.docker.internal:11434
     depends_on:
       # `required: false` + service_started: o E2E injeta webhooks direto no
       # backend e não usa a Evolution API. Amarrar em `service_healthy` fazia o

@@ -473,6 +473,48 @@ export async function markAsProspected(phone: string): Promise<void> {
   );
 }
 
+/** Status de prospecção do telefone (pending/contacted/interested/not_interested). */
+export async function getProspectionStatus(phone: string): Promise<string | null> {
+  const db = getPool();
+  const result = await db.query(
+    `SELECT prospection_status FROM trial_attempts
+     WHERE phone = $1 ORDER BY created_at DESC LIMIT 1`,
+    [phone],
+  );
+  return result.rows[0]?.prospection_status ?? null;
+}
+
+/** Cria um cliente (lead) do dono — necessário em cenários que citam um contato. */
+export async function seedTestLead(userId: string, name: string, phone: string): Promise<void> {
+  const db = getPool();
+  await db.query(
+    `INSERT INTO leads (id, user_id, name, phone, status, last_interaction, created_at)
+     VALUES (gen_random_uuid(), $1, $2, $3, 'new', NOW() - INTERVAL '1 day', NOW() - INTERVAL '2 days')`,
+    [userId, name, phone],
+  );
+}
+
+/**
+ * Cria a linha de `trial_attempts` já prospectada.
+ *
+ * O cenário `prospection_response` chamava só `markAsProspected` (UPDATE), mas
+ * `createTestUser` não cria `trial_attempts` — então o UPDATE afetava 0 linhas e
+ * o backend nunca entrava no fluxo de prospecção (a Cleo respondia como se o
+ * dono estivesse mandando comando). Resultado no E2E: 0.43, “não reconheceu o
+ * desinteresse”.
+ */
+export async function seedProspectedTrial(userId: string, phone: string, name = 'E2E Prospect'): Promise<void> {
+  const db = getPool();
+  await db.query(
+    `INSERT INTO trial_attempts
+       (id, name, phone, status, trial_user_id, prospection_status,
+        prospection_attempts, last_prospection_at, expired_at, created_at)
+     VALUES (gen_random_uuid(), $3, $1, 'expired', $2, 'contacted',
+             1, NOW(), NOW() - INTERVAL '1 day', NOW() - INTERVAL '10 days')`,
+    [phone, userId, name],
+  );
+}
+
 /** Busca últimas mensagens de um telefone (inbound + outbound) */
 export async function getMessages(phone: string, limit?: number): Promise<Turn[]> {
   const db = getPool();

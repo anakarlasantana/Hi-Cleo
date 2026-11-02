@@ -1,7 +1,7 @@
 import type { AiPort } from '../../../shared/ports/ai.port.js';
 import type { Message } from '../../../shared/types/index.js';
 import { sanitizeForAiPrompt, stripThinkingTags } from '../../../shared/middleware/sanitize.js';
-import { formatConversationHistory, normalizeForCompare } from '../../../shared/utils/conversation-history.js';
+import { formatConversationHistory, normalizeForCompare, repeatsSentence } from '../../../shared/utils/conversation-history.js';
 import { CLIENT_REPLY_PROMPT } from '../prompts/client-reply.prompts.js';
 
 /**
@@ -50,7 +50,13 @@ export async function generateClientReply(
     // regenerar UMA vez pedindo variação explícita. Se repetir de novo, desiste —
     // melhor repetir uma vez do que não responder.
     const lastCleoReply = recentMessages?.find((m) => m.direction === 'outbound')?.text;
-    if (lastCleoReply && normalizeForCompare(cleaned) === normalizeForCompare(lastCleoReply)) {
+    // Resposta idêntica OU a mesma frase-chave repetida (o guard antigo só pegava
+    // idêntica; a Cleo repetia a mesma despedida com outro começo).
+    const repeated = !!lastCleoReply
+      && (normalizeForCompare(cleaned) === normalizeForCompare(lastCleoReply)
+        || repeatsSentence(cleaned, lastCleoReply));
+
+    if (lastCleoReply && repeated) {
       try {
         const retry = await ai.generateContent([
           prompt,

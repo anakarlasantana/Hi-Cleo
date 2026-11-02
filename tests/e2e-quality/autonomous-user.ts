@@ -127,7 +127,7 @@ function getFirstMessageInstructions(scenario: Scenario): string {
     case 'invite_flow':
       return 'O dono quer convidar um colaborador. Mande algo como "convida 5548999887766" ou "quero adicionar meu atendente".';
     case 'prospection_response':
-      return 'Você recebeu uma mensagem da Cleo oferecendo o serviço (prospecção). Responda com interesse ("me conta mais", "quanto custa") OU desinteresse ("não tenho interesse", "para de mandar msg").';
+      return 'Você recebeu uma mensagem da Cleo oferecendo o serviço (prospecção). Responda em UMA frase curta, como um ex-cliente: interesse ("me conta mais", "quanto custa?") OU desinteresse ("não tenho interesse", "para de mandar msg"). NUNCA pergunte à Cleo o que ela quer.';
     case 'material_flow':
       return 'Diga que vai enviar um documento/material para o cliente. Algo como "vou mandar o cardápio pro cliente" ou "preciso enviar o catálogo".';
     case 'local_classifier':
@@ -157,7 +157,7 @@ function getScenarioInstructions(scenario: Scenario): string {
     case 'invite_flow':
       return 'Se a Cleo pediu confirmação, confirme. Se deu certo, agradeça. Se pediu o número, forneça.';
     case 'prospection_response':
-      return 'Continue a conversa sobre o serviço. Pergunte preço, como funciona, ou diga que não quer.';
+      return 'Continue a conversa sobre o serviço em frases curtas: pergunte o preço ou diga que não quer. Se já recebeu a resposta (link/confirmação), encerre com [FIM].';
     case 'material_flow':
       return 'Se a Cleo confirmou recebimento do material, peça para reenviar ou enviar para outro cliente. Se pediu detalhes, forneça.';
     case 'local_classifier':
@@ -286,11 +286,26 @@ function isEchoOfCleo(message: string, lastCleoMessage?: string): boolean {
   const msg = normalizeForComparison(message);
   const cleo = normalizeForComparison(lastCleoMessage);
   if (!msg || !cleo) return false;
-  return msg.includes(cleo.slice(0, ECHO_WINDOW)) || cleo.includes(msg);
+
+  // Prefixo (comparação original) ou mensagem inteira contida na fala da Cleo
+  if (msg.includes(cleo.slice(0, ECHO_WINDOW)) || cleo.includes(msg)) return true;
+
+  // Eco "no meio" da fala: a persona cola uma FRASE da Cleo (ex.: a persona
+  // repetiu "só de olho nos clientes que ainda não responderam" e a Cleo
+  // executou a consulta de no_reply como se o usuário tivesse pedido).
+  const fragments = lastCleoMessage
+    .split(/[.!?\n]/)
+    .map((fragment) => normalizeForComparison(fragment))
+    .filter((fragment) => fragment.length >= 20);
+
+  return fragments.some((fragment) => msg.includes(fragment));
 }
 
 /** A persona pergunta à Cleo o que ELA quer/precisa (inversão de papéis). */
 const ASKS_THE_BOT = /\bvoc[eê]s?\s+(quer|querem|pode|podem|consegue|prefere|gostaria|vai|sabe)\b/i;
+
+/** Fala dirigida ao bot (ex: se voce quer saber, me diz) — nao e mensagem de cliente/dono. */
+const TALKS_TO_BOT = /\b(se|quando)\s+voc[eê]\s+(quer|quiser|precisar|souber)|\bme\s+(diz|diga|fala|conta)\s+(o|a|se|que)\b/i;
 
 /** A persona falou como a Cleo (assistente), não como usuário. */
 const ASSISTANT_VOICE = /\b(estou aqui para|posso (te )?ajudar|vou te ajudar|conte comigo|como posso ajudar|em que posso ajudar|quer que eu)\b/i;
@@ -362,6 +377,9 @@ export function rejectReason(message: string, ctx: PersonaMessageContext = {}): 
   }
   if (ctx.forbidAskingBot && ASKS_THE_BOT.test(message)) {
     return 'perguntou o que a Cleo quer — quem pede é o usuário';
+  }
+  if (TALKS_TO_BOT.test(message)) {
+    return 'falou como se estivesse atendendo a Cleo — escreva como cliente/dono';
   }
 
   return null;

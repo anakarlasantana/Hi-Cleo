@@ -9,8 +9,10 @@ export interface CliOptions {
   noPause: boolean;
   /** Pausa após TODAS as personas (inclusive as que passaram) */
   pauseAlways: boolean;
-  /** Cenário único a executar (null = todos) */
+  /** Cenário(s) a executar (null = todos). Vários: --single a,b,c */
   singleScenario: Scenario | null;
+  /** Lista normalizada de cenários pedidos (vazia = todos) */
+  onlyScenarios: Scenario[];
 }
 
 /** Parseia argv e retorna as opções do runner */
@@ -32,5 +34,9 @@ export function parseCli(argv: string[]): CliOptions {
     singleScenario = value as Scenario;
   }
 
-  return { noPause, pauseAlways, singleScenario };
+  const onlyScenarios = singleScenario
+    ? singleScenario.split(',').map((item) => item.trim()).filter(Boolean) as Scenario[]
+    : [];
+
+  return { noPause, pauseAlways, singleScenario, onlyScenarios };
 }

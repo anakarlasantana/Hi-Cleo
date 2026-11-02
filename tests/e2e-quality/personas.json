@@ -37,7 +37,7 @@
   {
     "name": "Pedro Almeida",
     "scenario": "material_flow",
-    "description": "Personal trainer que quer enviar o PDF do treino para um cliente específico via Cleo."
+    "description": "Personal trainer que quer enviar o PDF do treino para o aluno João (contato já existente). Diz o nome do contato na primeira mensagem."
   },
   {
     "name": "Maria Souza",

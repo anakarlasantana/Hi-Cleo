@@ -4,6 +4,45 @@ import { trialAttempts, users } from '../../shared/schema.js';
 import type { TrialRepository, TrialAttempt, CreateTrialAttemptData } from './trial.port.js';
 
 export class DrizzleTrialRepository implements TrialRepository {
+  /**
+   * Converte a linha do Drizzle (camelCase) para o formato do port (snake_case).
+   *
+   * Sem isso, `trialAttempt.prospection_status` vinha `undefined` — a Cleo nunca
+   * entrava no fluxo de prospecção (o E2E respondia como se fosse comando de
+   * dono) e qualquer leitura de `responses_used`/`trial_user_id` também falhava.
+   */
+  private toTrialAttempt(row: typeof trialAttempts.$inferSelect): TrialAttempt {
+    return {
+      id: row.id,
+      name: row.name,
+      phone: row.phone,
+      email: row.email ?? null,
+      email_normalized: row.emailNormalized ?? null,
+      business_type: row.businessType ?? null,
+      city: row.city ?? null,
+      state: row.state ?? null,
+      referral_source: row.referralSource ?? null,
+      ip_address: row.ipAddress ?? null,
+      device_fingerprint: row.deviceFingerprint ?? null,
+      user_agent: row.userAgent ?? null,
+      status: (row.status ?? 'started') as TrialAttempt['status'],
+      blocked_reason: row.blockedReason ?? null,
+      trial_user_id: row.trialUserId ?? null,
+      responses_used: row.responsesUsed ?? 0,
+      leads_captured: row.leadsCaptured ?? 0,
+      whatsapp_connected: row.whatsappConnected ?? false,
+      onboarding_completed: row.onboardingCompleted ?? false,
+      last_activity_at: row.lastActivityAt?.toISOString() ?? null,
+      prospection_attempts: row.prospectionAttempts ?? 0,
+      last_prospection_at: row.lastProspectionAt?.toISOString() ?? null,
+      prospection_status: (row.prospectionStatus ?? 'pending') as TrialAttempt['prospection_status'],
+      created_at: row.createdAt?.toISOString() ?? '',
+      activated_at: row.activatedAt?.toISOString() ?? null,
+      expired_at: row.expiredAt?.toISOString() ?? null,
+      converted_at: row.convertedAt?.toISOString() ?? null,
+    };
+  }
+
   async create(data: CreateTrialAttemptData): Promise<TrialAttempt> {
     const [attempt] = await db
       .insert(trialAttempts)
@@ -16,7 +55,7 @@ export class DrizzleTrialRepository implements TrialRepository {
       .returning();
 
     if (!attempt) throw new Error('Erro ao criar trial attempt');
-    return attempt as unknown as TrialAttempt;
+    return this.toTrialAttempt(attempt);
   }
 
   async findByPhone(phone: string): Promise<TrialAttempt | null> {
@@ -27,7 +66,7 @@ export class DrizzleTrialRepository implements TrialRepository {
       .orderBy(desc(trialAttempts.createdAt))
       .limit(1);
 
-    return (data as unknown as TrialAttempt) || null;
+    return data ? this.toTrialAttempt(data) : null;
   }
 
   async findRecentByPhone(phone: string, withinDays: number): Promise<TrialAttempt | null> {
@@ -47,7 +86,7 @@ export class DrizzleTrialRepository implements TrialRepository {
       .orderBy(desc(trialAttempts.createdAt))
       .limit(1);
 
-    return (data as unknown as TrialAttempt) || null;
+    return data ? this.toTrialAttempt(data) : null;
   }
 
   async findRecentByIp(ip: string, withinHours: number): Promise<number> {
@@ -70,7 +109,7 @@ export class DrizzleTrialRepository implements TrialRepository {
       .orderBy(desc(trialAttempts.createdAt))
       .limit(1);
 
-    return (data as unknown as TrialAttempt) || null;
+    return data ? this.toTrialAttempt(data) : null;
   }
 
   async updateStatus(id: string, status: TrialAttempt['status'], fields?: Record<string, unknown>): Promise<void> {

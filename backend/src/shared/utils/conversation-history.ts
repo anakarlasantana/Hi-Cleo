@@ -44,6 +44,39 @@ export function formatConversationHistory(
   return lines.join('\n');
 }
 
+/**
+ * Detecta se a nova resposta repete uma FRASE inteira da resposta anterior da
+ * Cleo (não só a resposta idêntica).
+ *
+ * Por que existe: no E2E o guard de repetição comparava a resposta inteira, então
+ * a Cleo repetia “Vou anotar seu interesse e o dono entra em contato em breve”
+ * na resposta seguinte com outro começo — o guard não pegava e o cliente lia a
+ * mesma frase a cada mensagem.
+ */
+export function repeatsSentence(
+  next: string,
+  previous?: string,
+  minLength = 40,
+): boolean {
+  if (!next || !previous) return false;
+
+  const normalize = (text: string) => text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const normalizedNext = normalize(next);
+  const fragments = previous
+    .split(/[.!?\n]+/)
+    .map(normalize)
+    .filter((fragment) => fragment.length >= minLength);
+
+  return fragments.some((fragment) => normalizedNext.includes(fragment));
+}
+
 /** Normalização para comparar respostas: ignora caixa, espaços, pontuação e emojis. */
 export function normalizeForCompare(text: string): string {
   return text

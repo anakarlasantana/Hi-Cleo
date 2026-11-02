@@ -92,9 +92,19 @@ export async function recognizeIntent(ai: AiPort, text: string): Promise<Recogni
     const parsed = JSON.parse(cleaned);
 
     const entities = parsed.entities || {};
-    if (!entities.phone) {
-      const phone = extractPhoneEntity(text);
-      if (phone) entities.phone = phone;
+
+    // A IA às vezes devolve PLACEHOLDER em vez do número ("[TELEFONE]", "número").
+    // Aceitar isso fazia a Cleo responder “não encontrei [TELEFONE] nas suas
+    // conexões” (visto no E2E, disconnect_collaborator). Só vale dígito válido;
+    // senão, tenta extrair do texto original.
+    const aiPhone = typeof entities.phone === 'string' ? normalizePhoneEntity(entities.phone) : undefined;
+    const textPhone = extractPhoneEntity(text);
+    const phone = aiPhone ?? textPhone;
+
+    if (phone) {
+      entities.phone = phone;
+    } else {
+      delete entities.phone;
     }
 
     const primaryType: IntentType = isValidIntent(parsed.type) ? parsed.type : 'unknown';
@@ -190,18 +200,22 @@ function mergeAdditional(
  * com/sem nono dígito: "5548999887766", "48 99887-766", "48999887766".
  * Retorna no formato usado em users.phone (com DDI 55).
  */
+/**
+ * Normaliza um telefone já “extraído” (texto da IA ou do usuário) para
+ * 55DDNNNNNNNNN. Retorna undefined quando não parece telefone (ex.: "[TELEFONE]").
+ */
+export function normalizePhoneEntity(value: string): string | undefined {
+  const digits = (value || '').replace(/\D/g, '');
+  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
+  if (digits.length === 12 || digits.length === 13) return digits;
+  return undefined;
+}
+
 function extractPhoneEntity(text: string): string | undefined {
   const match = text.match(/\b(\d[\d\s\-().]{8,17}\d)\b/);
   if (!match) return undefined;
 
-  const digits = match[1].replace(/\D/g, '');
-
-  // 10–11 dígitos: número BR sem DDI → prefixar 55
-  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
-  // 12–13 dígitos: já com DDI
-  if (digits.length === 12 || digits.length === 13) return digits;
-
-  return undefined;
+  return normalizePhoneEntity(match[1]);
 }
 
 /**

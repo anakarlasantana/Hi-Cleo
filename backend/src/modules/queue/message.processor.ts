@@ -675,12 +675,14 @@ function buildGreetingReply(business: any, ownerName: string, clientName?: strin
   const tone = business?.tone_of_voice || 'friendly_professional';
 
   switch (tone) {
+    // Resposta CURTA: saudação de cliente é resolvida sem IA, então precisa ser
+    // rápida e direta (o E2E flagrou texto longo e “introdutório” aqui).
     case 'formal':
-      return `Boa tarde${name}! Sou assistente do(a) ${owner}. Em que posso ajudá-lo(a)?`;
+      return `Boa tarde${name}! Em que posso ajudá-lo(a)?`;
     case 'casual':
-      return `E aí${name}! 👋 Tô aqui pelo(a) ${owner}. Como posso te ajudar?`;
+      return `E aí${name}! 👋 Como posso ajudar?`;
     default:
-      return `Olá${name}! 😊 Sou assistente do(a) ${owner}. Como posso te ajudar?`;
+      return `Olá${name}! 😊 Como posso te ajudar?`;
   }
 }
 
@@ -872,8 +874,48 @@ ${pending.slice(0, 10).map((l: any, i: number) => `${i + 1}. *${l.name}* (${l.ph
         return 'Me diz o novo horário no formato: "muda horário pra 8h às 20h" ou "horário 9h-18h".';
       }
 
+      // Dias da semana: “não atender no domingo”, “para de responder sábado”…
+      const DAY_ALIASES: Record<string, string> = {
+        domingo: 'sun', domingos: 'sun',
+        segunda: 'mon', segundas: 'mon', 'segunda-feira': 'mon',
+        terca: 'tue', 'terça': 'tue', tercas: 'tue', 'terças': 'tue',
+        quarta: 'wed', quartas: 'wed', 'quarta-feira': 'wed',
+        quinta: 'thu', quintas: 'thu', 'quinta-feira': 'thu',
+        sexta: 'fri', sextas: 'fri', 'sexta-feira': 'fri',
+        sabado: 'sat', 'sábado': 'sat', sabados: 'sat', 'sábados': 'sat',
+      };
+      const DAY_LABELS: Record<string, string> = {
+        mon: 'segunda', tue: 'terça', wed: 'quarta', thu: 'quinta',
+        fri: 'sexta', sat: 'sábado', sun: 'domingo',
+      };
+
+      const mentionedDay = Object.keys(DAY_ALIASES).find((day) => lower.includes(day));
+      const wantsToRemove = /(n[ãa]o\s+(atend|respond)|sem\s+atend|para\s+de\s+(atend|respond)|nunca\s+(atend|respond)|folga)/i.test(lower);
+
+      if (mentionedDay && wantsToRemove) {
+        const dayCode = DAY_ALIASES[mentionedDay];
+        const [business] = await db
+          .select()
+          .from(businesses)
+          .where(eq(businesses.userId, user.id))
+          .limit(1);
+
+        const currentDays: string[] = business?.businessDays ?? ['mon', 'tue', 'wed', 'thu', 'fri'];
+
+        if (!currentDays.includes(dayCode)) {
+          return `📅 Já não atendo ${DAY_LABELS[dayCode]} — os dias atuais são: ${currentDays.map((d) => DAY_LABELS[d] ?? d).join(', ')}.`;
+        }
+
+        const updatedDays = currentDays.filter((day) => day !== dayCode);
+        await db.update(businesses)
+          .set({ businessDays: updatedDays })
+          .where(eq(businesses.userId, user.id));
+
+        return `✅ Pronto! Não vou mais atender ${DAY_LABELS[dayCode]}.\n\n📅 *Dias de atendimento:* ${updatedDays.map((d) => DAY_LABELS[d] ?? d).join(', ')}`;
+      }
+
       // Configuração genérica — orientar
-      return `⚙️ Posso configurar pra você:\n\n• *Horário de atendimento* — "muda horário pra 8h às 20h"\n• *Contatos ignorados* — "ignora 11999..." ou "para de ignorar"\n\nO que quer ajustar?`;
+      return `⚙️ Posso configurar pra você:\n\n• *Horário de atendimento* — "muda horário pra 8h às 20h"\n• *Dias* — "não atender no domingo"\n• *Contatos ignorados* — "ignora 11999..." ou "para de ignorar"\n\nO que quer ajustar?`;
     }
 
     case 'lead_status': {
@@ -920,7 +962,16 @@ ${pending.slice(0, 10).map((l: any, i: number) => `${i + 1}. *${l.name}* (${l.ph
 
     case 'send_material': {
       const name = intent.entities.name || '';
-      if (!name) return 'Para quem devo enviar o material? Me diz o nome do contato.';
+      if (!name) {
+        // Não repetir a MESMA pergunta em loop: mostra os contatos recentes para
+        // o dono escolher (o E2E flagrou a mesma frase 3× seguidas).
+        const recentes = await leadService.listByStatus(user.id, 'new');
+        const opcoes = recentes.slice(0, 5).map((lead: any) => `• ${lead.name}`).join('\n');
+
+        return opcoes
+          ? `Para quem devo enviar o material? Seus contatos mais recentes:\n\n${opcoes}\n\nMe diz o nome (ex: "manda material pro João").`
+          : 'Para quem devo enviar o material? Me diz o nome do contato — ainda não tenho contatos salvos.';
+      }
 
       // Buscar lead pelo nome
       const leads = await leadService.searchByName(user.id, name);

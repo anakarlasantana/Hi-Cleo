@@ -37,7 +37,7 @@ const __dirname = typeof import.meta.dirname === 'string'
   ? import.meta.dirname
   : dirname(fileURLToPath(import.meta.url));
 
-const { noPause, pauseAlways, singleScenario } = parseCli(process.argv);
+const { noPause, pauseAlways, singleScenario, onlyScenarios } = parseCli(process.argv);
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -180,18 +180,18 @@ async function main(): Promise<void> {
   const allPersonas = [...personas, ...TECHNICAL_PERSONAS];
 
   // Filtro --single: roda apenas o cenário especificado
-  const filteredPersonas = singleScenario
-    ? allPersonas.filter(p => p.scenario === singleScenario)
+  const filteredPersonas = onlyScenarios.length > 0
+    ? allPersonas.filter(p => onlyScenarios.includes(p.scenario))
     : allPersonas;
 
-  if (singleScenario && filteredPersonas.length === 0) {
-    console.error(`❌ Nenhuma persona encontrada para o cenário "${singleScenario}"`);
+  if (onlyScenarios.length > 0 && filteredPersonas.length === 0) {
+    console.error(`❌ Nenhuma persona encontrada para o(s) cenário(s) "${onlyScenarios.join(', ')}"`);
     console.error('   Verifique se o cenário está no personas.json ou se é um técnico (payment_webhook, degraded_fallback, subscription_expired, subscription_renewal, cancellation_flow).');
     await closeDb();
     process.exit(1);
   }
 
-  if (singleScenario) {
+  if (onlyScenarios.length > 0) {
     console.log(`🎯 Modo --single: rodando apenas cenário "${singleScenario}" (${filteredPersonas.length} persona)`);
     console.log('');
   }

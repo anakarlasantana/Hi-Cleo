@@ -198,7 +198,9 @@ export const config = {
 
   /** Ollama — configuração do modelo local */
   ollama: {
-    baseUrl: process.env.E2E_OLLAMA_BASE_URL || 'http://localhost:11434',
+    // 127.0.0.1 explícito: o `fetch` do Node tenta primeiro ::1, mas o Ollama
+    // escuta só em IPv4 — com 'localhost' o warmup falha com "fetch failed".
+    baseUrl: process.env.E2E_OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
     /**
      * Modelo do persona local.
      * ADVERTÊNCIA: qwen3:4b trava na maioria dos hardwares locais (uso mais de

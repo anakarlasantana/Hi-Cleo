@@ -167,7 +167,7 @@ EXPECTATIVAS POR CENÁRIO:
 - trial_flow: Trial foi criado, código de ativação enviado, limites respeitados
 - payment_webhook: Pagamento processado, subscription ativada, confirmação enviada
 - invite_flow: Convite enviado, colaborador adicionado (ou mensagem clara de como fazer)
-- prospection_response: Resposta reconhecida como interesse/desinteresse, fluxo seguido corretamente
+- prospection_response: O ex-trial respondeu à prospecção. SUCESSO = a Cleo classificou a resposta (interesse → envia o link de planos; desinteresse → confirma que não vai mais contatar). Se o usuário disse que NÃO tem interesse e a Cleo confirmou que não vai mais contatar, isso está CERTO — não penalize por “não reconhecer interesse”. Avalie o que o usuário realmente disse na transcrição.
 - material_flow: Material recebido/salvo, confirmação de reenvio quando solicitado
 - local_classifier: Saudação respondida rapidamente sem chamar IA pesada, resposta adequada e curta
 - configure_rules: Configuração alterada ou confirmada, feedback claro ao dono
