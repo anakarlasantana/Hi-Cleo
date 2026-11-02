@@ -5,6 +5,24 @@ import type { LeadRepository } from './leads.port.js';
 import type { Lead, LeadStatus } from '../../shared/types/index.js';
 
 export class DrizzleLeadRepository implements LeadRepository {
+  /**
+   * Converte a linha do Drizzle (camelCase) para o tipo `Lead` (snake_case).
+   *
+   * Sem isso, `lead.created_at` vinha undefined — o aviso de “cliente novo” ao
+   * dono nunca disparava e a métrica `leads_captured` do trial ficava zerada.
+   */
+  private toLead(row: typeof leads.$inferSelect): Lead {
+    return {
+      id: row.id,
+      user_id: row.userId ?? '',
+      name: row.name,
+      phone: row.phone,
+      status: (row.status ?? 'new') as LeadStatus,
+      last_interaction: row.lastInteraction?.toISOString(),
+      created_at: row.createdAt?.toISOString() ?? '',
+    };
+  }
+
   async findByUserAndPhone(userId: string, phone: string): Promise<Lead | null> {
     const [data] = await db
       .select()
@@ -12,7 +30,7 @@ export class DrizzleLeadRepository implements LeadRepository {
       .where(and(eq(leads.userId, userId), eq(leads.phone, phone)))
       .limit(1);
 
-    return (data as unknown as Lead) || null;
+    return data ? this.toLead(data) : null;
   }
 
   async create(userId: string, phone: string, name?: string): Promise<Lead> {
@@ -27,7 +45,7 @@ export class DrizzleLeadRepository implements LeadRepository {
       .returning();
 
     if (!data) throw new Error('Erro ao criar lead');
-    return data as unknown as Lead;
+    return this.toLead(data);
   }
 
   async listByStatus(userId: string, status: LeadStatus): Promise<Lead[]> {
@@ -37,7 +55,7 @@ export class DrizzleLeadRepository implements LeadRepository {
       .where(and(eq(leads.userId, userId), eq(leads.status, status)))
       .orderBy(sql`${leads.lastInteraction} DESC`);
 
-    return data as unknown as Lead[];
+    return data.map((row) => this.toLead(row));
   }
 
   async listToday(userId: string): Promise<Lead[]> {
@@ -49,7 +67,7 @@ export class DrizzleLeadRepository implements LeadRepository {
       .from(leads)
       .where(and(eq(leads.userId, userId), gte(leads.createdAt, today)));
 
-    return data as unknown as Lead[];
+    return data.map((row) => this.toLead(row));
   }
 
   async listNoReply(userId: string, hoursThreshold = 48): Promise<Lead[]> {
@@ -70,7 +88,7 @@ export class DrizzleLeadRepository implements LeadRepository {
         ),
       );
 
-    return data as unknown as Lead[];
+    return data.map((row) => this.toLead(row));
   }
 
   async updateStatus(leadId: string, status: LeadStatus): Promise<void> {
@@ -98,6 +116,6 @@ export class DrizzleLeadRepository implements LeadRepository {
       .where(and(eq(leads.userId, userId), ilike(leads.name, `%${name}%`)))
       .limit(5);
 
-    return data as unknown as Lead[];
+    return data.map((row) => this.toLead(row));
   }
 }

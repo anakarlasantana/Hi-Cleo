@@ -14,6 +14,12 @@ import { getDegradedReplyForClient, getDegradedReplyForOwner, type FallbackConte
 import { classifyClientMessage, classifyOwnerMessage } from '../ai/nodes/local-classifier.js';
 import { stripThinkingTags } from '../../shared/middleware/sanitize.js';
 import { normalizePhone } from '../../shared/utils/phone.js';
+import {
+  buildHandoffNotice,
+  buildHandoffReply,
+  buildNewLeadNotice,
+  wantsHuman,
+} from '../../shared/utils/owner-notices.js';
 
 export type MessageProcessor = MessageProcessorPort;
 
@@ -421,6 +427,30 @@ function isOwnerMessage(user: { phone?: string | null }, phone: string): boolean
 }
 
 /**
+ * Avisa o dono por WhatsApp e **persiste** o aviso no histórico dele.
+ *
+ * Persistir é o que torna o aviso auditável (o dono vê avisos antigos na
+ * conversa) e testável no E2E. Falha no envio nunca derruba o atendimento ao
+ * cliente — é best-effort.
+ */
+async function notifyOwner(container: any, user: any, text: string): Promise<void> {
+  if (!user?.phone) return;
+
+  try {
+    const ownerLead = await container.leadService.findOrCreate(user.id, user.phone, user.name || 'Dono');
+    await container.messageRepo.save(ownerLead.id, text, 'outbound');
+  } catch {
+    // sem histórico — o envio abaixo continua
+  }
+
+  try {
+    await container.messaging.sendText({ instance: env.MONITOR_INSTANCE, to: user.phone, text });
+  } catch (error: any) {
+    container.logger.warn({ err: error?.message }, 'falha ao enviar aviso ao dono');
+  }
+}
+
+/**
  * Remove o próprio dono das listas de clientes.
  *
  * `handleSecretaryMessage` cria um lead de auditoria com o telefone do dono para
@@ -517,10 +547,17 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
 
   const lead = await leadService.findOrCreate(user.id, phone, pushName);
 
-  // Atualizar métrica leads_captured se é trial e lead acabou de ser criado
+  // Cliente NOVO? (lead criado nos últimos segundos)
+  const isNewLead = !!lead.created_at && (Date.now() - new Date(lead.created_at).getTime()) < 5000;
+
+  // Aviso ao dono: “nunca deixar passar um cliente” é a promessa nº 1 do produto.
+  // Falha aqui NUNCA pode derrubar o atendimento ao cliente (fire-and-forget).
+  if (isNewLead) {
+    await notifyOwner(container, user, buildNewLeadNotice({ clientName: pushName, phone, message: text }));
+  }
+
+  // Atualizar métrica leads_captured se é trial
   if (user.subscription_status === 'trial' && lead.created_at) {
-    const createdAt = new Date(lead.created_at);
-    const isNewLead = (Date.now() - createdAt.getTime()) < 5000; // criado há menos de 5s = novo
     if (isNewLead) {
       await db.update(trialAttempts)
         .set({ leadsCaptured: sql`${trialAttempts.leadsCaptured} + 1` })
@@ -567,6 +604,16 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
       await safeSend(messaging, { instance, to: phone, text: fallbackReply }, container.logger);
       return;
     }
+  }
+
+  // Pedido explícito de falar com uma pessoa: a Cleo não tenta resolver sozinha.
+  if (wantsHuman(messageText)) {
+    const reply = buildHandoffReply(user.name);
+    await messageRepo.save(lead.id, reply, 'outbound');
+    await safeSend(messaging, { instance, to: phone, text: reply }, container.logger);
+
+    await notifyOwner(container, user, buildHandoffNotice({ clientName: pushName, phone, message: messageText }));
+    return;
   }
 
   // Buscar dados do negócio para gerar resposta contextual

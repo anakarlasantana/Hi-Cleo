@@ -12,6 +12,7 @@ import {
   createCollaborator,
   createTestUser,
   createWhatsappSession,
+  getMessages,
   getProspectionStatus,
   getSessionStatusByUserId,
   markAsProspected,
@@ -157,6 +158,7 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
       const ownerInstance = 'test-e2e';
       await createWhatsappSession(userId, ownerInstance);
       (persona as any)._ownerInstance = ownerInstance;
+      (persona as any)._ownerPhone = ownerPhone;
       break;
     }
 
@@ -242,6 +244,26 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
   }
 
   const verdict = await evaluateConversation(judgeAi, persona, turns, config.passThreshold);
+
+  // Cliente novo: o dono PRECISA ter recebido o aviso (a promessa nº 1 do
+  // produto é “nunca deixar passar um cliente”). O aviso é persistido no
+  // histórico do dono, então dá para verificar no banco.
+  if (persona.scenario === 'client_message') {
+    const ownerPhone = (persona as any)._ownerPhone as string | undefined;
+
+    if (ownerPhone) {
+      const doDono = await getMessages(ownerPhone, 20);
+      const avisou = doDono.some((msg) => msg.content.includes('Novo cliente no WhatsApp'));
+
+      if (!avisou) {
+        verdict.problemas.push('Dono não foi avisado do cliente novo (aviso de lead ausente no histórico)');
+        verdict.pass = false;
+      } else {
+        console.log('   ✅ [CHECK] Dono avisado do cliente novo');
+        turns.push({ role: 'assistant', content: '[CHECK] Dono avisado do cliente novo', timestamp: new Date() });
+      }
+    }
+  }
 
   // Prospecção: o backend precisa ter CLASSIFICADO a resposta (interessado ou
   // não). Sem isso o fluxo não rodou, mesmo que a conversa pareça boa.

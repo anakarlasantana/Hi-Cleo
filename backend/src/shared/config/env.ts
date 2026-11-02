@@ -36,6 +36,13 @@ const envSchema = z.object({
   EVOLUTION_WEBHOOK_SECRET: z.string().optional(),
 
   // Logger
+  /**
+   * Mensagens proativas (lembretes, prospecção) fora da janela de 24h do
+   * WhatsApp exigem template aprovado. 'warn' = só registra (beta);
+   * 'block' = não envia texto livre fora da janela (produção estrita).
+   */
+  PROACTIVE_WINDOW_GUARD: z.enum(['warn', 'block']).default('warn'),
+
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   LOG_DIR: z.string().default('./logs'),
 
