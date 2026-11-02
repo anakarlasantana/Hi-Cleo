@@ -153,6 +153,8 @@ export interface WebhookPayload {
   apikey?: string;
   date_time?: string;
   source?: string;
+  /** Eventos que não são mensagem (ex: connection.update) carregam `state`. */
+  state?: 'open' | 'close' | 'connecting';
   data: {
     key: { remoteJid: string; fromMe: boolean; id: string; participant?: string; remoteJidAlt?: string; addressingMode?: string };
     message: {
@@ -181,6 +183,16 @@ export interface RecognizedIntent {
   confidence: number;
   entities: Record<string, string>;
   originalText: string;
+  /**
+   * Pedidos adicionais na mesma mensagem, na ordem em que apareceram.
+   * Ex: "ver clientes novos hoje e quem está sem resposta" → type=leads_today
+   * + additionalIntents=[{ type: 'no_reply' }].
+   */
+  additionalIntents?: Array<{
+    type: IntentType;
+    entities: Record<string, string>;
+    originalText?: string;
+  }>;
 }
 
 // === Invite ===

@@ -124,3 +124,183 @@ describe('recognizeIntent — pós-processamento após IA (phone ausente no JSON
     expect(viaAi.originalText).toBe(text);
   });
 });
+/**
+ * Multi-intent: o dono pede várias coisas na MESMA mensagem.
+ * Bug do E2E (cenário `owner_command`): a Cleo executava só o primeiro pedido
+ * e ignorava o resto — "ver clientes novos hoje e quem está sem resposta"
+ * respondia apenas a lista de clientes.
+ */
+describe('recognizeIntent — múltiplos pedidos na mesma mensagem', () => {
+  it('detects both requests via keyword fallback (IA offline)', async () => {
+    const result = await recognizeIntent(
+      failingAi,
+      'Oi, Cleo! Vai lá ver o status dos clientes novos hoje e ver quem está sem resposta. Quer ver a agenda e os leads?',
+    );
+
+    const types = [result.type, ...(result.additionalIntents || []).map((i) => i.type)];
+    expect(types).toContain('leads_today');
+    expect(types).toContain('no_reply');
+  });
+
+  it('keeps the AI primary intent and adds the missing one', async () => {
+    const ai: AiPort = {
+      async generateContent(): Promise<string> {
+        // IA entendeu só o primeiro pedido
+        return JSON.stringify({ type: 'leads_today', confidence: 0.9, entities: {} });
+      },
+    };
+
+    const result = await recognizeIntent(ai, 'clientes novos de hoje e quem está sem resposta');
+
+    expect(result.type).toBe('leads_today');
+    expect(result.additionalIntents?.map((i) => i.type)).toContain('no_reply');
+  });
+
+  it('uses additional_intents returned by the AI', async () => {
+    const ai: AiPort = {
+      async generateContent(): Promise<string> {
+        return JSON.stringify({
+          type: 'leads_today',
+          confidence: 0.95,
+          entities: {},
+          additional_intents: [{ type: 'no_reply', entities: {} }, { type: 'hot_leads', entities: {} }],
+        });
+      },
+    };
+
+    const result = await recognizeIntent(ai, 'quem chegou hoje, quem está sem resposta e quem está quente');
+
+    expect(result.type).toBe('leads_today');
+    expect(result.additionalIntents?.map((i) => i.type)).toEqual(['no_reply', 'hot_leads']);
+  });
+
+  it('drops invalid, duplicated and unknown additional intents', async () => {
+    const ai: AiPort = {
+      async generateContent(): Promise<string> {
+        return JSON.stringify({
+          type: 'list_leads',
+          confidence: 0.9,
+          entities: {},
+          additional_intents: [
+            { type: 'list_leads', entities: {} },   // duplicada do primário
+            { type: 'unknown', entities: {} },       // inválida
+            { type: 'nao_existe', entities: {} },    // inexistente
+            { type: 'no_reply', entities: {} },
+            { type: 'no_reply', entities: {} },      // duplicada
+          ],
+        });
+      },
+    };
+
+    const result = await recognizeIntent(ai, 'mostra os clientes e quem está sem resposta');
+
+    expect(result.additionalIntents?.map((i) => i.type)).toEqual(['no_reply']);
+  });
+
+  it('returns an empty list for a single request', async () => {
+    const result = await recognizeIntent(aiReturning('list_leads'), 'mostra meus clientes');
+
+    expect(result.type).toBe('list_leads');
+    expect(result.additionalIntents).toEqual([]);
+  });
+});
+
+/**
+ * Regressão do E2E (`owner_command`, 2026-11-01): a persona mandou
+ * "/talvez você quer ver o status dos clientes novos hoje?" e a Cleo respondeu
+ * com TRÊS blocos — "Seus clientes" + "Clientes novos de hoje" (o mesmo nome
+ * duas vezes) + "Qual cliente você quer saber?". Causa: o fallback por keyword
+ * casava o texto inteiro, não a oração, e cada consulta virava um pedido.
+ */
+describe('recognizeIntent — uma oração não vira vários pedidos', () => {
+  it('não inventa pedidos extras quando a IA já entendeu a mensagem', async () => {
+    const result = await recognizeIntent(
+      aiReturning('list_leads'),
+      '/talvez você quer ver o status dos clientes novos hoje?',
+    );
+
+    const types = [result.type, ...(result.additionalIntents ?? []).map((i) => i.type)];
+    expect(result.type).toBe('leads_today');
+    expect(types).not.toContain('list_leads');   // mesma lista, outro header
+    expect(types).not.toContain('lead_status');  // "Qual cliente você quer saber?" sem nome
+    expect(result.additionalIntents ?? []).toEqual([]);
+  });
+
+  it('mantém um único pedido quando a mensagem tem uma oração só (IA offline)', async () => {
+    const result = await recognizeIntent(failingAi, 'ver o status dos clientes novos hoje');
+
+    expect(result.type).toBe('leads_today');
+    expect(result.additionalIntents ?? []).toEqual([]);
+  });
+
+  it('não pede o nome do cliente quando o dono fala de clientes em geral', async () => {
+    const result = await recognizeIntent(failingAi, 'status dos clientes');
+
+    expect(result.type).not.toBe('lead_status');
+  });
+
+  it('continua reconhecendo o status de um contato específico', async () => {
+    const result = await recognizeIntent(failingAi, 'como tá o João?');
+
+    expect(result.type).toBe('lead_status');
+  });
+
+  it('colapsa list_leads + leads_today (a mesma lista em dois headers)', async () => {
+    const ai: AiPort = {
+      async generateContent(): Promise<string> {
+        return JSON.stringify({
+          type: 'list_leads',
+          confidence: 0.9,
+          entities: {},
+          additional_intents: [{ type: 'leads_today', entities: {} }],
+        });
+      },
+    };
+
+    const result = await recognizeIntent(ai, 'quantos clientes novos eu tive hoje?');
+
+    expect(result.type).toBe('leads_today');
+    expect(result.additionalIntents ?? []).toEqual([]);
+  });
+
+  it('mantém dois pedidos quando há duas orações explícitas', async () => {
+    const result = await recognizeIntent(
+      failingAi,
+      'quantos clientes novos eu tive hoje e quem está sem resposta?',
+    );
+
+    const types = [result.type, ...(result.additionalIntents ?? []).map((i) => i.type)];
+    expect(types).toEqual(['leads_today', 'no_reply']);
+  });
+
+  // Regressão: "como tá a Ana hoje?" respondia o detalhe da Ana E a lista de
+  // clientes novos (o "hoje" da pergunta virava um 2º pedido).
+  it('não anexa lista de clientes quando o dono pergunta de um cliente específico', async () => {
+    const ai: AiPort = {
+      async generateContent(): Promise<string> {
+        return JSON.stringify({ type: 'lead_status', confidence: 0.92, entities: { name: 'Ana' } });
+      },
+    };
+
+    const result = await recognizeIntent(ai, 'como tá a Ana hoje?');
+
+    expect(result.type).toBe('lead_status');
+    expect(result.additionalIntents ?? []).toEqual([]);
+  });
+
+  // Regressão do E2E (`edge_case`): "oi, como está? hoje tá chuvoso" recebeu
+  // "Clientes novos de hoje: nenhum" porque o "hoje" da conversa casual era
+  // anexado como consulta. Se a IA disse `unknown`, é conversa — não comando.
+  it('não transforma conversa casual em consulta por causa de "hoje"', async () => {
+    const ai: AiPort = {
+      async generateContent(): Promise<string> {
+        return JSON.stringify({ type: 'unknown', confidence: 0.95, entities: {} });
+      },
+    };
+
+    const result = await recognizeIntent(ai, 'oi, como está? 😄 hoje tá chuvoso, tá legal? 🌧️');
+
+    expect(result.type).toBe('unknown');
+    expect(result.additionalIntents ?? []).toEqual([]);
+  });
+});

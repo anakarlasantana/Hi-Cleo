@@ -106,8 +106,35 @@ export function sanitizeForAiPrompt(text: string): string {
  * reasoning (Qwen, DeepSeek-R1). Cobre tag NÃO fechada também — quando o modelo
  * estoura max_tokens, o bloco de pensamento fica aberto e vazaria ao usuário.
  */
+/**
+ * Remove artefatos de "thinking" e de formatação que os modelos vazam na
+ * resposta final. Sem isso, o dono recebe coisas como:
+ *   "Quer trocar de contato? Tá de sacanagem, chefe! 😜】"
+ * (o `】` é lixo de template do modelo), ou blocos  thinking vazando.
+ */
 export function stripThinkingTags(text: string): string {
-  return text.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').trim();
+  if (!text) return '';
+
+  let cleaned = text.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').trim();
+
+  // Linhas de raciocínio do modelo, não resposta ao usuário (só a linha do rótulo
+  // e o que vem nela — não engole a resposta seguinte)
+  cleaned = cleaned
+    .replace(/^\s*(?:Reasoning|Thinking|Raciocínio|Análise)\s*:.*$/gim, '')
+    .replace(/^\s*(?:Final Answer|Resposta final|Output)\s*:\s*/im, '')
+    .trim();
+
+  // Delimitadores decorativos vazados (【 】 「 」 ⟨ ⟩ <<< >>> ###). Removidos só
+  // nas bordas e quando aparecem soltos no fim da frase — nunca no meio de texto
+  // legítimo, para não corromper a mensagem.
+  cleaned = cleaned
+    .replace(/[【】]/g, '')
+    .replace(/\s*[「」⟨⟩]\s*$/g, '')
+    .replace(/\s*#{3,}\s*$/g, '')
+    .replace(/^(?:<<<|>>>)\s*/g, '')
+    .replace(/\s*(?:<<<|>>>)$/g, '');
+
+  return cleaned.replace(/[ \t]{2,}/g, ' ').trim();
 }
 
 export function maskPhone(phone: string): string {

@@ -13,6 +13,7 @@ import { checkBusinessHours } from '../../shared/utils/business-hours.js';
 import { getDegradedReplyForClient, getDegradedReplyForOwner, type FallbackContext } from '../../shared/utils/fallback-templates.js';
 import { classifyClientMessage, classifyOwnerMessage } from '../ai/nodes/local-classifier.js';
 import { stripThinkingTags } from '../../shared/middleware/sanitize.js';
+import { normalizePhone } from '../../shared/utils/phone.js';
 
 export type MessageProcessor = MessageProcessorPort;
 
@@ -31,6 +32,17 @@ async function safeSend(messaging: any, options: { instance: string; to: string;
       error: error.message,
     }, 'falha no envio WhatsApp (resposta já persistida no banco)');
   }
+}
+
+/**
+ * Resposta padrão para um comando `/algo` que a Cleo não conhece.
+ *
+ * Usada nos dois caminhos do dono (instância secretary e instância própria):
+ * sem isso o texto caía no interpretador de intents e a Cleo respondia a um
+ * comando que o dono não deu.
+ */
+function unknownSlashCommandReply(command: string): string {
+  return `Não conheço o comando \`/${command}\` 🤔\n\nMe diga o que você precisa em português mesmo — por exemplo:\n• "quem tá sem resposta?"\n• "clientes novos de hoje"\n• "manda ajuda" (pra ver tudo que eu faço)`;
 }
 
 export function createMessageProcessor(container: any, logger: Logger): MessageProcessorPort {
@@ -72,6 +84,75 @@ export function createMessageProcessor(container: any, logger: Logger): MessageP
       throw error; // Re-throw para BullMQ acionar retry
     }
   };
+}
+
+/**
+ * Quantas mensagens da conversa com o dono entram no prompt conversacional.
+ * Mesmo limite usado no atendimento ao cliente (economia de tokens).
+ */
+const OWNER_HISTORY_LIMIT = 6;
+
+/**
+ * Histórico recente da conversa com o dono, em ordem DESC (como vem do banco) e
+ * sem a mensagem atual — ela já entra no prompt como "Mensagem do dono".
+ */
+async function recentOwnerHistory(
+  messageRepo: any,
+  leadId: string | undefined,
+  currentText: string,
+): Promise<any[]> {
+  if (!leadId) return [];
+
+  try {
+    const recent = await messageRepo.getByLead(leadId, OWNER_HISTORY_LIMIT);
+    const messages: any[] = Array.isArray(recent) ? recent : [];
+    const [newest] = messages;
+
+    // A inbound atual já foi persistida antes da resposta — não duplicar no prompt.
+    if (newest && newest.direction === 'inbound' && String(newest.text || '').trim() === currentText.trim()) {
+      return messages.slice(1);
+    }
+
+    return messages;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Resposta conversacional do dono COM histórico.
+ *
+ * Sem contexto a Cleo repetia a mesma piada/oferta a cada mensagem vaga (visto
+ * no E2E, cenário `edge_case`) e nunca reconhecia o que já tinha sido dito.
+ */
+async function conversationalOwnerReply(
+  container: any,
+  user: any,
+  leadId: string | undefined,
+  text: string,
+  maxLength: number,
+): Promise<string> {
+  const history = await recentOwnerHistory(container.messageRepo, leadId, text);
+
+  // Nome do negócio deixa a oferta concreta ("quer ver os clientes da clínica?").
+  // Ignorado quando é igual ao nome do dono (cadastro incompleto).
+  let businessName: string | undefined;
+  try {
+    const business = await container.userRepo?.getBusiness?.(user.id);
+    const name = typeof business?.name === 'string' ? business.name.trim() : '';
+    businessName = name && name !== user.name ? name : undefined;
+  } catch {
+    // sem negócio configurado — segue sem o nome
+  }
+
+  const aiReply = await container.assistenteService.generateConversationalReply(
+    user.name || 'um profissional',
+    text,
+    history,
+    { businessName },
+  );
+
+  return stripThinkingTags(aiReply).slice(0, maxLength).trim();
 }
 
 async function handleSecretaryMessage(container: any, phone: string, text: string, media?: any, messageKey?: string, webhookKey?: { remoteJid: string; fromMe: boolean; id: string }): Promise<void> {
@@ -222,7 +303,7 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
           await respond('Não entendi bem o áudio. Pode reformular? 🤔\n\nExemplos:\n• "quem tá sem resposta?"\n• "agenda retorno pro João amanhã"\n• "mostra meus clientes"', ownerLead.id);
           return;
         }
-        const response = await executeIntent(container, user, intent);
+        const response = await executeIntent(container, user, intent, ownerLead.id);
         await respond(response, ownerLead.id);
         return;
       }
@@ -265,8 +346,7 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     && /(obrigad[oa]|valeu|pode deixar|tá bom assim|ta bom assim|tá certo|ta certo|^show[!. 😊🙏👍]*$|entendi|deixa pra lá|então tá|tudo certo|resolvido)/i.test(text);
   if (isClosing) {
     try {
-      const aiReply = await assistenteService.generateConversationalReply(user.name || 'um profissional', text);
-      const clean = stripThinkingTags(aiReply).slice(0, 250).trim();
+      const clean = await conversationalOwnerReply(container, user, ownerLead.id, text, 250);
       if (clean.length > 5) {
         await messageRepo.save(ownerLead.id, clean, 'outbound');
         await safeSend(messaging, { instance: env.MONITOR_INSTANCE, to: phone, text: clean }, container.logger);
@@ -279,10 +359,18 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     return;
   }
 
+  // Comandos "/algo" não são conversa: avisar em vez de mandar para o
+  // interpretador de intents (que respondia algo que o dono nunca pediu).
+  const slashCommand = text.trim().match(/^\/([a-z0-9_]+)/i);
+  if (slashCommand) {
+    await respond(unknownSlashCommandReply(slashCommand[1]), ownerLead.id);
+    return;
+  }
+
   // Classificador local — resolve intents simples sem chamar IA
   const localIntent = classifyOwnerMessage(text);
   if (localIntent.resolved && localIntent.intent) {
-    const response = await executeIntent(container, user, { type: localIntent.intent, entities: {}, originalText: text });
+    const response = await executeIntent(container, user, { type: localIntent.intent, entities: {}, originalText: text }, ownerLead.id);
     await messageRepo.save(ownerLead.id, response, 'outbound');
     await safeSend(messaging, { instance: env.MONITOR_INSTANCE, to: phone, text: response }, container.logger);
     return;
@@ -293,8 +381,7 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     // Mensagem vaga/small talk do dono — engajar com IA (resposta variada e
     // contextual) antes de cair no menu fixo, evitando loop robótico.
     try {
-      const aiReply = await assistenteService.generateConversationalReply(user.name || 'um profissional', text);
-      const clean = stripThinkingTags(aiReply).slice(0, 300).trim();
+      const clean = await conversationalOwnerReply(container, user, ownerLead.id, text, 300);
       if (clean.length > 10) {
         await messageRepo.save(ownerLead.id, clean, 'outbound');
         await safeSend(messaging, { instance: env.MONITOR_INSTANCE, to: phone, text: clean }, container.logger);
@@ -307,9 +394,96 @@ async function handleSecretaryMessage(container: any, phone: string, text: strin
     return;
   }
 
-  const response = await executeIntent(container, user, intent);
+  const response = await executeIntent(container, user, intent, ownerLead.id);
   await messageRepo.save(ownerLead.id, response, 'outbound');
   await safeSend(messaging, { instance: env.MONITOR_INSTANCE, to: phone, text: response }, container.logger);
+}
+
+/**
+ * Indica se o número que enviou a mensagem é o próprio dono da sessão.
+ *
+ * O dono conecta o próprio WhatsApp ao `user-<id>`; quando ele manda mensagem
+ * para si mesmo pelo dispositivo vinculado, o webhook chega com esse número.
+ * Sem este check, a Cleo tratava o dono como lead e respondia como atendimento.
+ */
+function isOwnerMessage(user: { phone?: string | null }, phone: string): boolean {
+  const ownerPhone = normalizePhone(user.phone);
+  return ownerPhone !== '' && ownerPhone === normalizePhone(phone);
+}
+
+/**
+ * Remove o próprio dono das listas de clientes.
+ *
+ * `handleSecretaryMessage` cria um lead de auditoria com o telefone do dono para
+ * persistir as respostas da Cleo (padrão persist-then-dispatch). Sem este filtro
+ * esse lead entra em `list_leads` / `leads_today` / `no_reply` / `hot_leads` e a
+ * Cleo anuncia o dono como cliente novo dele mesmo — visto no E2E
+ * (`owner_command`: "Clientes novos de hoje: 1. Fernanda Costa (o próprio número)").
+ */
+function withoutOwnerLead<T extends { phone?: string | null }>(
+  leads: T[],
+  user: { phone?: string | null },
+): T[] {
+  const ownerPhone = normalizePhone(user.phone);
+  if (!ownerPhone) return leads;
+  return leads.filter((lead) => normalizePhone(lead.phone) !== ownerPhone);
+}
+
+/**
+ * Processa mensagem do dono na própria instância conectada.
+ *
+ * Diferente do fluxo da secretária (instância `secretary`), aqui as respostas
+ * usam a MESMA instância que recebeu a mensagem — é o único número conectado
+ * daquele usuário e o único caminho de volta para ele.
+ */
+async function handleOwnerMessage(
+  container: any,
+  instance: string,
+  user: any,
+  phone: string,
+  text: string,
+): Promise<void> {
+  const { messageRepo, leadService, assistenteService } = container;
+
+  const ownerLead = await leadService.findOrCreate(user.id, phone, user.name || 'Dono');
+  await messageRepo.save(ownerLead.id, text, 'inbound');
+
+  let reply: string;
+
+  // Comandos "/algo" não são conversa: se não existe um comando com esse nome,
+  // avisar em vez de mandar para a IA (que respondia com brincadeira e lixo
+  // de formatação, ex: "Quer trocar de contato? Tá de sacanagem, chefe! 😜】").
+  const slashCommand = text.trim().match(/^\/([a-z0-9_]+)/i);
+  if (slashCommand) {
+    reply = unknownSlashCommandReply(slashCommand[1]);
+    await messageRepo.save(ownerLead.id, reply, 'outbound');
+    await safeSend(container.messaging, { instance, to: phone, text: reply }, container.logger);
+    return;
+  }
+
+  const localIntent = classifyOwnerMessage(text);
+  if (localIntent.resolved && localIntent.intent) {
+    reply = await executeIntent(container, user, { type: localIntent.intent, entities: {}, originalText: text }, ownerLead.id);
+  } else {
+    const intent = await assistenteService.recognize(text);
+
+    if (intent.confidence >= 0.7) {
+      reply = await executeIntent(container, user, intent, ownerLead.id);
+    } else {
+      try {
+        const clean = await conversationalOwnerReply(container, user, ownerLead.id, text, 300);
+        reply = clean.length > 10
+          ? clean
+          : 'Não entendi bem. Pode reformular? 🤔\n\nExemplos:\n• "quem tá sem resposta?"\n• "agenda retorno pro João amanhã"\n• "mostra meus clientes"';
+      } catch {
+        reply = 'Não entendi bem. Pode reformular? 🤔\n\nExemplos:\n• "quem tá sem resposta?"\n• "agenda retorno pro João amanhã"\n• "mostra meus clientes"';
+      }
+    }
+  }
+
+  // Persist-then-dispatch: salva antes de enviar para não perder a resposta
+  await messageRepo.save(ownerLead.id, reply, 'outbound');
+  await safeSend(container.messaging, { instance, to: phone, text: reply }, container.logger);
 }
 
 async function handleUserWhatsAppMessage(container: any, instance: string, phone: string, text: string, pushName?: string, media?: any, messageKey?: string, webhookKey?: { remoteJid: string; fromMe: boolean; id: string }): Promise<void> {
@@ -320,6 +494,14 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
 
   const user = await userRepo.findById(session.user_id);
   if (!user) return;
+
+  // === GUARD: mensagem do próprio dono ===
+  // O dono usa o mesmo WhatsApp que conectou. Sem este desvio, a mensagem dele
+  // virava um "lead" e a Cleo respondia como atendimento ao cliente.
+  if (isOwnerMessage(user, phone)) {
+    await handleOwnerMessage(container, instance, user, phone, text);
+    return;
+  }
 
   const isExcluded = await exclusionRepo.isExcluded(user.id, phone);
   if (isExcluded) return;
@@ -502,7 +684,16 @@ function buildGreetingReply(business: any, ownerName: string, clientName?: strin
   }
 }
 
-async function executeIntent(container: any, user: any, intent: { type: string; entities: Record<string, string>; originalText?: string }): Promise<string> {
+/**
+ * Executa UM pedido do dono. Mantida separada para permitir multi-intent:
+ * `executeIntent` orquestra a lista e chama esta função por item.
+ */
+async function executeSingleIntent(
+  container: any,
+  user: any,
+  intent: { type: string; entities: Record<string, string>; originalText?: string },
+  leadId?: string,
+): Promise<string> {
   const { leadService, exclusionRepo, messageRepo, messaging, inviteService, planService } = container;
 
   switch (intent.type) {
@@ -556,7 +747,9 @@ async function executeIntent(container: any, user: any, intent: { type: string; 
     }
 
     case 'list_leads': {
-      const leads = await leadService.listByStatus(user.id, 'new');
+      // O dono tem um lead de auditoria (para persistir as mensagens dele) —
+      // ele NÃO é cliente de si mesmo e não pode aparecer nas listas.
+      const leads = withoutOwnerLead(await leadService.listByStatus(user.id, 'new'), user);
       if (leads.length === 0) return 'Você não tem clientes novos no momento. 📭';
       const list = leads.slice(0, 10).map((l: any, i: number) => `${i + 1}. *${l.name}* (${l.phone})`).join('\n');
       return `📋 Seus clientes:\n\n${list}`;
@@ -573,30 +766,32 @@ async function executeIntent(container: any, user: any, intent: { type: string; 
       const sections: string[] = [];
 
       if (asksToday) {
-        const today = await leadService.listToday(user.id);
+        const today = withoutOwnerLead(await leadService.listToday(user.id), user);
         sections.push(
           today.length === 0
-            ? '📭 Clientes novos de hoje: nenhum por enquanto.'
-            : `📋 Clientes novos de hoje:
+            ? '📭 *Clientes novos de hoje:* nenhum por enquanto.'
+            : `📋 *Clientes novos de hoje:*
 
 ${today.map((l: any, i: number) => `${i + 1}. *${l.name}*`).join('\n')}`,
         );
       }
       if (asksNoReply) {
-        const pending = await leadService.listNoReply(user.id);
+        const pending = withoutOwnerLead(await leadService.listNoReply(user.id), user);
         sections.push(
           pending.length === 0
-            ? '✅ Retorno em dia: ninguém esperando resposta.'
-            : `⚠️ Clientes esperando retorno:
+            ? '✅ *Sem resposta:* ninguém esperando retorno, tá em dia!'
+            : `⚠️ *Clientes esperando retorno:*
 
 ${pending.slice(0, 10).map((l: any, i: number) => `${i + 1}. *${l.name}* (${l.phone})`).join('\n')}`,
         );
       }
 
-      return sections.join('\\n\\n');
+      // Separador VISÍVEL entre as seções: com apenas '\n\n' as duas
+      // listas apareceram grudadas no WhatsApp (visto no E2E).
+      return sections.join('\n\n———\n\n');
     }
     case 'hot_leads': {
-      const leads = await leadService.listByStatus(user.id, 'hot');
+      const leads = withoutOwnerLead(await leadService.listByStatus(user.id, 'hot'), user);
       if (leads.length === 0) return 'Nenhum cliente quente no momento.';
       const list = leads.slice(0, 10).map((l: any, i: number) => `${i + 1}. 🔥 *${l.name}*`).join('\n');
       return `🔥 Clientes quentes:\n\n${list}`;
@@ -830,12 +1025,15 @@ ${pending.slice(0, 10).map((l: any, i: number) => `${i + 1}. *${l.name}* (${l.ph
     default: {
       // Intent não reconhecida ou small talk — resposta conversacional via IA
       // (variada, engajando com o que o dono disse) em vez de texto fixo robótico.
+      // Com histórico: sem contexto a Cleo repetia a mesma piada a cada mensagem.
       try {
-        const aiReply = await container.assistenteService.generateConversationalReply(
-          user.name || 'um profissional',
+        const clean = await conversationalOwnerReply(
+          container,
+          user,
+          leadId,
           intent.originalText || '',
+          300,
         );
-        const clean = stripThinkingTags(aiReply).slice(0, 300).trim();
         if (clean.length > 10) return clean;
       } catch {
         // IA indisponível — cai no fallback padrão
@@ -844,3 +1042,91 @@ ${pending.slice(0, 10).map((l: any, i: number) => `${i + 1}. *${l.name}* (${l.ph
     }
   }
 }
+
+/**
+ * Orquestra a execução de um ou mais pedidos do dono.
+ *
+ * Por que existe: o dono costuma pedir várias coisas na mesma mensagem
+ * ("ver os clientes novos de hoje E quem está sem resposta"). Antes só o
+ * primeiro pedido era executado e o resto era ignorado — o usuário repetia,
+ * recebia a mesma meia-resposta e a conversa entrava em loop.
+ *
+ * Regras:
+ * - Consultas (listas/status) rodam em sequência e as respostas são COMBINADAS
+ *   numa mensagem só, separadas por linha em branco.
+ * - Pedidos que precisam de dados do usuário (agendar, enviar material,
+ *   convidar, desconectar, configurar) só são executados pelo seu próprio texto:
+ *   em multi-intent eles são pulados para não responder algo que o dono não pediu
+ *   nem interromper as consultas com uma pergunta.
+ * - Falha de um pedido não derruba os demais.
+ */
+async function executeIntent(
+  container: any,
+  user: any,
+  intent: {
+    type: string;
+    entities: Record<string, string>;
+    originalText?: string;
+    additionalIntents?: Array<{ type: string; entities: Record<string, string>; originalText?: string }>;
+  },
+  leadId?: string,
+): Promise<string> {
+  const extras = Array.isArray(intent.additionalIntents) ? intent.additionalIntents : [];
+
+  // Caminho comum: um pedido só — executa direto, sem mudar o comportamento atual
+  if (extras.length === 0) {
+    return executeSingleIntent(container, user, intent, leadId);
+  }
+
+  const all = [
+    { type: intent.type, entities: intent.entities, originalText: intent.originalText },
+    ...extras,
+  ];
+
+  const isQuery = (type: string) => QUERY_INTENT_TYPES.includes(type);
+  const queries = all.filter((i) => isQuery(i.type));
+  const actions = all.filter((i) => !isQuery(i.type));
+
+  // `leads_today` e `no_reply` já respondem as duas partes quando o texto pede
+  // as duas (ver case 'leads_today'/'no_reply'). Executar também o `no_reply`
+  // separado duplicava a seção "Retorno em dia" na mesma mensagem.
+  const hasPair = queries.some((q) => q.type === 'leads_today') && queries.some((q) => q.type === 'no_reply');
+
+  const parts: string[] = [];
+
+  for (const query of queries) {
+    // Com o par presente, só o `leads_today` roda (ele cobre as duas seções)
+    if (hasPair && query.type === 'no_reply') continue;
+    try {
+      const result = await executeSingleIntent(container, user, query, leadId);
+      if (result?.trim()) parts.push(result.trim());
+    } catch (error: any) {
+      container.logger.warn({ err: error, intent: query.type }, 'falha ao executar pedido combinado');
+    }
+  }
+
+  // Ações que pedem dados: executadas em sequência (ex: "agenda retorno pro João
+  // e manda o material") — a resposta de cada uma já é uma pergunta ao dono.
+  for (const action of actions) {
+    try {
+      const result = await executeSingleIntent(container, user, action, leadId);
+      if (result?.trim()) parts.push(result.trim());
+    } catch (error: any) {
+      container.logger.warn({ err: error, intent: action.type }, 'falha ao executar ação combinada');
+    }
+  }
+
+  if (parts.length === 0) {
+    return executeSingleIntent(container, user, intent, leadId);
+  }
+
+  // Seções visivelmente separadas: com apenas '\n\n' as listas apareciam
+  // grudadas no WhatsApp e pareciam um bloco só (visto no E2E).
+  return parts.join('\n\n———\n\n');
+}
+
+/** Intenções puramente consultivas — seguras para combinar numa resposta. */
+const QUERY_INTENT_TYPES = ['list_leads', 'leads_today', 'no_reply', 'hot_leads', 'lead_status', 'list_ignored'];
+
+/** Última linha do arquivo: mantém o executor de um pedido disponível para os testes. */
+export { executeSingleIntent };

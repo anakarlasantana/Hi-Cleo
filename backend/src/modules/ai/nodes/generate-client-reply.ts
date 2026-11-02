@@ -1,6 +1,7 @@
 import type { AiPort } from '../../../shared/ports/ai.port.js';
 import type { Message } from '../../../shared/types/index.js';
 import { sanitizeForAiPrompt, stripThinkingTags } from '../../../shared/middleware/sanitize.js';
+import { formatConversationHistory, normalizeForCompare } from '../../../shared/utils/conversation-history.js';
 import { CLIENT_REPLY_PROMPT } from '../prompts/client-reply.prompts.js';
 
 /**
@@ -13,35 +14,6 @@ export interface BusinessContext {
   toneOfVoice: 'formal' | 'friendly_professional' | 'casual';
   businessHoursStart: string;
   businessHoursEnd: string;
-}
-
-/**
- * Formata mensagens do banco em texto compacto para injeção no prompt.
- * Retorna undefined se não houver histórico relevante.
- *
- * Formato:
- *   Cliente: "mensagem..."
- *   Cleo: "resposta..."
- *
- * As mensagens chegam em ordem DESC (mais recente primeiro) do banco,
- * então invertemos para ordem cronológica antes de formatar.
- */
-export function formatConversationHistory(messages: Message[], clientName?: string): string | undefined {
-  if (!messages || messages.length === 0) return undefined;
-
-  // Inverter para ordem cronológica (banco retorna DESC)
-  const chronological = [...messages].reverse();
-
-  const lines = chronological.map((msg) => {
-    const sender = msg.direction === 'inbound'
-      ? (clientName || 'Cliente')
-      : 'Cleo';
-    // Limitar cada mensagem a 100 chars para economizar tokens
-    const text = msg.text.length > 100 ? msg.text.slice(0, 100) + '...' : msg.text;
-    return `${sender}: "${text}"`;
-  });
-
-  return lines.join('\n');
 }
 
 /**
@@ -61,7 +33,7 @@ export async function generateClientReply(
 ): Promise<string> {
   try {
     const sanitized = sanitizeForAiPrompt(clientMessage);
-    const conversationHistory = formatConversationHistory(recentMessages || [], clientName);
+    const conversationHistory = formatConversationHistory(recentMessages || [], { inboundLabel: clientName });
     const prompt = CLIENT_REPLY_PROMPT(business, isOutsideHours, conversationHistory);
 
     const response = await ai.generateContent([
@@ -98,13 +70,6 @@ export async function generateClientReply(
     // Fallback: resposta genérica segura
     return buildFallbackReply(business, isOutsideHours);
   }
-}
-
-/** Normalização para comparar respostas: ignora caixa, espaços, pontuação e emojis */
-function normalizeForCompare(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[\s\p{P}\p{So}\p{Sk}]/gu, '');
 }
 
 function buildFallbackReply(business: BusinessContext, isOutsideHours: boolean): string {
