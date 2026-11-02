@@ -16,7 +16,12 @@ export class DrizzlePlanRepository implements PlanRepository {
   }
 
   async getAllPlanLimits(): Promise<PlanLimit[]> {
-    const data = await db.select().from(planLimits);
+    // Ordem EXPLÍCITA: sem ORDER BY o Postgres devolve a ordem física do heap,
+    // que muda a cada UPSERT de preço (a API chegou a listar empresa antes do solo).
+    const data = await db
+      .select()
+      .from(planLimits)
+      .orderBy(planLimits.sortOrder, planLimits.planName);
     return data.map(this.toPlanLimit);
   }
 
@@ -34,6 +39,7 @@ export class DrizzlePlanRepository implements PlanRepository {
       price_yearly_total: data.priceYearlyTotal,
       features: data.features ?? [],
       highlighted: data.highlighted ?? false,
+      sort_order: data.sortOrder ?? 0,
       created_at: data.createdAt?.toISOString() ?? '',
     };
   }

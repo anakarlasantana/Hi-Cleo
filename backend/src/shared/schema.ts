@@ -178,6 +178,12 @@ export const planLimits = pgTable('plan_limits', {
   priceYearlyTotal: integer('price_yearly_total').notNull().default(0),
   features: text('features').array().default([]),
   highlighted: boolean('highlighted').default(false),
+  /**
+   * Ordem de apresentação na vitrine (Solo 1 → Equipe 2 → Empresa 3).
+   * Sem esta coluna a API devolvia a ordem física do heap, que muda conforme os
+   * UPSERTs de preço rodam (migration 0005).
+   */
+  sortOrder: integer('sort_order').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 });
 

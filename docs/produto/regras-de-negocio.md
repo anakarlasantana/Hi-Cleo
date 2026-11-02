@@ -70,6 +70,7 @@ Landing Page → Checkout → Ativação → Onboarding (WhatsApp) → Conexão 
 
 **Regras:**
 - Anual = mensal × 10 (economia de 2 meses = 16,7%)
+- Ordem de apresentação na vitrine: **Solo → Equipe → Empresa**, controlada por `plan_limits.sort_order` (1, 2, 3) — não pela ordem física do banco
 - Contatos ilimitados em todos os planos
 - Terminologia: "usuário" (não "número")
 - Limite de usuários = números de WhatsApp conectados simultaneamente

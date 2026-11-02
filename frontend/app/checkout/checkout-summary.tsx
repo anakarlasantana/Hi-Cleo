@@ -12,6 +12,13 @@ interface CheckoutSummaryProps {
   onToggleYearly: () => void
 }
 
+/**
+ * Ordem de apresentação dos planos na vitrine/checkout: Solo → Equipe → Empresa.
+ * Não dependemos da ordem devolvida pela API (o backend ordena por `sort_order`,
+ * mas a tela não deve quebrar se isso mudar).
+ */
+const PLAN_DISPLAY_ORDER = ["solo", "equipe", "empresa"]
+
 export function CheckoutSummary({ plans, selectedPlan, isYearly, onSelectPlan, onToggleYearly }: CheckoutSummaryProps) {
   const plan = plans[selectedPlan]
   if (!plan) return null
@@ -24,7 +31,7 @@ export function CheckoutSummary({ plans, selectedPlan, isYearly, onSelectPlan, o
       <h2 className="text-lg font-semibold text-foreground mb-5">Resumo</h2>
 
       <div className="space-y-2 mb-5">
-        {Object.keys(plans).map((key) => (
+        {PLAN_DISPLAY_ORDER.filter((key) => plans[key]).map((key) => (
           <button key={key} type="button" onClick={() => onSelectPlan(key)}
             className={`w-full flex items-center justify-between p-3 rounded-lg border-2 transition-all text-left ${selectedPlan === key ? "border-primary bg-primary/5" : "border-border hover:border-primary/30"}`}>
             <div>

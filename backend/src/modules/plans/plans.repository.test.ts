@@ -30,6 +30,7 @@ function buildPlanLimit(planName: string): PlanLimit {
     price_yearly_total: seed.yearly,
     features: [],
     highlighted: planName === 'solo',
+    sort_order: { solo: 1, equipe: 2, empresa: 3 }[planName] ?? 99,
     created_at: new Date(0).toISOString(),
   };
 }

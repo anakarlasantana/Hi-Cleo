@@ -7,11 +7,11 @@
 -- IMPORTANTE: preços em CENTAVOS (8990 = R$ 89,90). `payment/price-calculator`
 -- divide por 100 ao gerar o valor do Mercado Pago.
 
-INSERT INTO plan_limits (plan_name, display_name, description, max_users, price_monthly, price_yearly_total, features, highlighted)
+INSERT INTO plan_limits (plan_name, display_name, description, max_users, price_monthly, price_yearly_total, features, highlighted, sort_order)
 VALUES (
-  'solo', 'Solo', '1 usuário', 1, 8990, 89900,
+  'solo', 'Solo', '1 usuário', 1, 8990, 89900, 
   ARRAY['Contatos ilimitados', 'Entende áudio e texto', 'Acompanhamento automático', 'Respostas inteligentes'],
-  true
+  true, 1
 )
 ON CONFLICT (plan_name) DO UPDATE SET
   display_name = EXCLUDED.display_name,
@@ -20,13 +20,14 @@ ON CONFLICT (plan_name) DO UPDATE SET
   price_monthly = EXCLUDED.price_monthly,
   price_yearly_total = EXCLUDED.price_yearly_total,
   features = EXCLUDED.features,
-  highlighted = EXCLUDED.highlighted;
+  highlighted = EXCLUDED.highlighted,
+  sort_order = EXCLUDED.sort_order;
 
-INSERT INTO plan_limits (plan_name, display_name, description, max_users, price_monthly, price_yearly_total, features, highlighted)
+INSERT INTO plan_limits (plan_name, display_name, description, max_users, price_monthly, price_yearly_total, features, highlighted, sort_order)
 VALUES (
-  'equipe', 'Equipe', 'Até 3 usuários', 3, 23990, 239900,
+  'equipe', 'Equipe', 'Até 3 usuários', 3, 23990, 239900, 
   ARRAY['Tudo do Solo', 'Até 3 usuários conectados', 'Contatos ilimitados', 'Suporte prioritário'],
-  false
+  false, 2
 )
 ON CONFLICT (plan_name) DO UPDATE SET
   display_name = EXCLUDED.display_name,
@@ -35,13 +36,14 @@ ON CONFLICT (plan_name) DO UPDATE SET
   price_monthly = EXCLUDED.price_monthly,
   price_yearly_total = EXCLUDED.price_yearly_total,
   features = EXCLUDED.features,
-  highlighted = EXCLUDED.highlighted;
+  highlighted = EXCLUDED.highlighted,
+  sort_order = EXCLUDED.sort_order;
 
-INSERT INTO plan_limits (plan_name, display_name, description, max_users, price_monthly, price_yearly_total, features, highlighted)
+INSERT INTO plan_limits (plan_name, display_name, description, max_users, price_monthly, price_yearly_total, features, highlighted, sort_order)
 VALUES (
-  'empresa', 'Empresa', 'Até 8 usuários', 8, 62990, 629900,
+  'empresa', 'Empresa', 'Até 8 usuários', 8, 62990, 629900, 
   ARRAY['Tudo do Equipe', 'Até 8 usuários conectados', 'Contatos ilimitados', 'Suporte dedicado'],
-  false
+  false, 3
 )
 ON CONFLICT (plan_name) DO UPDATE SET
   display_name = EXCLUDED.display_name,
@@ -50,4 +52,5 @@ ON CONFLICT (plan_name) DO UPDATE SET
   price_monthly = EXCLUDED.price_monthly,
   price_yearly_total = EXCLUDED.price_yearly_total,
   features = EXCLUDED.features,
-  highlighted = EXCLUDED.highlighted;
+  highlighted = EXCLUDED.highlighted,
+  sort_order = EXCLUDED.sort_order;

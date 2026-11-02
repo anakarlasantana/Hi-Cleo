@@ -8,6 +8,8 @@ export interface PlanLimit {
   price_yearly_total: number;
   features: string[];
   highlighted: boolean;
+  /** Ordem de apresentação na vitrine (1 = Solo, 2 = Equipe, 3 = Empresa). */
+  sort_order: number;
   created_at: string;
 }
 
