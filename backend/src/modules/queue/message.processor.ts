@@ -550,12 +550,6 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
   // Cliente NOVO? (lead criado nos últimos segundos)
   const isNewLead = !!lead.created_at && (Date.now() - new Date(lead.created_at).getTime()) < 5000;
 
-  // Aviso ao dono: “nunca deixar passar um cliente” é a promessa nº 1 do produto.
-  // Falha aqui NUNCA pode derrubar o atendimento ao cliente (fire-and-forget).
-  if (isNewLead) {
-    await notifyOwner(container, user, buildNewLeadNotice({ clientName: pushName, phone, message: text }));
-  }
-
   // Atualizar métrica leads_captured se é trial
   if (user.subscription_status === 'trial' && lead.created_at) {
     if (isNewLead) {
@@ -607,6 +601,8 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
   }
 
   // Pedido explícito de falar com uma pessoa: a Cleo não tenta resolver sozinha.
+  // Prioridade sobre o aviso de “cliente novo” para o dono não receber 2 mensagens
+  // do mesmo evento (o aviso de handoff já traz nome, telefone e prévia).
   if (wantsHuman(messageText)) {
     const reply = buildHandoffReply(user.name);
     await messageRepo.save(lead.id, reply, 'outbound');
@@ -614,6 +610,12 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
 
     await notifyOwner(container, user, buildHandoffNotice({ clientName: pushName, phone, message: messageText }));
     return;
+  }
+
+  // Cliente NOVO (e sem pedido de humano): avisa o dono — “nunca deixar passar
+  // um cliente” é a promessa nº 1 do produto.
+  if (isNewLead) {
+    await notifyOwner(container, user, buildNewLeadNotice({ clientName: pushName, phone, message: messageText }));
   }
 
   // Buscar dados do negócio para gerar resposta contextual
