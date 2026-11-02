@@ -11,7 +11,7 @@ import {
   inet,
   varchar,
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 
 // ============================================================
 // TABELAS
@@ -71,6 +71,11 @@ export const whatsappSessions = pgTable('whatsapp_sessions', {
   index('idx_sessions_user_id').on(table.userId),
   index('idx_sessions_instance').on(table.instanceName),
   index('idx_sessions_user_status').on(table.userId, table.status),
+  // Migração 0002: uma instância só pode estar ativa para um usuário por vez.
+  // Índice parcial — o histórico (disconnected) continua com múltiplas linhas.
+  uniqueIndex('idx_sessions_instance_active_unique')
+    .on(table.instanceName)
+    .where(sql`status = 'active'`),
 ]);
 
 // --- Leads ---

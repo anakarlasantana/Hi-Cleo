@@ -1,5 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { container } from '../../container.js';
+import { env } from '../../shared/config/env.js';
+import { userInstanceName } from '../../shared/config/instance-name.js';
 
 export const activationRouter = Router();
 
@@ -76,6 +78,12 @@ activationRouter.get('/qrcode/:code', async (req: Request, res: Response) => {
       return;
     }
 
+    // Código já usado: gerar QR criaria uma instância órfã e confundiria o usuário
+    if (activationCode.used) {
+      res.status(400).json({ error: 'Este código de ativação já foi utilizado. Acesse a página de conexão.' });
+      return;
+    }
+
     // Validar ownership: código deve ter user_id vinculado
     if (!activationCode.user_id) {
       res.status(403).json({ error: 'Código sem vínculo de proprietário' });
@@ -101,7 +109,17 @@ activationRouter.get('/qrcode/:code', async (req: Request, res: Response) => {
       return;
     }
 
-    const instanceName = `user-${user.id}-${Date.now()}`;
+    const instanceName = userInstanceName(user.id);
+
+    // A instância pode ainda não existir (primeiro acesso do usuário). Sem
+    // criá-la, `connect` falha e o usuário recebe "Falha ao gerar QR Code".
+    // Sempre com o webhook configurado, senão a conexão nunca é notificada.
+    await container.messaging.ensureInstance({
+      name: instanceName,
+      webhookUrl: env.WEBHOOK_URL,
+      webhookEvents: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
+    });
+
     const qr = await container.messaging.getQrCode(instanceName);
 
     if (!qr) {
@@ -112,6 +130,7 @@ activationRouter.get('/qrcode/:code', async (req: Request, res: Response) => {
     res.json({
       qr,
       expiresIn: 45,
+      instanceName,
     });
   } catch (error) {
     container.logger.error({ err: error }, '[Activation] Erro ao gerar QR Code');
@@ -189,6 +208,17 @@ activationRouter.get('/qrcode/:code/status', async (req: Request, res: Response)
       return;
     }
 
+    // O SSE acompanha a MESMA instância usada para gerar o QR (nome determinístico).
+    // Antes usava `activation-<code>` — uma instância paralela que ninguém
+    // conectava, então a tela nunca detectava a conexão.
+    const codeRecord = await container.activationRepo.findCodeByValue(code);
+    if (!codeRecord?.user_id) {
+      res.status(404).json({ error: 'Código sem vínculo de proprietário' });
+      return;
+    }
+    const userId = codeRecord.user_id;
+    const instanceName = userInstanceName(userId);
+
     // Configurar SSE
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -196,7 +226,6 @@ activationRouter.get('/qrcode/:code/status', async (req: Request, res: Response)
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
-    const instanceName = `activation-${code}`;
     let closed = false;
 
     const sendEvent = (event: string, data: Record<string, unknown>) => {
@@ -213,6 +242,14 @@ activationRouter.get('/qrcode/:code/status', async (req: Request, res: Response)
         sendEvent('status', { status });
 
         if (status === 'open') {
+          // Garante a sessão no banco mesmo se o webhook connection.update
+          // atrasar ou falhar — idempotente, então não duplica.
+          try {
+            await container.sessionRepo.activateSession({ userId, instanceName });
+          } catch (err) {
+            container.logger.warn({ err, instance: instanceName }, '[Activation] falha ao gravar sessão via SSE');
+          }
+
           sendEvent('connected', { message: 'Conexão estabelecida com sucesso' });
           clearInterval(interval);
           res.end();

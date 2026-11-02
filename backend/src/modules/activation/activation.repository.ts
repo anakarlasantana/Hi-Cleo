@@ -141,16 +141,33 @@ export class DrizzleUserRepository implements UserRepository {
     businessData: {
       name?: string;
       services?: string;
+      target_audience?: string;
+      tone_of_voice?: string;
       business_hours_start?: string;
       business_hours_end?: string;
     },
   ): Promise<void> {
+    // Idempotente: activation (código manual) e onboarding criam o perfil do
+    // mesmo usuário — usar onConflict garante uma linha só por user_id e evita
+    // erro de constraint quando os dois caminhos rodam.
     await db.insert(businesses).values({
       userId,
       name: businessData.name,
       services: businessData.services,
+      targetAudience: businessData.target_audience,
+      toneOfVoice: businessData.tone_of_voice,
       businessHoursStart: businessData.business_hours_start,
       businessHoursEnd: businessData.business_hours_end,
+    }).onConflictDoUpdate({
+      target: businesses.userId,
+      set: {
+        name: businessData.name,
+        services: businessData.services,
+        targetAudience: businessData.target_audience,
+        ...(businessData.tone_of_voice ? { toneOfVoice: businessData.tone_of_voice } : {}),
+        businessHoursStart: businessData.business_hours_start,
+        businessHoursEnd: businessData.business_hours_end,
+      },
     });
   }
 

@@ -96,6 +96,11 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
   try {
     const payload = req.body as WebhookPayload;
 
+    if (payload.event === 'connection.update') {
+      await handleConnectionUpdate(payload);
+      return;
+    }
+
     if (payload.event !== 'messages.upsert') return;
 
     const { data } = payload;
@@ -153,3 +158,73 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
     log.error({ err: error }, 'erro ao processar webhook');
   }
 });
+
+/**
+ * Trata `connection.update` da Evolution API.
+ *
+ * É a ÚNICA fonte de verdade sobre "este WhatsApp está conectado". Sem gravar a
+ * sessão aqui, `findByInstance` retorna null no processamento de mensagens e a
+ * Cleo não responde a nenhum cliente.
+ *
+ * Estados da Evolution: `open` (conectado), `connecting` (QR aguardando leitura)
+ * e `close` (desconectado/logout).
+ */
+async function handleConnectionUpdate(payload: WebhookPayload): Promise<void> {
+  const instanceName = payload.instance;
+  // A Evolution pode enviar o estado no root (`state`) ou dentro de `data`.
+  const state = payload.state ?? (payload.data as unknown as { state?: string } | undefined)?.state;
+
+  if (!instanceName || !state) return;
+
+  // A instância da secretária (Cleo) não pertence a nenhum usuário: é monitorada
+  // pelo connection-monitor, não deve gerar linha em whatsapp_sessions.
+  if (instanceName === env.MONITOR_INSTANCE) return;
+
+  log.info({ instance: instanceName, state }, 'connection.update recebido');
+
+  try {
+    if (state === 'open') {
+      const userId = await resolveUserIdForInstance(instanceName);
+      if (!userId) {
+        log.error({ instance: instanceName }, 'instância conectada sem usuário correspondente — sessão não gravada');
+        return;
+      }
+
+      await container.sessionRepo.activateSession({ userId, instanceName });
+      log.info({ instance: instanceName }, 'sessão WhatsApp ativada');
+      return;
+    }
+
+    if (state === 'close') {
+      await container.sessionRepo.markDisconnected(instanceName);
+      log.warn({ instance: instanceName }, 'sessão WhatsApp desconectada');
+    }
+  } catch (error) {
+    log.error({ err: error, instance: instanceName }, 'erro ao processar connection.update');
+  }
+}
+
+/**
+ * Descobre o dono da instância a partir do nome determinístico.
+ * Suporta `user-<uuid>` (dono/colaborador) e `invite-<token>` (convite em aceite).
+ */
+async function resolveUserIdForInstance(instanceName: string): Promise<string | null> {
+  if (instanceName.startsWith('user-')) {
+    const userId = instanceName.slice('user-'.length);
+    const user = await container.userRepo.findById(userId);
+    return user ? user.id : null;
+  }
+
+  if (instanceName.startsWith('invite-')) {
+    const token = instanceName.slice('invite-'.length);
+    const { valid, invite } = await container.inviteService.validateInvite(token);
+
+    // Convite recém-aceito já não é mais 'pending' — busca o colaborador vinculado
+    if (!valid && invite?.used_by_user_id) {
+      const collaborator = await container.userRepo.findById(invite.used_by_user_id as string);
+      return collaborator ? collaborator.id : null;
+    }
+  }
+
+  return null;
+}

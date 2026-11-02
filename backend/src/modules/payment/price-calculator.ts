@@ -9,7 +9,6 @@ export interface PriceResult {
   installmentPrice: number;
   installments: number;
   interestApplied: boolean;
-  discountLabel: string | null;
   savingsLabel: string | null;
   formattedTotal: string;
   formattedInstallment: string;
@@ -27,6 +26,9 @@ interface CalculatePriceParams {
 /**
  * Calcula preço final com juros, formatação e valor pro Mercado Pago.
  * Recebe o preço base do banco — não usa constantes hardcoded.
+ *
+ * PIX e cartão pagos à vista têm o MESMO valor (preço cheio). Só há acréscimo
+ * quando o cliente parcela em mais de 3x, e esse valor é exibido na tela.
  */
 export function calculatePrice(params: CalculatePriceParams): PriceResult {
   const { basePrice, monthlyPrice, billingPeriod, paymentMethod, installments } = params;
@@ -41,7 +43,6 @@ export function calculatePrice(params: CalculatePriceParams): PriceResult {
   }
 
   const installmentPrice = Math.round(finalPrice / installments);
-  const discountLabel = paymentMethod === 'pix' ? '10% off no PIX' : null;
 
   let savingsLabel: string | null = null;
   if (billingPeriod === 'yearly') {
@@ -59,7 +60,6 @@ export function calculatePrice(params: CalculatePriceParams): PriceResult {
     installmentPrice,
     installments,
     interestApplied,
-    discountLabel,
     savingsLabel,
     formattedTotal: formatCurrency(finalPrice),
     formattedInstallment: installments > 1

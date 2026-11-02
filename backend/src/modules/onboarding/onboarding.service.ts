@@ -44,21 +44,26 @@ Vamos lá?`;
     // Detectar se é edição parcial (voltou de confirm_summary para ajustar 1 campo)
     const isPartialEdit = state.data._editing === 'true';
 
+    // Em edição parcial, todo passo de coleta volta direto ao resumo — o mapa
+    // estático abaixo (business_hours → outside_hours_behavior) fazia o usuário
+    // reescrever os últimos 2 passos depois de mudar só o horário.
+    const nextAfter = (defaultNext: string) => (isPartialEdit ? 'confirm_summary' : defaultNext);
+
     switch (state.step) {
       case 'awaiting_intro_confirmation':
         return this.handleIntroConfirmation(userId, state);
       case 'confirm_name':
-        return this.handleConfirmName(userId, state, message, isPartialEdit ? 'confirm_summary' : 'business_type');
+        return this.handleConfirmName(userId, state, message, nextAfter('business_type'));
       case 'business_type':
-        return this.handleStep(userId, state, message, 'business_type', isPartialEdit ? 'confirm_summary' : 'target_audience');
+        return this.handleStep(userId, state, message, 'business_type', nextAfter('target_audience'));
       case 'target_audience':
-        return this.handleStep(userId, state, message, 'target_audience', isPartialEdit ? 'confirm_summary' : 'tone_of_voice');
+        return this.handleStep(userId, state, message, 'target_audience', nextAfter('tone_of_voice'));
       case 'tone_of_voice':
-        return this.handleStep(userId, state, message, 'tone_of_voice', isPartialEdit ? 'confirm_summary' : 'business_hours');
+        return this.handleStep(userId, state, message, 'tone_of_voice', nextAfter('business_hours'));
       case 'business_hours':
-        return this.handleStep(userId, state, message, 'business_hours', isPartialEdit ? 'confirm_summary' : 'outside_hours_behavior');
+        return this.handleStep(userId, state, message, 'business_hours', nextAfter('outside_hours_behavior'));
       case 'outside_hours_behavior':
-        return this.handleStep(userId, state, message, 'outside_hours_behavior', 'confirm_summary');
+        return this.handleStep(userId, state, message, 'outside_hours_behavior', nextAfter('confirm_summary'));
       case 'confirm_summary':
         return this.handleConfirmSummary(userId, state, message);
       case 'completed':
@@ -94,13 +99,10 @@ Vamos lá?`;
     // passam do limite/têm emoji — mas claramente são um nome. Só rejeitar
     // quando NÃO parece resposta de nome (deixa a IA extrair o nome).
     const nameHintRegex = /(chama|chamar|nome|apodo|sou eu|é a |é o )/i;
-    const suggestedName = (state.data.nome || '').trim().toLowerCase();
+    const suggestedName = (state.data.nome || state.data.nome_confirmado || '').trim().toLowerCase();
     const mentionsSuggested = suggestedName.length > 1
       && message.toLowerCase().includes(suggestedName.split(' ')[0]);
-    const invalidName = currentStep === 'confirm_name'
-      && !mentionsSuggested
-      && !nameHintRegex.test(message)
-      && (message.trim().length > 40 || isQuestion);
+    const invalidName = currentStep === 'confirm_name' && !mentionsSuggested && !nameHintRegex.test(message) && (message.trim().length > 40 || isQuestion);
     const isClearlyInvalid = isCommand || isQuestion || invalidName;
 
     const result = isClearlyInvalid
@@ -122,8 +124,8 @@ Vamos lá?`;
       // (não tratar como erro genérico — o usuário está engajado, só curioso)
       if (isQuestion && !isCommand) {
         const retry = ONBOARDING_RETRY_MESSAGES[currentStep] || 'Pode me responder?';
-        return `Boa pergunta! Vou te explicar tudo assim que terminarmos sua configuração — falta pouco! 😊\
-\
+        return `Boa pergunta! Vou te explicar tudo assim que terminarmos sua configuração — falta pouco! 😊
+
 Antes disso: ${retry}`;
       }
 
@@ -134,7 +136,9 @@ Antes disso: ${retry}`;
     }
 
     const newData = { ...state.data, ...result.extractedData };
-    // Limpar flag de edição e contador de retry ao avançar
+    // Limpar flag de edição e contador de retry ao avançar.
+    // A flag é escrita como string ('true') em detectFieldToEdit e nunca deve
+    // vazar para o resumo final — senão o próximo envio volta em modo edição.
     if (nextStep === 'confirm_summary' && newData._editing) {
       delete newData._editing;
     }
@@ -146,11 +150,24 @@ Antes disso: ${retry}`;
   private async handleIntroConfirmation(userId: string, state: OnboardingState): Promise<string> {
     // Se já sabemos o nome (da ativação/perfil), confirmar em vez de perguntar do zero —
     // perguntar "como posso te chamar?" logo após saudar a pessoa pelo nome soa robótico
-    const suggestedName = state.data.nome?.trim();
-    await this.onboardingRepo.updateStep(userId, 'confirm_name', state.data);
+    const suggestedName = (state.data.nome || state.data.nome_confirmado || '').trim();
+
     if (suggestedName) {
+      await this.onboardingRepo.updateStep(userId, 'confirm_name', state.data);
       return `Vi que seu nome é ${suggestedName} — posso te chamar assim, ou prefere outro jeito?`;
     }
+
+    // Sem nome na ativação (usuário só mandou "ATIVAR-XXXX"), recorre ao perfil
+    // criado no pagamento/trial. Sem isso a Cleo saudava "Oi, Carla Mendes!" e em
+    // seguida perguntava "como posso te chamar?" — perda de contexto na 1ª conversa.
+    const profileName = await this.onboardingRepo.getUserDisplayName(userId);
+    if (profileName) {
+      const dataWithName = { ...state.data, nome: profileName, nome_confirmado: profileName };
+      await this.onboardingRepo.updateStep(userId, 'business_type', dataWithName);
+      return this.getNextStepMessage('business_type', dataWithName);
+    }
+
+    await this.onboardingRepo.updateStep(userId, 'confirm_name', state.data);
     return 'Pra começar, como posso te chamar?';
   }
 
@@ -164,7 +181,7 @@ Antes disso: ${retry}`;
     message: string,
     nextStep: string,
   ): Promise<string> {
-    const suggestedName = state.data.nome?.trim();
+    const suggestedName = (state.data.nome || state.data.nome_confirmado || '').trim();
     if (suggestedName) {
       const affirmation = /^(sim|isso|isso mesmo|pode|pode sim|claro|ok|okay|tá|ta|tá bom|ta bom|exato|correto|yes|bora|perfeito)[\s!.,]*$/i;
       if (affirmation.test(message.trim())) {
@@ -174,6 +191,9 @@ Antes disso: ${retry}`;
         return this.getNextStepMessage(nextStep, newData);
       }
     }
+    // 'confirm_name' não é um step presente no switch de handleStep (que trata
+    // apenas os passos de coleta). Delegamos para o mesmo fluxo de coleta
+    // garantindo a extração do nome.
     return this.handleStep(userId, state, message, 'confirm_name', nextStep);
   }
 
@@ -287,7 +307,9 @@ Me diz os novos dias e horários (ex: "Seg a Sex, 9h às 18h"):`;
   private getNextStepMessage(step: string, data: Record<string, string>): string {
     switch (step) {
       case 'business_type':
-        return `Boa, ${data.nome_confirmado}! Prazer em te conhecer 🤝
+        // Sem "Prazer em te conhecer" aqui: a ativação já saudou a pessoa e o
+        // onboarding repete a apresentação na 2ª resposta (visto no E2E).
+        return `Boa, ${data.nome_confirmado}! Vamos configurar sua Cleo rapidinho 🚀
 
 Me conta o que você faz — pode ser bem direto:
 
@@ -299,13 +321,50 @@ Exemplos:
 
 Pode mandar do seu jeito 😊`;
       case 'target_audience':
-        return 'Legal! Entendi sobre o seu trabalho ✨\n\nE quem são seus clientes geralmente?\n\nExemplos:\n• Casais procurando apartamento\n• Mulheres 25-45 anos\n• Empresas pequenas\n\nSe não tiver certeza, manda o que vier na cabeça:';
+        // Devolve o dado extraído: prova que a Cleo "ouviu" a resposta anterior
+        // (o judge apontou resposta que ignorava o conteúdo do usuário).
+        return `${data.negocio ? `Anotei: *${data.negocio}* ✨` : 'Legal! ✨'}
+
+E quem são seus clientes geralmente?
+
+Exemplos:
+• Casais procurando apartamento
+• Mulheres 25-45 anos
+• Empresas pequenas
+
+Se não tiver certeza, manda o que vier na cabeça:`;
       case 'tone_of_voice':
-        return 'Boa! Agora me diz: como quer que eu fale com seus clientes?\n\n1️⃣ Profissional e cordial\n2️⃣ Descontraído mas profissional\n3️⃣ Super informal\n\nOu descreve com suas palavras:';
+        return `${data.publico_alvo ? `Anotei seu público: *${data.publico_alvo}* ✨` : 'Boa! ✨'}
+
+Agora me diz: como quer que eu fale com seus clientes?
+
+1️⃣ Profissional e cordial
+2️⃣ Descontraído mas profissional
+3️⃣ Super informal
+
+Ou descreve com suas palavras:`;
       case 'business_hours':
-        return 'Perfeito! Vou me comunicar assim com seus clientes 💬\n\nAgora preciso saber: *quais dias e horários* você atende?\n\nExemplos:\n• Seg a Sex, 9h às 18h\n• Seg a Sáb, 8h às 20h\n• Todos os dias, 7h às 22h\n\nMe diz os dias e o horário:';
-      case 'outside_hours_behavior':
-        return 'Anotado! 🕐\n\nÚltima pergunta: quando chegar mensagem *fora* desse horário, o que faço?\n\n1️⃣ Aviso que retorna no próximo dia útil\n2️⃣ Não respondo nada, só anoto\n\nOu me diz a mensagem que quer que eu mande:';
+        return `${data.tom_de_voz ? `Anotei o tom: *${this.getToneLabel(data.tom_de_voz)}* 💬` : 'Perfeito! 💬'}
+
+Agora preciso saber: *quais dias e horários* você atende?
+
+Exemplos:
+• Seg a Sex, 9h às 18h
+• Seg a Sáb, 8h às 20h
+• Todos os dias, 7h às 22h
+
+Me diz os dias e o horário:`;
+      case 'outside_hours_behavior': {
+        const hours = data.horario_descricao || `${data.horario_inicio}-${data.horario_fim}`;
+        return `${hours ? `Anotei seu horário: *${hours}* 🕐` : 'Anotado! 🕐'}
+
+Última pergunta: quando chegar mensagem *fora* desse horário, o que faço?
+
+1️⃣ Aviso que retorna no próximo dia útil
+2️⃣ Não respondo nada, só anoto
+
+Ou me diz a mensagem que quer que eu mande:`;
+      }
       case 'confirm_summary': {
         const tone = this.getToneLabel(data.tom_de_voz || 'friendly_professional');
         const outside = data.fora_horario === 'silent' ? 'só anoto, sem resposta' : 'aviso que retorna';

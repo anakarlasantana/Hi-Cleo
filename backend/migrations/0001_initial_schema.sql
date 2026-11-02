@@ -197,16 +197,18 @@ CREATE INDEX IF NOT EXISTS idx_invites_owner ON invites(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_invites_phone ON invites(phone);
 
 -- Seed: Plan Limits
+-- IMPORTANTE: preços em CENTAVOS (4900 = R$ 49,00). O cálculo do Mercado Pago
+-- divide por 100 — gravar reais aqui faria o checkout cobrar R$ 0,49.
 INSERT INTO plan_limits (plan_name, display_name, description, max_users, price_monthly, price_yearly_total, features, highlighted)
-SELECT 'solo', 'Solo', '1 usuário', 1, 49, 490, ARRAY['Contatos ilimitados', 'Entende áudio e texto', 'Acompanhamento automático', 'Respostas inteligentes'], true
+SELECT 'solo', 'Solo', '1 usuário', 1, 4900, 49000, ARRAY['Contatos ilimitados', 'Entende áudio e texto', 'Acompanhamento automático', 'Respostas inteligentes'], true
 WHERE NOT EXISTS (SELECT 1 FROM plan_limits WHERE plan_name = 'solo');
 
 INSERT INTO plan_limits (plan_name, display_name, description, max_users, price_monthly, price_yearly_total, features, highlighted)
-SELECT 'equipe', 'Equipe', 'Até 3 usuários', 3, 119, 1190, ARRAY['Tudo do Solo', 'Até 3 usuários conectados', 'Contatos ilimitados', 'Suporte prioritário'], false
+SELECT 'equipe', 'Equipe', 'Até 3 usuários', 3, 11900, 119000, ARRAY['Tudo do Solo', 'Até 3 usuários conectados', 'Contatos ilimitados', 'Suporte prioritário'], false
 WHERE NOT EXISTS (SELECT 1 FROM plan_limits WHERE plan_name = 'equipe');
 
 INSERT INTO plan_limits (plan_name, display_name, description, max_users, price_monthly, price_yearly_total, features, highlighted)
-SELECT 'empresa', 'Empresa', 'Até 8 usuários', 8, 249, 2490, ARRAY['Tudo do Equipe', 'Até 8 usuários conectados', 'Contatos ilimitados', 'Suporte dedicado'], false
+SELECT 'empresa', 'Empresa', 'Até 8 usuários', 8, 24900, 249000, ARRAY['Tudo do Equipe', 'Até 8 usuários conectados', 'Contatos ilimitados', 'Suporte dedicado'], false
 WHERE NOT EXISTS (SELECT 1 FROM plan_limits WHERE plan_name = 'empresa');
 
 -- Payments (registros de orders do Mercado Pago)

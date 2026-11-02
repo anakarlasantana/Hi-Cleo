@@ -134,3 +134,70 @@ describe('ActivationService - Terms Consent Integration', () => {
     expect(termsService.recordConsent).toHaveBeenCalledWith('user-123', '1.0.0');
   });
 });
+
+/**
+ * Regressão encontrada no E2E de qualidade (cenário `onboarding`).
+ *
+ * A IA pode responder JSON válido mas SEM os campos extraídos. O onboarding
+ * então começava sem nome, e a Cleo saudava "Oi, Carla Mendes!" e em seguida
+ * perguntava "como posso te chamar?" — quebra de contexto na primeira conversa.
+ */
+describe('ActivationService — extração do formato ATIVAR-XXXX | ...', () => {
+  const MESSAGE = 'ATIVAR-D29R | Carla Mendes | Salão de beleza | Corte e manicure | Seg-Sex 9h-18h';
+
+  function buildService(aiResponse: string) {
+    const onboardingRepo = createMockOnboardingRepo();
+    const ai = { generateContent: vi.fn().mockResolvedValue(aiResponse) };
+    const service = new ActivationService(
+      createMockActivationRepo() as any,
+      createMockUserRepo() as any,
+      onboardingRepo as any,
+      ai as any,
+    );
+    return { service, onboardingRepo };
+  }
+
+  it('falls back to the deterministic parser when the AI returns empty fields', async () => {
+    const { service, onboardingRepo } = buildService(JSON.stringify({
+      nome: '', negocio: '', servicos: '', horario_inicio: '', horario_fim: '',
+    }));
+
+    await service.activateUser('ATIVAR-D29R', '5548999100000', MESSAGE, true);
+
+    const savedData = onboardingRepo.create.mock.calls[0][2];
+    expect(savedData.nome).toBe('Carla Mendes');
+    expect(savedData.negocio).toBe('Salão de beleza');
+    expect(savedData.servicos).toBe('Corte e manicure');
+    expect(savedData.horario_inicio).toBe('09:00');
+    expect(savedData.horario_fim).toBe('18:00');
+  });
+
+  it('falls back to the deterministic parser when the AI throws', async () => {
+    const onboardingRepo = createMockOnboardingRepo();
+    const ai = { generateContent: vi.fn().mockRejectedValue(new Error('AI offline')) };
+    const svc = new ActivationService(
+      createMockActivationRepo() as any,
+      createMockUserRepo() as any,
+      onboardingRepo as any,
+      ai as any,
+    );
+
+    await svc.activateUser('ATIVAR-D29R', '5548999100000', MESSAGE, true);
+
+    const savedData = onboardingRepo.create.mock.calls[0][2];
+    expect(savedData.nome).toBe('Carla Mendes');
+    expect(savedData.negocio).toBe('Salão de beleza');
+  });
+
+  it('prefers the AI result when it extracted data', async () => {
+    const { service, onboardingRepo } = buildService(JSON.stringify({
+      nome: 'Carla', negocio: 'Salão', servicos: 'Corte', horario_inicio: '10:00', horario_fim: '19:00',
+    }));
+
+    await service.activateUser('ATIVAR-D29R', '5548999100000', MESSAGE, true);
+
+    const savedData = onboardingRepo.create.mock.calls[0][2];
+    expect(savedData.horario_inicio).toBe('10:00');
+    expect(savedData.horario_fim).toBe('19:00');
+  });
+});

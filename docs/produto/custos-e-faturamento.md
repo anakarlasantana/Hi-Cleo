@@ -2,14 +2,17 @@
 
 ## Planos VPS (qualquer provider com Docker)
 
-| Provider | Plano | Preço estimado | vCPU | RAM | Disco |
-|----------|-------|----------------|------|-----|-------|
-| Hetzner | CX22 | ~R$25/mês | 2 | 4GB | 40GB |
-| Contabo | VPS S | ~R$30/mês | 4 | 8GB | 50GB |
-| DigitalOcean | Droplet | ~R$30/mês | 1 | 2GB | 50GB |
-| Hostinger | KVM 1 | ~R$30/mês | 1 | 4GB | 50GB |
+| Provider | Plano | Preço estimado | vCPU | RAM | Disco | Observação |
+|----------|-------|----------------|------|-----|-------|-----------|
+| **Oracle Cloud** | Always Free (A1.Flex) | **R$ 0** | 2 (ARM) | 12GB | 200GB | Grátis para sempre, DC em São Paulo, exige build ARM |
+| Hetzner | CX22 | ~R$27/mês | 2 | 4GB | 40GB | Melhor custo-benefício x86, DC na Europa |
+| Hostinger | KVM 2 | ~R$48/mês | 2 | 8GB | 100GB | Painel em PT, build sem sufoco |
+| Contabo | VPS S | ~R$43/mês | 4 | 8GB | 200GB | Mais recursos por menos, I/O mais lento |
+| DigitalOcean | Droplet | ~R$130/mês | 2 | 4GB | 80GB | DC em SP (menor latência BR) |
 
-Requisito mínimo: 1 vCPU, 4GB RAM, Docker instalado. Todos os serviços (backend, frontend, Redis, Evolution API, Postgres) rodam no mesmo servidor via Docker Compose.
+Requisito mínimo: **2 vCPU, 4GB RAM**, Docker instalado. Todos os serviços (nginx, backend, frontend, Redis, Evolution API, 2× Postgres) rodam no mesmo servidor via Docker Compose.
+
+**Medição real (2026-10-27):** ~1,1–1,6 GB de RAM em regime; pico de ~3,6 GB durante o `next build`. Em VPS de 4 GB, configure swap antes do build. Detalhes e validação ARM64 em [deploy-producao.md §2.5](../tecnico/deploy-producao.md#25-oracle-cloud-always-free).
 
 ---
 

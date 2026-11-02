@@ -82,7 +82,7 @@ Landing Page → Checkout → Ativação → Onboarding (WhatsApp) → Conexão 
 
 | Método | Taxa | Quem paga | Preço exibido |
 |--------|------|-----------|---------------|
-| PIX | 0% | Ninguém | Preço cheio (com label "10% off") |
+| PIX | 0% | Ninguém | Preço cheio (sem desconto) |
 | Cartão à vista (1x) | ~4.99% | Sistema absorve | Preço cheio |
 | Cartão 2x-3x | ~4.99% + parcelamento | Sistema absorve | Preço cheio dividido |
 | Cartão 4x-12x | ~4.99% + juros compostos | Cliente paga juros | Preço ajustado visível |

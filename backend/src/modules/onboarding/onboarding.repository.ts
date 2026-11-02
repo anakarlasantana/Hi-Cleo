@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../../shared/config/database.js';
-import { onboardingStates } from '../../shared/schema.js';
+import { onboardingStates, users } from '../../shared/schema.js';
 import type { OnboardingRepository } from './onboarding.port.js';
 import type { OnboardingState, OnboardingStep } from '../../shared/types/index.js';
 
@@ -24,5 +24,18 @@ export class DrizzleOnboardingRepository implements OnboardingRepository {
 
   async create(userId: string, step: OnboardingStep, data: Record<string, string>): Promise<void> {
     await db.insert(onboardingStates).values({ userId, step, data });
+  }
+
+  async getUserDisplayName(userId: string): Promise<string> {
+    const [row] = await db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    const name = (row?.name || '').trim();
+    // Telefone não serve como nome de tratamento
+    if (!name || /^\+?\d[\d\s-]*$/.test(name)) return '';
+    return name;
   }
 }

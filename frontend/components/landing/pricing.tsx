@@ -5,18 +5,26 @@ import { Button } from "@/components/ui/button"
 import { Check, ArrowRight } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
+import { fetchAvailablePlans } from "@/services/plans.service"
 
 function formatBRL(value: number): string {
   return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-const plans = [
+/**
+ * Catálogo de planos da landing.
+ *
+ * Os VALORES vêm da API (/api/activation/plans), única fonte de verdade — o
+ * banco guarda os preços em centavos. Se a API falhar, usamos estes valores de
+ * fallback (em reais) apenas para não quebrar a vitrine.
+ */
+const PLAN_CATALOG = [
   {
+    key: "solo",
     name: "Solo",
     description: "1 usuário",
-    monthlyPrice: 49,
-    yearlyInstallment: 40.83,
-    yearlyTotal: 490,
+    fallbackMonthly: 49,
+    fallbackYearlyTotal: 490,
     features: [
       "Contatos ilimitados",
       "Entende áudio e texto",
@@ -26,11 +34,11 @@ const plans = [
     highlighted: true,
   },
   {
+    key: "equipe",
     name: "Equipe",
     description: "Até 3 usuários",
-    monthlyPrice: 119,
-    yearlyInstallment: 99.17,
-    yearlyTotal: 1190,
+    fallbackMonthly: 119,
+    fallbackYearlyTotal: 1190,
     features: [
       "Tudo do Solo",
       "Até 3 usuários conectados",
@@ -40,11 +48,11 @@ const plans = [
     highlighted: false,
   },
   {
+    key: "empresa",
     name: "Empresa",
     description: "Até 8 usuários",
-    monthlyPrice: 249,
-    yearlyInstallment: 207.50,
-    yearlyTotal: 2490,
+    fallbackMonthly: 249,
+    fallbackYearlyTotal: 2490,
     features: [
       "Tudo do Equipe",
       "Até 8 usuários conectados",
@@ -55,7 +63,31 @@ const plans = [
   },
 ]
 
-function PlanCard({ plan, isYearly, index }: { plan: typeof plans[0]; isYearly: boolean; index: number }) {
+interface DisplayPlan {
+  name: string
+  description: string
+  monthlyPrice: number
+  yearlyTotal: number
+  yearlyInstallment: number
+  features: string[]
+  highlighted: boolean
+}
+
+function toDisplayPlan(catalog: typeof PLAN_CATALOG[number], apiPrice?: { monthlyCents: number; yearlyCents: number }): DisplayPlan {
+  const monthlyPrice = apiPrice ? apiPrice.monthlyCents / 100 : catalog.fallbackMonthly
+  const yearlyTotal = apiPrice ? apiPrice.yearlyCents / 100 : catalog.fallbackYearlyTotal
+  return {
+    name: catalog.name,
+    description: catalog.description,
+    monthlyPrice,
+    yearlyTotal,
+    yearlyInstallment: yearlyTotal / 12,
+    features: catalog.features,
+    highlighted: catalog.highlighted,
+  }
+}
+
+function PlanCard({ plan, isYearly, index }: { plan: DisplayPlan; isYearly: boolean; index: number }) {
   const ref = useRef<HTMLDivElement>(null)
   const [isVisible, setIsVisible] = useState(false)
 
@@ -174,6 +206,29 @@ function PlanCard({ plan, isYearly, index }: { plan: typeof plans[0]; isYearly: 
 
 export function Pricing() {
   const [isYearly, setIsYearly] = useState(false)
+  const [apiPrices, setApiPrices] = useState<Record<string, { monthlyCents: number; yearlyCents: number }>>({})
+
+  // Preços vêm da API (fonte única). Falha silenciosa → fallback do catálogo.
+  useEffect(() => {
+    let cancelled = false
+
+    fetchAvailablePlans()
+      .then((plansMap) => {
+        if (cancelled) return
+        const prices: Record<string, { monthlyCents: number; yearlyCents: number }> = {}
+        for (const [key, plan] of Object.entries(plansMap)) {
+          prices[key] = { monthlyCents: plan.priceMonthly, yearlyCents: plan.yearlyTotal }
+        }
+        setApiPrices(prices)
+      })
+      .catch(() => { /* mantém fallback */ })
+
+    return () => { cancelled = true }
+  }, [])
+
+  const plans: DisplayPlan[] = PLAN_CATALOG.map((catalog) =>
+    toDisplayPlan(catalog, apiPrices[catalog.key]),
+  )
 
   return (
     <section id="planos" className="py-24 relative overflow-hidden">

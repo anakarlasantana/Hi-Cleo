@@ -9,6 +9,17 @@ import type { Invite, User } from '../../shared/types/index.js';
 
 const INVITE_EXPIRY_HOURS = 72;
 
+export interface CollaborateProfile {
+  name: string;
+  businessHoursStart: string;
+  businessHoursEnd: string;
+  termsAccepted: boolean;
+  /** Opcionais — completam o perfil para a Cleo responder de forma contextual. */
+  businessType?: string;
+  targetAudience?: string;
+  toneOfVoice?: 'formal' | 'friendly_professional' | 'casual';
+}
+
 function generateInviteToken(): string {
   return randomUUID().replace(/-/g, '').substring(0, 24);
 }
@@ -45,6 +56,14 @@ export class InviteService {
       token,
       expiresAt,
     });
+  }
+
+  /**
+   * Busca o convite pelo token (sem validar expiração/slots).
+   * Usado pelo SSE de conexão, que precisa do colaborador já vinculado.
+   */
+  async findByToken(token: string): Promise<Invite | null> {
+    return this.inviteRepo.findByToken(token);
   }
 
   /**
@@ -88,6 +107,9 @@ export class InviteService {
     businessHoursStart: string;
     businessHoursEnd: string;
     termsAccepted: boolean;
+    businessType?: string;
+    targetAudience?: string;
+    toneOfVoice?: 'formal' | 'friendly_professional' | 'casual';
   }): Promise<User> {
     if (!collaboratorData.termsAccepted) {
       throw new Error('TERMS_CONSENT_REQUIRED');
@@ -109,9 +131,15 @@ export class InviteService {
       subscription_status: 'active',
     });
 
-    // Criar business profile independente
+    // Criar business profile independente.
+    // A Cleo gera respostas a partir deste perfil: sem tipo de negócio e tom de
+    // voz o colaborador recebia respostas genéricas (o onboarding pesado do dono
+    // não roda para colaboradores).
     await this.userRepo.createBusiness(collaborator.id, {
-      name: collaboratorData.name,
+      name: collaboratorData.businessType || collaboratorData.name,
+      services: collaboratorData.businessType,
+      target_audience: collaboratorData.targetAudience,
+      tone_of_voice: collaboratorData.toneOfVoice ?? 'friendly_professional',
       business_hours_start: collaboratorData.businessHoursStart,
       business_hours_end: collaboratorData.businessHoursEnd,
     });

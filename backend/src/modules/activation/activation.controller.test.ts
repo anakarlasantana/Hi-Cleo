@@ -17,9 +17,13 @@ vi.mock('../../container.js', () => ({
       canAddUser: vi.fn(),
       getCurrentUsage: vi.fn(),
     },
+    sessionRepo: {
+      activateSession: vi.fn(),
+    },
     messaging: {
       getQrCode: vi.fn(),
       getStatus: vi.fn(),
+      ensureInstance: vi.fn(),
     },
     logger: {
       error: vi.fn(),
@@ -102,7 +106,67 @@ describe('Activation Controller - QR Code Endpoints', () => {
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
         qr: 'base64-qr-data',
         expiresIn: 45,
+        instanceName: 'user-user-123',
       }));
+    });
+
+    // Regressão: a instância precisa ser determinística. Com timestamp no nome
+    // (user-<id>-<Date.now()>), o SSE e o webhook nunca encontravam a instância
+    // e a Cleo não respondia a nenhum cliente.
+    it('should use a deterministic instance name (no timestamp)', async () => {
+      vi.mocked(container.activationRepo.findCodeByValue).mockResolvedValue({
+        code: 'ATIVAR-TEST', plan: 'solo', used: false, user_id: 'user-123',
+      } as any);
+      vi.mocked(container.userRepo.findById).mockResolvedValue({
+        id: 'user-123', subscription_status: 'active',
+      } as any);
+      vi.mocked(container.planService.canAddUser).mockResolvedValue(true);
+      vi.mocked(container.messaging.getQrCode).mockResolvedValue('base64-qr-data');
+
+      const req = createMockReq({ code: 'ATIVAR-TEST' });
+      const res = createMockRes();
+
+      await handler(req, res);
+      await handler(createMockReq({ code: 'ATIVAR-TEST' }), createMockRes());
+
+      const calls = vi.mocked(container.messaging.getQrCode).mock.calls;
+      expect(calls[0][0]).toBe('user-user-123');
+      expect(calls[1][0]).toBe(calls[0][0]);
+    });
+
+    it('should ensure the instance exists before requesting the QR code', async () => {
+      vi.mocked(container.activationRepo.findCodeByValue).mockResolvedValue({
+        code: 'ATIVAR-TEST', plan: 'solo', used: false, user_id: 'user-123',
+      } as any);
+      vi.mocked(container.userRepo.findById).mockResolvedValue({
+        id: 'user-123', subscription_status: 'active',
+      } as any);
+      vi.mocked(container.planService.canAddUser).mockResolvedValue(true);
+      vi.mocked(container.messaging.getQrCode).mockResolvedValue('base64-qr-data');
+
+      await handler(createMockReq({ code: 'ATIVAR-TEST' }), createMockRes());
+
+      expect(container.messaging.ensureInstance).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'user-user-123' }),
+      );
+      // ensureInstance precisa rodar ANTES do connect
+      const ensureOrder = vi.mocked(container.messaging.ensureInstance).mock.invocationCallOrder[0];
+      const connectOrder = vi.mocked(container.messaging.getQrCode).mock.invocationCallOrder[0];
+      expect(ensureOrder).toBeLessThan(connectOrder);
+    });
+
+    it('should reject an already used activation code', async () => {
+      vi.mocked(container.activationRepo.findCodeByValue).mockResolvedValue({
+        code: 'ATIVAR-TEST', plan: 'solo', used: true, user_id: 'user-123',
+      } as any);
+
+      const req = createMockReq({ code: 'ATIVAR-TEST' });
+      const res = createMockRes();
+
+      await handler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(container.messaging.getQrCode).not.toHaveBeenCalled();
     });
 
     it('should return 502 when QR code generation returns empty', async () => {
@@ -177,7 +241,10 @@ describe('Activation Controller - QR Code Endpoints', () => {
 
     it('should set SSE headers for valid code', async () => {
       vi.mocked(container.activationService.validateCode).mockResolvedValue({
-        code: 'ATIVAR-TEST', plan: 'solo', used: false,
+        code: 'ATIVAR-TEST', plan: 'solo', used: false, user_id: 'user-123',
+      } as any);
+      vi.mocked(container.activationRepo.findCodeByValue).mockResolvedValue({
+        code: 'ATIVAR-TEST', plan: 'solo', used: false, user_id: 'user-123',
       } as any);
       vi.mocked(container.messaging.getStatus).mockResolvedValue('connecting');
 
@@ -192,11 +259,14 @@ describe('Activation Controller - QR Code Endpoints', () => {
       expect(res.flushHeaders).toHaveBeenCalled();
     });
 
-    it('should poll status and send events', async () => {
+    it('should poll the same instance used to generate the QR code', async () => {
       vi.useFakeTimers();
 
       vi.mocked(container.activationService.validateCode).mockResolvedValue({
-        code: 'ATIVAR-TEST', plan: 'solo', used: false,
+        code: 'ATIVAR-TEST', plan: 'solo', used: false, user_id: 'user-123',
+      } as any);
+      vi.mocked(container.activationRepo.findCodeByValue).mockResolvedValue({
+        code: 'ATIVAR-TEST', plan: 'solo', used: false, user_id: 'user-123',
       } as any);
       vi.mocked(container.messaging.getStatus).mockResolvedValue('connecting');
 
@@ -208,7 +278,8 @@ describe('Activation Controller - QR Code Endpoints', () => {
       // Advance timer to trigger first poll
       await vi.advanceTimersByTimeAsync(3000);
 
-      expect(container.messaging.getStatus).toHaveBeenCalledWith('activation-ATIVAR-TEST');
+      // Mesmo nome determinístico usado no GET /qrcode/:code
+      expect(container.messaging.getStatus).toHaveBeenCalledWith('user-user-123');
       expect(res._written.length).toBeGreaterThan(0);
       expect(res._written[0]).toContain('event: status');
       expect(res._written[0]).toContain('"status":"connecting"');
@@ -220,7 +291,10 @@ describe('Activation Controller - QR Code Endpoints', () => {
       vi.useFakeTimers();
 
       vi.mocked(container.activationService.validateCode).mockResolvedValue({
-        code: 'ATIVAR-TEST', plan: 'solo', used: false,
+        code: 'ATIVAR-TEST', plan: 'solo', used: false, user_id: 'user-123',
+      } as any);
+      vi.mocked(container.activationRepo.findCodeByValue).mockResolvedValue({
+        code: 'ATIVAR-TEST', plan: 'solo', used: false, user_id: 'user-123',
       } as any);
       vi.mocked(container.messaging.getStatus).mockResolvedValue('open');
 
@@ -242,9 +316,57 @@ describe('Activation Controller - QR Code Endpoints', () => {
       vi.useRealTimers();
     });
 
+    // Sem gravar a sessão, findByInstance retorna null e a Cleo não responde.
+    it('should persist the whatsapp session when the connection opens', async () => {
+      vi.useFakeTimers();
+
+      vi.mocked(container.activationService.validateCode).mockResolvedValue({
+        code: 'ATIVAR-TEST', plan: 'solo', used: false, user_id: 'user-123',
+      } as any);
+      vi.mocked(container.activationRepo.findCodeByValue).mockResolvedValue({
+        code: 'ATIVAR-TEST', plan: 'solo', used: false, user_id: 'user-123',
+      } as any);
+      vi.mocked(container.messaging.getStatus).mockResolvedValue('open');
+
+      await handler(createMockReq({ code: 'ATIVAR-TEST' }), createMockRes());
+      await vi.advanceTimersByTimeAsync(3000);
+
+      expect(container.sessionRepo.activateSession).toHaveBeenCalledWith({
+        userId: 'user-123',
+        instanceName: 'user-user-123',
+      });
+
+      vi.useRealTimers();
+    });
+
+    it('should still report connected when persisting the session fails', async () => {
+      vi.useFakeTimers();
+
+      vi.mocked(container.activationService.validateCode).mockResolvedValue({
+        code: 'ATIVAR-TEST', plan: 'solo', used: false, user_id: 'user-123',
+      } as any);
+      vi.mocked(container.activationRepo.findCodeByValue).mockResolvedValue({
+        code: 'ATIVAR-TEST', plan: 'solo', used: false, user_id: 'user-123',
+      } as any);
+      vi.mocked(container.messaging.getStatus).mockResolvedValue('open');
+      vi.mocked(container.sessionRepo.activateSession).mockRejectedValueOnce(new Error('db down'));
+
+      const res = createMockRes();
+      await handler(createMockReq({ code: 'ATIVAR-TEST' }), res);
+      await vi.advanceTimersByTimeAsync(3000);
+
+      expect(res._written.join('')).toContain('event: connected');
+      expect(res.end).toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+
     it('should cleanup interval when client disconnects', async () => {
       vi.mocked(container.activationService.validateCode).mockResolvedValue({
-        code: 'ATIVAR-TEST', plan: 'solo', used: false,
+        code: 'ATIVAR-TEST', plan: 'solo', used: false, user_id: 'user-123',
+      } as any);
+      vi.mocked(container.activationRepo.findCodeByValue).mockResolvedValue({
+        code: 'ATIVAR-TEST', plan: 'solo', used: false, user_id: 'user-123',
       } as any);
 
       let closeHandler: (() => void) | undefined;

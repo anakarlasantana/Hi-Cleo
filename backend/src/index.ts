@@ -4,6 +4,7 @@ initSentry();
 import express from 'express';
 import cors from 'cors';
 import { env } from './shared/config/env.js';
+import { createRedisConnection } from './shared/config/redis.js';
 import { container } from './container.js';
 import {
   securityHeaders,
@@ -59,8 +60,7 @@ app.get('/health', async (_req, res) => {
 
   // Verificar Redis
   try {
-    const IORedis = (await import('ioredis')).default;
-    const redis = new IORedis({ host: env.REDIS_HOST, port: env.REDIS_PORT, maxRetriesPerRequest: 1, connectTimeout: 2000 });
+    const redis = createRedisConnection({ maxRetriesPerRequest: 1, connectTimeout: 2000 });
     await redis.ping();
     await redis.quit();
     checks.redis = 'ok';

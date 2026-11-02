@@ -27,8 +27,11 @@ export class DrizzlePlanRepository implements PlanRepository {
       display_name: data.displayName ?? '',
       description: data.description ?? '',
       max_users: data.maxUsers,
-      price_monthly: data.priceMonthly * 100,
-      price_yearly_total: data.priceYearlyTotal * 100,
+      // Valores já estão em CENTAVOS no banco (ver migration 0003 e
+      // docs/produto/regras-de-negocio.md). Não multiplicar aqui — isso causava
+      // divergência de 100x entre a vitrine e o valor cobrado no pagamento.
+      price_monthly: data.priceMonthly,
+      price_yearly_total: data.priceYearlyTotal,
       features: data.features ?? [],
       highlighted: data.highlighted ?? false,
       created_at: data.createdAt?.toISOString() ?? '',

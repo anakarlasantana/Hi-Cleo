@@ -114,16 +114,57 @@ Se não conseguir extrair algum campo, use string vazia.`,
         `Mensagem: "${sanitized}"`,
       ]);
 
-      return JSON.parse(response);
+      const parsed = JSON.parse(response) as Record<string, string>;
+
+      // A IA pode devolver JSON válido mas com campos vazios/incompletos
+      // (observado no E2E: onboarding começava sem negócio e sem nome, e a Cleo
+      // saudava pelo nome e depois perguntava "como posso te chamar?").
+      // O formato delimitado por '|' é determinístico: quando a mensagem segue
+      // esse formato, ele é a fonte de verdade e a IA só complementa lacunas.
+      if (message.includes('|')) {
+        const fallback = this.parseActivationMessageFallback(message);
+        return {
+          nome: (parsed.nome || '').trim() || fallback.nome,
+          negocio: (parsed.negocio || '').trim() || fallback.negocio,
+          servicos: (parsed.servicos || '').trim() || fallback.servicos,
+          horario_inicio: (parsed.horario_inicio || '').trim() || fallback.horario_inicio,
+          horario_fim: (parsed.horario_fim || '').trim() || fallback.horario_fim,
+        };
+      }
+
+      return parsed;
     } catch {
-      const parts = message.split('|').map((p) => p.trim());
-      return {
-        nome: parts[1] || '',
-        negocio: parts[2] || '',
-        servicos: parts[3] || '',
-        horario_inicio: '08:00',
-        horario_fim: '18:00',
-      };
+      return this.parseActivationMessageFallback(message);
     }
+  }
+
+  /**
+   * Parser determinístico do formato `ATIVAR-XXXX | Nome | Negócio | Serviços | Horário`.
+   *
+   * Usado quando a IA falha OU quando ela devolve JSON válido sem os campos
+   * (observado em teste). Sem isso, o usuário era saudado pelo nome e em seguida
+   * questionado "como posso te chamar?" — o onboarding perdia o contexto da ativação.
+   */
+  private parseActivationMessageFallback(message: string): Record<string, string> {
+    const parts = message.split('|').map((p) => p.trim());
+    const timeMatch = (parts[4] || '').match(/(\d{1,2})[:h]?(\d{0,2})/);
+    const endMatch = (parts[4] || '').match(/(\d{1,2})[:h]?(\d{0,2})\s*(?:às|as|a|-|–|—|e)?\s*(\d{1,2})[:h]?(\d{0,2})/);
+
+    const start = endMatch
+      ? `${endMatch[1].padStart(2, '0')}:${(endMatch[2] || '00').padStart(2, '0')}`
+      : timeMatch
+        ? `${timeMatch[1].padStart(2, '0')}:${(timeMatch[2] || '00').padStart(2, '0')}`
+        : '08:00';
+    const end = endMatch
+      ? `${endMatch[3].padStart(2, '0')}:${(endMatch[4] || '00').padStart(2, '0')}`
+      : '18:00';
+
+    return {
+      nome: parts[1] || '',
+      negocio: parts[2] || '',
+      servicos: parts[3] || '',
+      horario_inicio: start,
+      horario_fim: end,
+    };
   }
 }

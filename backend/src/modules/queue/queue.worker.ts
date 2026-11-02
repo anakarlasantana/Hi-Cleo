@@ -1,5 +1,5 @@
 import { Worker, type Job } from 'bullmq';
-import IORedis from 'ioredis';
+import { createRedisConnection } from '../../shared/config/redis.js';
 import type { MessageJobData, QueueServiceConfig } from './queue.types.js';
 import type { MessageProcessorPort, WorkerPort } from './queue.port.js';
 import type { Logger } from '../../shared/logger/logger.js';
@@ -19,9 +19,7 @@ export class MessageWorker implements WorkerPort {
   }
 
   async start(): Promise<void> {
-    const connection = new IORedis({
-      host: this.config.redisHost,
-      port: this.config.redisPort,
+    const connection = createRedisConnection({
       maxRetriesPerRequest: null,
     });
 

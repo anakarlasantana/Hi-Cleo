@@ -26,6 +26,15 @@ export async function interpretOnboardingResponse(
     if (local.valid) return local;
   }
 
+  // business_hours: o padrão de horário ("9h às 18h", "08:00-17:00") é
+  // determinístico. Resolver localmente evita perder o horário quando a IA
+  // responde JSON válido sem os campos (ou está indisponível), que fazia o
+  // usuário repetir a resposta em loop.
+  if (step === 'business_hours') {
+    const local = fallbackInterpret(step, message);
+    if (local.valid) return local;
+  }
+
   try {
     const sanitized = sanitizeForAiPrompt(message);
     const contextStr = Object.keys(context).length > 0

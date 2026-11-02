@@ -18,6 +18,8 @@ export function ConviteQrCode({ token, onConnected }: ConviteQrCodeProps) {
   const [errorMessage, setErrorMessage] = useState("")
   const refreshTimerRef = useRef<NodeJS.Timeout | null>(null)
 
+  const eventSourceRef = useRef<EventSource | null>(null)
+
   const fetchQrCode = useCallback(async () => {
     setStatus("loading")
     try {
@@ -49,24 +51,35 @@ export function ConviteQrCode({ token, onConnected }: ConviteQrCodeProps) {
     }
   }, [fetchQrCode])
 
-  // TODO: SSE para detectar conexão (similar ao useQRConnection)
-  // Por ora, polling simples
+  // SSE: detecta a conexão no mesmo instante em que o WhatsApp é vinculado.
+  // Antes era polling em /validate, que nunca detectava a conexão (o convite
+  // passa a "used" ao aceitar, antes mesmo do QR).
   useEffect(() => {
     if (status !== "ready") return
 
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch(`${API_URL}/api/invites/validate/${token}`)
-        const data = await response.json()
-        // Se o invite foi aceito e sessão criada, considera conectado
-        if (data.error === "TOKEN_ALREADY_USED") {
-          onConnected()
-          clearInterval(interval)
-        }
-      } catch { /* ignore */ }
-    }, 5000)
+    const es = new EventSource(`${API_URL}/api/invites/${token}/qrcode/status`)
+    eventSourceRef.current = es
 
-    return () => clearInterval(interval)
+    const handleConnected = () => {
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
+      es.close()
+      onConnected()
+    }
+
+    es.addEventListener("connected", handleConnected)
+    es.addEventListener("status", (event) => {
+      try {
+        const data = JSON.parse((event as MessageEvent).data)
+        if (data.status === "open") handleConnected()
+      } catch {
+        /* payload inválido — ignora */
+      }
+    })
+
+    return () => {
+      es.close()
+      eventSourceRef.current = null
+    }
   }, [status, token, onConnected])
 
   if (status === "loading") {

@@ -1,6 +1,7 @@
 import { Queue } from 'bullmq';
-import IORedis from 'ioredis';
+import type IORedis from 'ioredis';
 import type { Logger } from '../../shared/logger/logger.js';
+import { createRedisConnection } from '../../shared/config/redis.js';
 import type { MessageJobData, QueueServiceConfig, EnqueueResult } from './queue.types.js';
 import type { QueuePort } from './queue.port.js';
 
@@ -20,9 +21,8 @@ export class QueueService implements QueuePort {
 
   async initialize(): Promise<void> {
     try {
-      this.connection = new IORedis({
-        host: this.config.redisHost,
-        port: this.config.redisPort,
+      // createRedisConnection injeta host/port/senha — ver shared/config/redis.ts
+      this.connection = createRedisConnection({
         maxRetriesPerRequest: null,
         enableReadyCheck: true,
       });

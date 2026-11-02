@@ -28,6 +28,13 @@ class InMemoryOnboardingRepository implements OnboardingRepository {
     });
   }
 
+  /** Nome do perfil — vazio por padrão nos testes (não há tabela users). */
+  async getUserDisplayName(_userId: string): Promise<string> {
+    return this.displayName;
+  }
+
+  displayName = '';
+
   seed(userId: string, state: OnboardingState): void {
     this.states.set(userId, state);
   }
@@ -145,6 +152,43 @@ describe('OnboardingService', () => {
     onboardingRepo = new InMemoryOnboardingRepository();
     ruleRepo = new InMemoryRuleRepository();
     service = new OnboardingService(onboardingRepo, ruleRepo, aiMock);
+  });
+
+  describe('awaiting_intro_confirmation', () => {
+    // Regressão do E2E (cenário `onboarding`): a Cleo saudava "Oi, Carla Mendes!"
+    // e logo depois perguntava "como posso te chamar?".
+    it('uses the profile name instead of asking it again', async () => {
+      onboardingRepo.displayName = 'Carla Mendes';
+      onboardingRepo.seed('user-1', {
+        id: 'state-1', user_id: 'user-1', step: 'awaiting_intro_confirmation',
+        data: {},
+        updated_at: '2025-01-01T00:00:00Z',
+      });
+
+      const response = await service.processMessage('user-1', 'oi');
+
+      // Não pode perguntar como chamar quem já foi saudado pelo nome
+      expect(response).not.toContain('como posso te chamar');
+      expect(response).toContain('Carla Mendes');
+      const state = await onboardingRepo.getState('user-1');
+      expect(state?.step).toBe('business_type');
+      expect(state?.data.nome_confirmado).toBe('Carla Mendes');
+    });
+
+    it('asks the name when the profile has no usable name', async () => {
+      onboardingRepo.displayName = '';
+      onboardingRepo.seed('user-1', {
+        id: 'state-1', user_id: 'user-1', step: 'awaiting_intro_confirmation',
+        data: {},
+        updated_at: '2025-01-01T00:00:00Z',
+      });
+
+      const response = await service.processMessage('user-1', 'oi');
+
+      expect(response).toContain('como posso te chamar');
+      const state = await onboardingRepo.getState('user-1');
+      expect(state?.step).toBe('confirm_name');
+    });
   });
 
   describe('confirm_name step', () => {
@@ -381,5 +425,84 @@ describe('OnboardingService', () => {
       expect(state?.data.negocio).toBe('Corretor');
       expect(state?.data.publico_alvo).toBe('Casais');
     });
+
+    // Regressão: a flag `_editing` (string 'true') ficava no estado depois de
+    // voltar ao resumo, então o next envio era tratado como edição parcial e o
+    // onboarding não avançava.
+    it('clears the partial-edit flag when returning to the summary', async () => {
+      onboardingRepo.seed('user-1', {
+        id: 'state-1', user_id: 'user-1', step: 'business_hours',
+        data: {
+          nome_confirmado: 'João', negocio: 'Corretor', publico_alvo: 'Casais',
+          tom_de_voz: 'formal', horario_inicio: '08:00', horario_fim: '18:00',
+          _editing: 'true',
+        },
+        updated_at: '2025-01-01T00:00:00Z',
+      });
+
+      await service.processMessage('user-1', 'Seg a Sex, 9h às 19h');
+
+      const state = await onboardingRepo.getState('user-1');
+      expect(state?.step).toBe('confirm_summary');
+      expect(state?.data._editing).toBeUndefined();
+      // Os demais dados continuam preservados
+      expect(state?.data.negocio).toBe('Corretor');
+    });
+
+    it('completes after editing a single field', async () => {
+      onboardingRepo.seed('user-1', {
+        id: 'state-1', user_id: 'user-1', step: 'confirm_summary',
+        data: {
+          nome_confirmado: 'João', negocio: 'Corretor', publico_alvo: 'Casais',
+          tom_de_voz: 'formal', horario_inicio: '08:00', horario_fim: '18:00',
+          fora_horario: 'notify', fora_horario_mensagem: '',
+        },
+        updated_at: '2025-01-01T00:00:00Z',
+      });
+
+      // 1) pede para ajustar o horário → volta ao step business_hours em modo edição
+      await service.processMessage('user-1', 'quero mudar o horário');
+      let state = await onboardingRepo.getState('user-1');
+      expect(state?.step).toBe('business_hours');
+
+      // 2) informa o novo horário → volta ao resumo (sem flag de edição)
+      await service.processMessage('user-1', 'Seg a Sex, 9h às 19h');
+      state = await onboardingRepo.getState('user-1');
+      expect(state?.step).toBe('confirm_summary');
+      expect(state?.data._editing).toBeUndefined();
+      expect(state?.data.horario_inicio).toBe('09:00');
+
+      // 3) confirma → onboarding concluído
+      const done = await service.processMessage('user-1', 'ok');
+      state = await onboardingRepo.getState('user-1');
+      expect(state?.step).toBe('completed');
+      expect(done).toContain('/conectar');
+    });
+  });
+});
+
+/**
+ * Regressão do E2E: a resposta de onboarding saía com barras invertidas
+ * literais — "falta pouco! 😊\\n\\nAntes disso: ..." virava
+ * "😊Antes disso:" no WhatsApp (sem quebra de linha).
+ */
+describe('OnboardingService — formatação das mensagens', () => {
+  it('uses real line breaks when answering a question mid-onboarding', async () => {
+    const onboardingRepo = new InMemoryOnboardingRepository();
+    const ruleRepo = new InMemoryRuleRepository();
+    const ai: any = { generateContent: async () => JSON.stringify({ valid: true, extractedData: {} }) };
+    const service = new OnboardingService(onboardingRepo, ruleRepo, ai);
+
+    onboardingRepo.seed('user-1', {
+      id: 'state-1', user_id: 'user-1', step: 'business_type',
+      data: { nome_confirmado: 'Ana' },
+      updated_at: '2025-01-01T00:00:00Z',
+    });
+
+    const reply = await service.processMessage('user-1', 'quanto custa o plano?');
+
+    expect(reply).toContain('Boa pergunta');
+    expect(reply).toContain('\n\n');        // quebra real
+    expect(reply).not.toContain('\\n');     // nada de barra invertida literal
   });
 });

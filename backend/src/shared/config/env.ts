@@ -46,6 +46,9 @@ const envSchema = z.object({
   // Redis / Queue (BullMQ)
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: z.coerce.number().default(6379),
+  // Senha do Redis — obrigatória em produção (docker-compose.prod.yml usa --requirepass).
+  // Opcional em dev, onde o Redis sobe sem autenticação.
+  REDIS_PASSWORD: z.string().optional(),
   QUEUE_MAX_RETRIES: z.coerce.number().default(3),
   QUEUE_BACKOFF_DELAYS: z.string().default('5000,15000,45000'),
 

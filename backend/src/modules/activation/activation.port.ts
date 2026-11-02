@@ -14,7 +14,14 @@ export interface UserRepository {
   findByEmail(email: string): Promise<User | null>;
   create(data: Partial<User>): Promise<User>;
   complementUser(userId: string, data: { phone: string; name: string }): Promise<User>;
-  createBusiness(userId: string, data: { name?: string; services?: string; business_hours_start?: string; business_hours_end?: string }): Promise<void>;
+  createBusiness(userId: string, data: {
+    name?: string;
+    services?: string;
+    target_audience?: string;
+    tone_of_voice?: string;
+    business_hours_start?: string;
+    business_hours_end?: string;
+  }): Promise<void>;
   getBusiness(userId: string): Promise<Business | null>;
   listAll(): Promise<User[]>;
 }
