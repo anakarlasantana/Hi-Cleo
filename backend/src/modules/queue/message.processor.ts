@@ -965,7 +965,9 @@ ${pending.slice(0, 10).map((l: any, i: number) => `${i + 1}. *${l.name}* (${l.ph
       if (!name) {
         // Não repetir a MESMA pergunta em loop: mostra os contatos recentes para
         // o dono escolher (o E2E flagrou a mesma frase 3× seguidas).
-        const recentes = await leadService.listByStatus(user.id, 'new');
+        // Nunca listar o próprio dono nem o “lead” interno de materiais
+        const recentes = withoutOwnerLead(await leadService.listByStatus(user.id, 'new'), user)
+          .filter((lead: any) => lead.phone !== 'materials' && lead.name !== 'Materiais');
         const opcoes = recentes.slice(0, 5).map((lead: any) => `• ${lead.name}`).join('\n');
 
         return opcoes

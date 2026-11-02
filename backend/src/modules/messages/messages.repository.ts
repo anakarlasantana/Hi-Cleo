@@ -70,6 +70,19 @@ export class DrizzleMessageRepository implements MessageRepository {
       .where(and(...conditions))
       .orderBy(desc(messages.timestamp));
 
-    return data as unknown as Message[];
+    // Drizzle devolve camelCase; o tipo `Message` (e quem consome, ex.: o
+    // encaminhamento de material) usa snake_case. Sem este mapa, `media_key`
+    // vinha undefined e a Cleo respondia “não consegui reenviar esse material”.
+    return data.map((row) => ({
+      id: row.id,
+      lead_id: row.leadId ?? '',
+      text: row.text,
+      direction: row.direction as Message['direction'],
+      timestamp: row.timestamp?.toISOString() ?? '',
+      media_type: (row.mediaType ?? null) as Message['media_type'],
+      media_mime_type: row.mediaMimeType ?? null,
+      media_file_name: row.mediaFileName ?? null,
+      media_key: row.mediaKey ?? null,
+    }));
   }
 }

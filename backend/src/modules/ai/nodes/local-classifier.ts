@@ -27,6 +27,9 @@ const GREETING_PATTERNS = [
   /^(opa|fala|salve|beleza)\s*[!?.,]*$/i,
   /^(tudo bem|tudo bom|td bem|tudo certo)\s*[?!.,]*$/i,
   /^(hi|hello|hey there)\s*[!?.,]*$/i,
+  // Combinações curtas que clientes mandam de verdade ("olá, bom dia!"):
+  // sem isso caía na IA e virava resposta longa com preço/serviço.
+  /^(oi|olá|ola|bom dia|boa tarde|boa noite)[\s,!.]+(tudo bem|tudo bom|td bem|tudo certo)?\s*[!?.,]*$/i,  /^(tudo bem|tudo bom|td bem|tudo certo)[\s,!.]+(oi|olá|ola|bom dia|boa tarde|boa noite)\s*[!?.,]*$/i,
 ];
 
 // --- Keywords do dono (bypass intent recognition) ---
