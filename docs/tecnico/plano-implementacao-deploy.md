@@ -92,7 +92,22 @@ Este documento é o **checklist executável**. O guia operacional completo conti
 
 ## 4. Fases de implementação
 
-### Fase 0 — Paridade dev/prod (~1 h)
+> **Leitura rápida:** só 🏁 bloqueia o go-live (~1h30). Tudo em 🧱 pode ir depois.
+
+| Bloco | Itens | Tempo |
+|---|---|---|
+| 🏁 **Go-live** | Fase 1a (SSE + `NEXT_PUBLIC_*`), `.env.production`, bootstrap da VM, DNS/TLS, `deploy.sh`, runbook Oracle | **~1h30** |
+| 🧱 **Robustez** | Fase 0 (paridade compose), Fase 1b (TZ/loopback/node:22/secret), backup offsite, CI | ~2h45 |
+
+### ✅ Já entregue (não repetir)
+
+- Migrations versionadas + seeds aplicados em toda subida (Fase 0.5) — `schema_migrations`, serviço `migrate` one-shot
+- Healthchecks (`pg_isready -d`) e `HOSTNAME` do Next (D11)
+- Re-sync de webhook no startup da Evolution (D12)
+- Preços (89,90 / 239,90 / 629,90) e ordem de vitrine por `sort_order` + `ORDER BY`
+- `226` testes verdes (`npx vitest run`)
+
+### Fase 0 — 🧱 Paridade dev/prod (pós-go-live, ~1 h)
 
 - [ ] `docker-compose.yml` → **base prod-safe** (serviços, healthchecks, redes, volumes; sem portas públicas, sem segredos, `NODE_ENV=production`)
 - [ ] `docker-compose.override.yml` → **dev** (portas em `127.0.0.1`, `NODE_ENV=development`, `LOG_LEVEL=debug`, `extra_hosts`)
@@ -122,35 +137,40 @@ Motivo: as migrations rodavam em `/docker-entrypoint-initdb.d`, que o Postgres *
 
 
 
-- [ ] `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_SITE_URL` explícitos no build de prod
+### Fase 1a — 🏁 Crítico para o go-live (~30 min)
+
+- [x] `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_SITE_URL` explícitos no build de prod — `.env.production.example` + `deploy.sh` alerta se faltar
+- [x] nginx: `location /api/` com `proxy_buffering off`, `proxy_cache off`, `proxy_read_timeout 1h`, `X-Accel-Buffering: no` (SSE do QR)
+
+### Fase 1b — 🧱 Qualidade (pós-go-live, ~30 min)
+
 - [ ] `EVOLUTION_WEBHOOK_SECRET` em prod **+** `headers: [{key: x-webhook-secret, value: ...}]` na instância (via `setWebhook`)
-- [ ] nginx: `location /api/` com `proxy_buffering off`, `proxy_cache off`, `proxy_read_timeout 1h`, `X-Accel-Buffering: no`
 - [ ] Dev: portas em `127.0.0.1` (L5)
 - [ ] `frontend/Dockerfile` → `node:22-alpine`
-- [ ] `TZ=America/Sao_Paulo` no backend (e `TZ` nos demais serviços que logam/agendam)
+- [x] `TZ=America/Sao_Paulo` no backend e na evolution-api (`docker-compose.prod.yml`, via `${TZ}`)
 - [ ] Remover `NODE_ENV` do `.env` (cada compose decide)
 
 **Aceite:** QR via nginx (9443) não trava · `POST /webhooks/evolution` sem header → **401** e com header → **200** ·
 `docker exec hicleo-backend date` no fuso de SP · crons com horário BRT.
 
-### Fase 2 — Bootstrap e deploy reproduzível (~1 h)
+### Fase 2 — 🏁 Deploy reproduzível (~1 h)
 
-- [ ] `scripts/oracle-bootstrap.sh` — **iptables 80/443 (O1)** + Docker + compose plugin + swap 2 GB + UFW
-- [ ] `scripts/deploy.sh` — `git pull` → `compose build` → `up -d` → espera `/health` → `image prune`
+- [x] `scripts/oracle-bootstrap.sh` — **iptables 80/443 (O1)** + Docker + compose plugin + swap 2 GB + UFW
+- [x] `scripts/deploy.sh` — `git pull` → `compose build` → `up -d` → espera `/health` → `image prune`
 - [ ] `scripts/backup-offsite.sh` — `pg_dump` + `tar evolution_data` → Object Storage (O4)
-- [ ] `.env.production.example` versionado (contrato do servidor)
+- [x] `.env.production.example` versionado (contrato do servidor)
 - [ ] Doc: **Reserved Public IP (O2)**, Security List, “out of capacity”, restaurar backup
 
 **Aceite:** `deploy.sh` roda do zero em VM limpa · `backup-offsite.sh` gera arquivo **fora** da VM · restore testado.
 
-### Fase 3 — CI (~30 min)
+### Fase 3 — 🧱 CI (pós-go-live, ~30 min)
 
-- [ ] `.github/workflows/ci.yml` — backend `npm ci && npm test` (219 testes) + `npm run build`; frontend `npm ci && npm run build`
+- [ ] `.github/workflows/ci.yml` — backend `npm ci && npm test` (226 testes) + `npm run build`; frontend `npm ci && npm run build`
 - [ ] (Opcional) `buildx --platform linux/arm64` → GHCR, para a VPS só fazer `pull`
 
 **Aceite:** PR fica vermelho se teste ou build quebrar.
 
-### Fase 4 — Provisionar Oracle e subir (~45 min, operacional)
+### Fase 4 — 🏁 Provisionar Oracle e subir (~45 min, operacional)
 
 Executar o [runbook](#5-runbook-oracle-cloud) depois de 0–3 concluídas.
 

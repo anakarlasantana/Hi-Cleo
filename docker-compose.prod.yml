@@ -85,6 +85,9 @@ services:
       - .env
     environment:
       - NODE_ENV=production
+      # Crons (follow-up, cancelamento, prospecção) usam o fuso do processo:
+      # sem TZ eles rodam em UTC e disparam 3h antes do horário planejado.
+      - TZ=${TZ:-America/Sao_Paulo}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
@@ -232,6 +235,7 @@ services:
       - CONFIG_SESSION_PHONE_VERSION=2.3000.1039782722
       - CONFIG_SESSION_PHONE_CLIENT=Evolution API
       - CONFIG_SESSION_PHONE_NAME=Chrome
+      - TZ=${TZ:-America/Sao_Paulo}
       - CACHE_REDIS_ENABLED=true
       - CACHE_REDIS_URI=redis://:${REDIS_PASSWORD}@redis:6379
       - CACHE_LOCAL_ENABLED=false

@@ -224,6 +224,15 @@ docker buildx build --platform linux/arm64 \
 
 ## 3. Passo a passo do deploy
 
+> **Caminho rápido (recomendado):**
+> 1. `sudo bash scripts/oracle-bootstrap.sh` — iptables 80/443 (pegadinha do Oracle), Docker, swap, UFW/fail2ban
+> 2. `cp .env.production.example .env` e preencha (o arquivo é o contrato do servidor)
+> 3. certificado em `nginx/ssl/` (Cloudflare Origin ou Let's Encrypt)
+> 4. `bash scripts/deploy.sh` — pull + build + `up -d` + espera `/health` + prune (o serviço `migrate` roda sozinho)
+>
+> O detalhamento manual abaixo continua válido para casos específicos.
+
+
 ### 3.1 Preparar o servidor
 
 ```bash
