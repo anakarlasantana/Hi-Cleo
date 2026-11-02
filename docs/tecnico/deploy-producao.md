@@ -3,6 +3,10 @@
 Guia completo para colocar o Hi Cleo em produção numa VPS limpa com Docker.
 
 > **Pré-requisito:** Código 100% pronto. Este guia é 100% operacional.
+>
+> **Planejamento vivo:** `docs/tecnico/plano-implementacao-deploy.md` — checklist das fases
+> (paridade dev/prod, segurança, deploy reproduzível, CI e runbook Oracle). Consulte-o antes
+> de mudar `docker-compose*.yml`, `nginx.conf` ou scripts de deploy.
 
 ---
 
@@ -55,7 +59,9 @@ Internet
 **Portas expostas ao mundo:** apenas 80 (redireciona para 443) e 443 (HTTPS via nginx).
 Todas as outras portas são internas ao Docker e inacessíveis externamente.
 
-**Requisitos mínimos:** 1 vCPU, 4GB RAM, 40GB SSD, Ubuntu 22.04 ou Debian 12.
+**Requisitos mínimos:** 2 vCPU, 4GB RAM, 40GB SSD, Ubuntu 22.04 ou Debian 12.
+
+> Medição real da stack (2026-10-27): **~1,1–1,6 GB de RAM em regime**; o pico é o `next build` (~3,6 GB no total). Com VPS de 4 GB, crie swap antes do build — ver [2.5.5](#255-build-arm64). Comparativo de providers em [2.1](#21-vps--opções-recomendadas).
 
 ---
 
@@ -63,17 +69,29 @@ Todas as outras portas são internas ao Docker e inacessíveis externamente.
 
 ### 2.1 VPS — Opções recomendadas
 
+**Requisitos medidos da stack completa** (7 containers: nginx, backend, frontend, app-db, redis, evolution-api, evolution-db):
+
+| Recurso | Necessário | Observação |
+|---|---|---|
+| RAM em regime | ~1,1–1,6 GB | soma dos `deploy.resources` = teto de ~2 GB |
+| RAM no pico do build | ~3,6 GB | `next build` consome 1–2 GB extra |
+| CPU | ~0,3–0,8 core médio | limites do compose somam 4.0 CPU (são tetos, não uso real) |
+| Disco | 40 GB+ | imagens Docker ~3 GB + volumes + backups |
+
 | Provider | Plano sugerido | vCPU | RAM | SSD | Preço/mês | Observação |
 |----------|---------------|------|-----|-----|-----------|-----------|
-| **Hetzner** (recomendado) | CX22 | 2 | 4GB | 40GB | €4,35 (~R$25) | Melhor custo-benefício, DC na Europa |
-| **Contabo** | VPS S | 4 | 8GB | 200GB | €6,99 (~R$40) | Mais recursos por menos, DC na Alemanha/EUA |
-| **DigitalOcean** | Basic Droplet | 2 | 4GB | 80GB | $24 (~R$130) | Mais caro, boa documentação, DC em SP |
-| **Vultr** | Cloud Compute | 2 | 4GB | 80GB | $24 (~R$130) | DC em SP (menor latência para BR) |
-| **Oracle Cloud** | Free Tier ARM | 4 | 24GB | 200GB | Grátis | ARM (Ampere), gratuito forever, config mais complexa |
+| **Oracle Cloud** | Always Free (A1.Flex) | 2 (ARM) | **12GB** | 200GB | **R$ 0** | Grátis para sempre, DC em São Paulo, exige build ARM — ver [2.5](#25-oracle-cloud-always-free) |
+| **Hetzner** (menor esforço) | CX22 | 2 | 4GB | 40GB | €4,35 (~R$27) | Melhor custo-benefício x86, DC na Europa |
+| **Hostinger** | KVM 2 | 2 | 8GB | 100GB | $8,79 (~R$48) | Painel em PT, build sem sufoco |
+| **Contabo** | VPS S | 4 | 8GB | 200GB | €6,99 (~R$43) | Mais recursos por menos, I/O mais lento |
+| **DigitalOcean** | Basic Droplet | 2 | 4GB | 80GB | $24 (~R$130) | DC em SP |
+| **Vultr** | Cloud Compute | 2 | 4GB | 80GB | $24 (~R$130) | DC em SP |
 
-**Recomendação para o beta:** Hetzner CX22 ou Contabo VPS S. Custo mínimo com sobra de recursos.
+**Recomendação para o beta (custo mínimo):** **Oracle Cloud Always Free** — R$ 0/mês, 12 GB de RAM e região em São Paulo. Validação técnica e riscos em [2.5](#25-oracle-cloud-always-free).
 
-**Se latência importa (clientes no Brasil):** Vultr ou DigitalOcean com datacenter em São Paulo.
+**Recomendação para o beta (menor esforço):** **Hetzner CX22** (~R$27) — x86, sem configuração de rede exótica. Com 4 GB, configure swap antes do primeiro build (ver [2.5.5](#255-build-arm64)).
+
+**Se latência importa (clientes no Brasil):** Oracle em São Paulo (grátis) ou Vultr/DigitalOcean SP (pago). Alternativa universal: VPS na Europa + **Cloudflare** na frente (grátis) resolve o TTFB do site, já que WhatsApp é assíncrono e não sofre com latência.
 
 ### 2.2 Domínio
 
@@ -102,6 +120,105 @@ Todas as outras portas são internas ao Docker e inacessíveis externamente.
 - **Requisitos:** ativar WhatsApp antes de conectar na Evolution API
 - **Importante:** NUNCA usar esse chip para conversas pessoais — exclusivo da Cleo
 - **Custo:** ~R$15-20 (chip + primeira recarga)
+
+---
+
+### 2.5 Oracle Cloud Always Free
+
+Validação feita em 2026-10-27: **a stack completa roda no free tier**, com folga de hardware. O custo não é dinheiro — é tempo de configuração e a disponibilidade de shapes.
+
+#### 2.5.1 ⚠️ O Free Tier encolheu (correção de informação antiga)
+
+A documentação oficial atual diz:
+
+> *"All tenancies get the first **1,500 OCPU hours and 9,000 GB hours per month** for free for VM instances using the VM.Standard.A1.Flex shape... equivalent to **2 OCPUs and 12 GB of memory**."*
+
+Versões anteriores deste guia citavam **4 OCPU / 24 GB**. O modelo mudou para **horas mensais**, que sustentam ~2 OCPU e ~12 GB rodando 24/7. Ainda é a opção com mais RAM entre as gratuitas/baratas.
+
+#### 2.5.2 Limites reais do Always Free
+
+| Recurso | Limite |
+|---|---|
+| Ampere A1 (ARM) | 1.500 OCPU-h + 9.000 GB-h/mês → **2 OCPU + 12 GB** 24/7 |
+| Micro AMD | até 2 × `VM.Standard.E2.1.Micro` (1/8 OCPU, 1 GB cada) |
+| Block storage | **200 GB** total |
+| Boot volume mínimo | **47 GB por instância A1** |
+| Tráfego de saída | **10 TB/mês** |
+| Região | Obrigatoriamente a *home region* |
+| E-mail porta 25 | ❌ bloqueado |
+
+#### 2.5.3 Validação técnica (arquitetura ARM64)
+
+Verificado no repositório:
+
+| Dependência | ARM64? | Evidência |
+|---|---|---|
+| `evoapicloud/evolution-api:v2.3.7` | ✅ | `docker manifest inspect` → `"architecture": "arm64"` |
+| `postgres:16-alpine` | ✅ | imagem oficial multi-arch |
+| `redis:7-alpine` | ✅ | imagem oficial multi-arch |
+| `nginx:1.27-alpine` | ✅ | imagem oficial multi-arch |
+| `node:22-alpine` / `node:20-alpine` | ✅ | imagens oficiais têm variante arm64 |
+| Next.js SWC | ✅ | `frontend/package-lock.json` já contém `@next/swc-linux-arm64-musl` |
+| Dependências nativas do backend | ✅ | nenhuma (`sharp`, `bcrypt`, `canvas`, `node-gyp`, `ffmpeg`) |
+| Baileys / WhatsApp | ✅ | JS puro |
+
+**Não há bloqueio arquitetural.** Todas as peças críticas têm build ARM64.
+
+#### 2.5.4 Capacidade vs. stack
+
+| Recurso | Necessário | Oracle Free | Folga |
+|---|---|---|---|
+| RAM em regime | ~1,1–1,6 GB | 12 GB | **7×** |
+| RAM no pico do build | ~3,6 GB | 12 GB | **3×** |
+| CPU | ~0,3–0,8 core médio | 2 OCPU ARM dedicados | confortável |
+| Disco útil | ~3 GB + volumes | ~153 GB (200 − 47 boot) | **50×** |
+
+#### 2.5.5 Build ARM64
+
+Como as imagens de backend e frontend são builds locais, na VPS ARM o build funciona nativo:
+
+```bash
+# na própria instância ARM
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Se for buildar do x86 e enviar para a ARM (ex.: buildar no notebook e publicar em registry):
+
+```bash
+docker buildx create --use --name hicleo-builder    # se ainda não existir
+docker buildx build --platform linux/arm64 \
+  -t SEU_REGISTRY/hi-cleo-backend:latest ./backend --push
+
+docker buildx build --platform linux/arm64 \
+  -t SEU_REGISTRY/hi-cleo-frontend:latest ./frontend --push
+```
+
+> Em VPS com 4 GB (Hetzner CX22, por exemplo), crie swap **antes** do build — o `next build` pode ser morto pelo OOM killer:
+> ```bash
+> fallocate -l 4G /swapfile && chmod 600 /swapfile
+> mkswap /swapfile && swapon /swapfile
+> echo '/swapfile none swap sw 0 0' >> /etc/fstab
+> ```
+
+#### 2.5.6 Riscos e mitigações
+
+| Risco | Impacto | Mitigação |
+|---|---|---|
+| **"Out of host capacity"** ao criar a instância A1 | Não consegue provisionar | Tentar outro Availability Domain ou horários alternados; alguns usuários usam script de retry |
+| **Reclaim de instância ociosa** | Perder a VM | Baixo neste projeto: crons 24/7 (follow-up, subscription, contact-monitor, trial-prospection) e connection-monitor a cada 5 min mantêm a VM ativa |
+| **Configuração de rede (VCN)** | 30–60 min de setup | VCN + Internet Gateway + Security List equivale ao `scripts/setup-firewall.sh` |
+| **Boot volume de 47 GB** | Menos disco que 200 GB nominais | Sobram ~153 GB — suficiente para o beta |
+
+#### 2.5.7 Checklist de provisionamento
+
+1. Criar conta Oracle Cloud e escolher **home region = São Paulo (GRU)** (a região não pode ser alterada depois e impacta latência)
+2. Criar VCN com Internet Gateway e Security List liberando **22, 80, 443** (equivalente ao UFW)
+3. Criar instância `VM.Standard.A1.Flex` com **2 OCPU / 12 GB**, boot volume **47–100 GB**, Ubuntu 22.04+ ou Debian 12
+4. Se der "out of host capacity": tentar outro AD / aguardar
+5. Instalar Docker + Compose (`apt install docker.io docker-compose-plugin`)
+6. Seguir o [passo a passo do deploy](#3-passo-a-passo-do-deploy) normalmente
+
+**Plano B:** se a instância A1 não for provisionada em 2–3 dias, migrar para **Hetzner CX22** (~R$27/mês) — x86, sem ARM, sem configuração de rede exótica.
 
 ---
 
@@ -671,6 +788,70 @@ docker compose -f docker-compose.prod.yml logs app-db
 docker exec hicleo-redis redis-cli -a SUA_SENHA ping
 ```
 
+#### `FATAL: database "<usuario>" does not exist` a cada 10s (mas o container está "healthy")
+
+Sintoma de **healthcheck errado**, não de banco quebrado: `pg_isready -U X` **sem `-d`**
+assume que o banco se chama `X`. Quando `POSTGRES_USER` ≠ `POSTGRES_DB` (ex.:
+`EVOLUTION_DB_USER=hicleo` + `EVOLUTION_DB_NAME=hicleo_evolution_db`), o probe
+tenta o banco errado — e o `pg_isready` ainda assim retorna 0 (ele só valida se o
+servidor aceita conexões), então o container aparece saudável e o log só polui.
+
+```yaml
+# ✅ sempre passar usuário E banco
+test: ["CMD-SHELL", "pg_isready -U ${EVOLUTION_DB_USER} -d ${EVOLUTION_DB_NAME}"]
+```
+
+#### Frontend "unhealthy" com o site funcionando
+
+O `server.js` do Next.js standalone faz bind em `$HOSTNAME`, que o Docker define
+como o **ID do container**. O healthcheck em `localhost:3000` cai em `[::1]` e
+recebe *connection refused*. O compose de produção já corrige com
+`environment: HOSTNAME=0.0.0.0` + probe em `http://127.0.0.1:3000` — replique em
+qualquer ambiente novo (o `frontend/Dockerfile` também já define `ENV HOSTNAME`).
+
+#### `This Redis server's 'default' user does not require a password, but a password was supplied`
+
+O cliente está enviando `REDIS_PASSWORD`, mas o Redis subiu **sem** `--requirepass`.
+Em dev, deixe `REDIS_PASSWORD` vazio no `.env` (o `docker-compose.yml` não usa
+senha). Em produção o `docker-compose.prod.yml` sobe com `--requirepass` e a
+variável é obrigatória.
+
+#### `404 … The "<instância>" instance does not exist` no log do backend
+
+Sessão em `whatsapp_sessions` apontando para uma instância que não existe na
+Evolution (típico de resíduo de teste E2E com `instance_name = test-e2e`). O
+`connection-monitor` agora trata 404/400 como "instância inexistente": marca a
+sessão como `disconnected` e loga em `warn` (antes despejava o AxiosError inteiro
+a cada 5 min). Para limpar resíduos:
+
+```sql
+DELETE FROM whatsapp_sessions WHERE instance_name LIKE 'test-e2e%';
+```
+#### Evolution API em loop: `getaddrinfo ENOTFOUND api.hicleo.com.br`
+
+A Evolution tenta entregar cada evento no webhook da instância e falha 10× com
+backoff (`Aguardando 10.2 segundos antes da próxima tentativa`). Duas causas:
+
+1. **`WEBHOOK_URL` apontando para produção em ambiente local** — dentro da rede
+   do compose o host público não resolve. Em dev use:
+   ```env
+   # funciona com o backend no compose (porta publicada) ou rodando no host
+   WEBHOOK_URL=http://host.docker.internal:3001/webhooks/evolution
+   # alternativa 100% compose:
+   # WEBHOOK_URL=http://backend:3001/webhooks/evolution
+   ```
+2. **Instância criada com a URL antiga** — `createInstance` só define o webhook no
+   nascimento da instância. O backend agora **re-sincroniza** o webhook no
+   startup (`ensureEvolutionInstance` → `setWebhook`), então basta reiniciar o
+   backend depois de corrigir o `.env`. Para conferir o que está configurado:
+   ```bash
+   docker exec hicleo-evolution-api sh -c \
+     'wget -qO- --header="apikey: $AUTHENTICATION_API_KEY" \
+      http://localhost:8080/webhook/find/secretary'
+   ```
+
+
+
 ### SSL não funciona
 
 ```bash
@@ -780,14 +961,28 @@ Use este checklist sequencialmente ao fazer o deploy:
 
 ## Custos mensais estimados (beta)
 
+### Cenário A — Oracle Cloud Always Free (recomendado por custo)
+
 | Item | Custo/mês |
 |------|-----------|
-| VPS (Hetzner CX22) | ~R$25 |
+| VPS (Oracle A1.Flex — 2 OCPU ARM, 12 GB) | **R$ 0** |
 | Domínio .com.br | ~R$3,33 (R$40/ano) |
 | Chip (recarga mínima) | ~R$10-15 |
-| IA (DeepSeek/Groq free tier) | R$0-10 |
+| IA (Groq + Gemini free tier) | R$ 0 |
 | Sentry + UptimeRobot | Grátis |
 | SSL (Cloudflare) | Grátis |
-| **Total** | **~R$40-55/mês** |
+| **Total** | **~R$13-18/mês** |
 
-Com 1 cliente pagante (R$49/mês), o sistema se paga.
+### Cenário B — VPS paga mais barata (Hetzner CX22)
+
+| Item | Custo/mês |
+|------|-----------|
+| VPS (Hetzner CX22) | ~R$27 |
+| Domínio .com.br | ~R$3,33 (R$40/ano) |
+| Chip (recarga mínima) | ~R$10-15 |
+| IA (Groq + Gemini free tier) | R$ 0 |
+| Sentry + UptimeRobot | Grátis |
+| SSL (Cloudflare) | Grátis |
+| **Total** | **~R$40-45/mês** |
+
+Com 1 cliente pagante (R$49/mês), o sistema se paga em qualquer cenário. No cenário Oracle, a margem cobre o custo já no primeiro cliente.

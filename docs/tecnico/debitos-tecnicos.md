@@ -6,6 +6,71 @@ Organizado por prioridade.
 
 ## ✅ CONCLUÍDOS
 
+### 🟢 Beta funcional (2026-10-28) — P1, P2 e P3
+
+Bugs de fluxo que impediam o uso real do sistema, corrigidos com testes de regressão.
+
+| # | Item | Correção |
+|---|------|----------|
+| B1 | **Sessão WhatsApp nunca era gravada** — `whatsapp_sessions` não recebia registro ao conectar, então `findByInstance` retornava null e a Cleo não respondia a nenhum cliente | Webhook passa a tratar `connection.update` (`open` → `sessionRepo.activateSession`, `close` → `markDisconnected`); SSE do QR também persiste (idempotente). Migration `0002` cria índice único parcial em `instance_name WHERE status='active'` |
+| B2 | **QR e SSE usavam instâncias diferentes** (`user-<id>-<ts>` × `activation-<code>`) — a tela nunca detectava a conexão | `shared/config/instance-name.ts` com nomes determinísticos (`user-<id>`, `invite-<token>`), usados por QR, SSE, webhook e monitor |
+| B3 | **QR não criava a instância na Evolution** → `502` no primeiro acesso | Novo `MessagingPort.ensureInstance()` (getStatus → 404 ⇒ createInstance com webhook) antes do connect |
+| B4 | **Dono era tratado como lead** — mensagem no próprio número gerava lead e resposta de atendimento | Guard `isOwnerMessage()` no `message.processor` + `handleOwnerMessage()` dedicado |
+| B5 | **Respostas ao dono saíam pela instância `secretary`** | Agora usam a instância que recebeu a mensagem |
+| B6 | **Convite do colaborador sem SSE e com nome de instância aleatório** | `GET /api/invites/:token/qrcode/status` (SSE) + `ensureInstance`; front trocado de polling para SSE |
+| B7 | **`_editing` travava o onboarding** (string `'true'` vazando + `handleStep('confirm_name')` inexistente + mapa estático ignorando edição parcial) | `nextAfter()` aplica o modo edição em todos os passos; flag limpa ao voltar ao resumo |
+| B8 | **`business_hours` dependia 100% da IA** — JSON válido sem campos perdia o horário | Parser local determinístico aplicado antes da IA |
+| B9 | **Perfil do colaborador incompleto** (`tone_of_voice`/`target_audience` ausentes) e `businesses` criado 2x | `acceptInvite` grava perfil completo; `createBusiness` virou upsert idempotente |
+| B10 | **Preços dos planos 100x errados** (seed em reais, código em centavos) → checkout cobraria R$ 0,49 | Migration `0003` normaliza seed para centavos + `plans.repository` sem `×100` |
+| B11 | **Label "10% off no PIX" sem desconto** (código morto, risco CDC/CONAR) | Campo removido; PIX = preço cheio, alinhado ao doc de regras de negócio |
+| B12 | **`plan_name` em texto livre** → pagamento órfão e erro em `/api/activation/slots` | Migration `0004` com FKs `payments.plan_name` e `users.plan` → `plan_limits` |
+| B13 | **Preços duplicados** (landing hardcoded × banco) | `Pricing` consome `/api/activation/plans` (fallback local só se a API falhar) |
+| B14 | **QR de código já usado** gerava instância órfã | `GET /activation/qrcode/:code` responde 400 para código já utilizado |
+
+**Testes:** 124 → **165** (novos: `webhooks.controller`, `message.processor`, `invites.controller`, `price-calculator`, `plans.repository`; ampliados: `activation.controller`, `onboarding.service`).
+
+### 🟢 Multi-intent e qualidade de resposta do dono (2026-10-28)
+
+Encontrados rodando o **E2E de qualidade** (cenário `owner_command`, que falhava com 0.54).
+
+| # | Problema | Correção |
+|---|----------|----------|
+| C1 | **Só o primeiro pedido era executado** — "ver clientes novos hoje E quem está sem resposta" respondia só a primeira parte; a dona repetia e a Cleo entrava em loop | Prompt com bloco MÚLTIPLOS PEDIDOS + `additional_intents`; `RecognizedIntent.additionalIntents`; `fallbackRecognize` passa a detectar **todos** os pedidos por keyword; `executeIntent` virou orquestrador sobre `executeSingleIntent` |
+| C2 | Seções de lista **coladas** numa linha só | `sections.join` usava a string literal `\\n\\n` (sem quebra real). Trocado por separador visível `———` + títulos em negrito em cada seção |
+| C3 | Seção de "sem resposta" **duplicada** | `leads_today` já cobre `no_reply`; o orquestrador executava os dois. Par `leads_today`+`no_reply` agora roda uma vez só |
+| C4 | **`/comando` desconhecido** ia para a IA conversacional → resposta com brincadeira e lixo de template | Guard de slash command no `handleOwnerMessage`: explica e sugere linguagem natural |
+| C5 | **Lixo de template vazado** (`"Tá de sacanagem, chefe! 😜】"`) | `stripThinkingTags` agora remove `【】「」⟨⟩`, prefixos `Reasoning:`/`Final Answer:` e colapsa espaços |
+
+**Resultado no E2E:** `owner_command` **0.54 → 1.00** (relevância, tom, factualidade, completude e naturalidade todos 1.00).
+
+**Testes:** 165 → **188** (`recognize-intent` +5 multi-intent, `message.processor.multi-intent` +5, `sanitize` +6, `activation.service` +3, `onboarding.service` +2, `invites.controller` +7 no pacote anterior).
+
+### 🟢 E2E de qualidade: persona, judge e listas do dono (2026-11-02)
+
+Encontrados rodando o **E2E de qualidade** novamente: `owner_command` caiu para **0.52** e o relatório acusou problemas que a Cleo nunca cometeu.
+
+| # | Problema | Correção |
+|---|----------|----------|
+| D1 | **Uma oração virava três pedidos** — "/talvez você quer ver o status dos clientes novos hoje?" respondia "Seus clientes" + "Clientes novos de hoje" (o mesmo nome 2×) + "Qual cliente você quer saber?". O fallback por keyword casava o texto INTEIRO, e `mergeAdditional` sempre anexava esses achados à intenção da IA | `splitClauses()` (conectores `e`, `,`, `?`, `depois`, `também`): no máximo **1 pedido por oração**, escolhido por especificidade (`no_reply` › `leads_today` › `hot_leads` › `list_ignored` › `list_leads` › `lead_status`); `mergeAdditional` só completa pedidos de **outra** oração; `collapseRedundant()` colapsa `list_leads` + `leads_today` (mesma lista, headers diferentes) |
+| D2 | **O dono aparecia como cliente dele mesmo** — o lead de auditoria (criado para persistir as mensagens do dono) entrava em `list_leads`/`leads_today`/`no_reply`/`hot_leads`; no E2E a única "cliente nova" era a Fernanda | `withoutOwnerLead(leads, user)` com `normalizePhone()` aplicado nas quatro consultas |
+| D3 | **Persona simulada enviava lixo** — 1ª mensagem sem validação nenhuma (`"/talvez você quer ver…"`, pergunta ao bot) e retry reenviando o MESMO prompt, então o qwen3:1.7b repetia/ecoava 3× e a conversa morria em 2 turnos | `cleanPersonaMessage()` (thinking tags, prefixo de papel, aspas, comentário meta após a 1ª linha) + `rejectReason()` (comando `/algo`, eco da Cleo, repetição literal **e** paráfrase da mesma pergunta, pergunta ao bot, vazamento de raciocínio) com feedback corretivo no retry e fallback de 1ª mensagem por cenário |
+| D4 | **Judge inventava citações** — reprovou a conversa citando "antes de mergulhar nos números" e "tomar café", falas que a Cleo nunca enviou (a resposta era uma lista determinística), e tratou a *descrição* da persona como lista de requisitos | Bloco "FIDELIDADE À TRANSCRIÇÃO" nos dois prompts (fonte única de verdade, citação literal, descrição é contexto) + `sanitizeJudgeProblems()` descarta problema cujo trecho entre aspas não existe na transcrição; transcript com turnos numerados |
+| D5 | **Cenário `owner_command` não tinha clientes** — só o lead do próprio dono, então o teste não provava nada sobre listagem | `seedClientLeads()`: Ana (criada hoje) e Bruno (sem resposta há 3 dias) semeados no setup |
+| D6 | **Onboarding repetia a apresentação** ("Prazer em te conhecer" na 2ª resposta) e avançava sem reconhecer o que o dono respondeu | `business_type` sem nova saudação; `target_audience`/`tone_of_voice`/`business_hours`/`outside_hours_behavior` devolvem o dado extraído ("Anotei: *clínica de estética* ✨") |
+| D7 | **`/comando` desconhecido** só era tratado no caminho da instância própria (`handleOwnerMessage`); na instância `secretary` ia para o interpretador de intents | `unknownSlashCommandReply()` aplicado nos dois caminhos |
+| D8 | **Reply conversacional do dono era stateless** — `generateConversationalReply` recebia só a mensagem atual, então a Cleo repetia a mesma piada ("cadê a pizza?") e a mesma pergunta a cada mensagem vaga; e o prompt proibia qualquer oferta de ajuda, contradizendo `personalidade-cleo.md` ("Proativa — não espera ser perguntada") | Histórico das últimas 6 mensagens (`shared/utils/conversation-history.ts`, extraído do atendimento ao cliente) injetado no prompt + guarda anti-repetição (regenera 1× se a resposta for idêntica à última da Cleo) + prompt com oferta **concreta e variada** (proibido menu/repetição e recursos inexistentes). `executeIntent` passa o `leadId` para o fallback de intent desconhecida |
+| D9 | **Conversa casual virava consulta** — "oi, como está? hoje tá chuvoso" respondeu "📭 Clientes novos de hoje: nenhum" + small talk. A IA dizia `unknown` com confiança, e o merge por keyword anexava `leads_today`/`lead_status` por causa do "hoje"/"como está" | `unknown` da IA nunca recebe extras por keyword; prompt de intents passa a tratar saudação/assunto pessoal como `unknown` mesmo citando "hoje"/"status"/"clientes" de passagem |
+| D10 | **Harness**: persona falava como a Cleo ("Estou aqui para te ajudar…") e um 429 de cota do Gemini devolvia 0.00 como se fosse defeito do produto | `ASSISTANT_VOICE` no `rejectReason` (retry corretivo) + backoff de 20/40/60s em 429 no client Gemini + `buildErrorResult` rotula falha de infraestrutura ("não é defeito do produto; reexecute") |
+| D11 | **Ruído de infraestrutura no `docker compose up`** — `FATAL: database "hicleo" does not exist` a cada 10s, `frontend (unhealthy)` com o site no ar, WARN do Redis a cada conexão e um dump de 10 KB do AxiosError no `connection-monitor` | `pg_isready` com `-d` explícito nos 4 healthchecks (dev + prod); `HOSTNAME=0.0.0.0` + probe em `127.0.0.1` (compose de dev e Dockerfile) espelhando o prod; `REDIS_PASSWORD` vazio em dev (prod mantém `--requirepass`); `connection-monitor` trata 404/400 como instância inexistente (marca `disconnected`, loga `warn` compacto) e não serializa mais o AxiosError; `cleanupAll` do E2E apaga sessões `test-e2e*` órfãs. Documentado no `deploy-producao.md` (Troubleshooting) |
+| D12 | **Evolution em loop com `getaddrinfo ENOTFOUND api.hicleo.com.br`** — `.env` de dev usava a URL de webhook de **produção** e, como `createInstance` só define o webhook no nascimento da instância, trocar `WEBHOOK_URL` não tinha efeito (retry 10× por evento) | `.env` de dev → `http://backend:3001/webhooks/evolution`; novo `MessagingPort.setWebhook()` (adapters Evolution API e GO + wrapper de rate limit) e `ensureEvolutionInstance` re-sincroniza o webhook no startup (idempotente, falha só loga `warn`); 3 testes novos em `evolution-setup`; documentado no `deploy-producao.md` | |
+
+**Resultado no E2E (`--single owner_command`):** resposta passou a ser uma seção por pedido —
+`📋 *Clientes novos de hoje:* 1. Ana Souza` + `———` + `⚠️ *Clientes esperando retorno:* 1. Bruno Lima` — sem lista duplicada, sem o dono na lista e sem "Qual cliente…" sem nome. Score **0.52 → 1.00 (PASSOU)**; `onboarding` foi de 0.80 (com 2 problemas) para **1.00** (sem problemas) e `edge_case` de **0.84 → 1.00** (sumiram a piada repetida e a falta de oferta útil).
+
+**Testes:** 189 → **209** (`recognize-intent` +8: regressão do E2E, oração única, status de contato, colapso `list_leads`/`leads_today`, duas orações, cliente específico, conversa casual; `message.processor.multi-intent` +3: dono fora das listas, divisor entre seções, histórico no reply conversacional; `assistente.service` +5: histórico cronológico, sem histórico, regeneração anti-repetição, prompt com oferta concreta e capacidades reais; `connection-monitor.cron` +4: 404 de instância inexistente, erro de rede, 5xx, sessão conectada).
+
+**Pendência encontrada (não corrigida aqui):** o dono pediu "ver a agenda" e a Cleo respondeu "Para quem devo agendar o retorno?" — não existe intent nem consulta para **listar** follow-ups pendentes (`followUpRepo` só tem `schedule`/`cancelForLead`/`getDue`/`markSent`). Correção sugerida: `listPendingByUser` no repositório + intent `list_followups` ("minha agenda", "o que tenho marcado") + case de resposta com data/hora e nome do contato.
+
 ### 🟢 Rápidos (integração front↔back)
 - ~~#1 Código de ativação dinâmico~~ ✅
 - ~~#2 Checkbox LGPD na página de conexão~~ ✅
@@ -53,7 +118,7 @@ Organizado por prioridade.
 
 | # | Ação | Detalhes |
 |---|------|----------|
-| 1 | Contratar VPS | Qualquer provider com Docker (Hetzner, Contabo, DigitalOcean). Mínimo: 1vCPU, 4GB RAM |
+| 1 | Contratar VPS | Qualquer provider com Docker. **Opção grátis:** Oracle Cloud Always Free (2 OCPU ARM / 12 GB / 200 GB, DC em São Paulo) — ver [deploy-producao.md §2.5](./deploy-producao.md#25-oracle-cloud-always-free). Pagos: Hetzner CX22, Hostinger KVM 2, Contabo. Mínimo: 2 vCPU, 4GB RAM |
 | 2 | Comprar chip dedicado | Pré-pago, ativar WhatsApp, nunca usar pra outra coisa |
 | 3 | Comprar/configurar domínio | Ex: hicleo.com.br, apontar DNS pro IP do servidor |
 | 4 | SSL/HTTPS | Cloudflare Origin Certificates → salvar em `nginx/ssl/fullchain.pem` e `nginx/ssl/privkey.pem` |
