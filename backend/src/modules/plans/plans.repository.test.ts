@@ -7,15 +7,15 @@ import type { PlanLimit } from './plans.port.js';
  * `plan_limits.price_monthly` / `price_yearly_total` estão em CENTAVOS
  * (migration 0003 + docs/produto/regras-de-negocio.md). O repositório devolve o
  * valor cru para a API. Antes ele multiplicava por 100, então:
- *   - /api/activation/plans devolvia 4900 (R$ 49,00) para a vitrine ✅
+ *   - /api/activation/plans devolvia 8990 (R$ 89,90) para a vitrine ✅
  *   - mas o pagamento usava getPlanLimit sem o ×100 → cobrava R$ 0,49 ❌
  * Estes testes travam o contrato para a regressão não voltar.
  */
 
 const SEED: Record<string, { monthly: number; yearly: number; maxUsers: number }> = {
-  solo: { monthly: 4900, yearly: 49000, maxUsers: 1 },
-  equipe: { monthly: 11900, yearly: 119000, maxUsers: 3 },
-  empresa: { monthly: 24900, yearly: 249000, maxUsers: 8 },
+  solo: { monthly: 8990, yearly: 89900, maxUsers: 1 },
+  equipe: { monthly: 23990, yearly: 239900, maxUsers: 3 },
+  empresa: { monthly: 62990, yearly: 629900, maxUsers: 8 },
 };
 
 function buildPlanLimit(planName: string): PlanLimit {

@@ -107,7 +107,7 @@ Comparativo visual (tabela ou cards lado a lado):
 | Envia materiais (PDF, fotos) pro cliente | ❌ (você faz tudo manual) | ⚠️ (por email) | ✅ (você pede, a Cleo envia) |
 | Sem precisar aprender sistema novo | ✅ | ❌ | ✅ |
 | Entende áudio e texto | ❌ | ❌ | ✅ |
-| Preço acessível | Grátis (mas limitado) | R$80-200/mês | A partir de R$49/mês |
+| Preço acessível | Grátis (mas limitado) | R$80-200/mês | A partir de R$89,90/mês |
 
 **Frase de fechamento:** "Tudo que um CRM faz, mas sem sair do WhatsApp. Sem painel. Sem computador. Sem complicação."
 
@@ -141,7 +141,7 @@ Cards ou lista visual:
 - 💬 Respostas automáticas — atenda fora do horário
 - 📎 Envio de materiais — mande PDFs, fotos e docs pra clientes pelo WhatsApp
 - 🔒 Dados seguros — criptografia e proteção de dados (LGPD)
-- 💰 Preço justo — a partir de R$49/mês
+- 💰 Preço justo — a partir de R$89,90/mês
 
 ### 5. Demonstração / Exemplo de Conversa
 
@@ -180,9 +180,9 @@ Toggle: Mensal | Anual (economize 2 meses)
 
 | Plano | Mensal | Anual |
 |-------|--------|-------|
-| **Solo** — 1 número | R$49/mês | R$40,83/mês (R$490/ano) |
-| **Equipe** — até 3 números | R$119/mês | R$99,17/mês (R$1.190/ano) |
-| **Empresa** — até 8 números | R$249/mês | R$207,50/mês (R$2.490/ano) |
+| **Solo** — 1 número | R$89,90/mês | R$74,92/mês (R$899/ano) |
+| **Equipe** — até 3 números | R$239,90/mês | R$199,92/mês (R$2.399/ano) |
+| **Empresa** — até 8 números | R$629,90/mês | R$524,92/mês (R$6.299/ano) |
 
 Abaixo dos planos:
 - "Todos os planos incluem: contatos ilimitados, áudios, acompanhamento automático, respostas inteligentes"
@@ -279,7 +279,7 @@ ATIVAR-7X3K | João Silva | Imobiliária Centro | Venda e aluguel de imóveis | 
 ### SEO On-Page
 
 - **Title:** "Hi Cleo — Secretária Virtual no WhatsApp | Organize seus clientes"
-- **Meta description:** "A Cleo é sua secretária virtual no WhatsApp. Organiza clientes, envia lembretes e responde automaticamente. Sem painel, sem computador. A partir de R$49/mês."
+- **Meta description:** "A Cleo é sua secretária virtual no WhatsApp. Organiza clientes, envia lembretes e responde automaticamente. Sem painel, sem computador. A partir de R$89,90/mês."
 - **H1:** Usar a headline do hero (com palavra-chave natural)
 - **URL limpa:** hicleo.com.br (home), hicleo.com.br/planos, hicleo.com.br/como-funciona
 - **Alt text nas imagens:** descrever com palavras-chave ("secretária virtual whatsapp cleo")

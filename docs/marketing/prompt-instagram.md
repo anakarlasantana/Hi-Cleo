@@ -25,9 +25,9 @@ REGRAS DE LINGUAGEM:
 - Falar como se estivesse conversando com o dono de um salão de beleza ou um corretor de imóveis
 
 PLANOS:
-- Solo: R$49/mês (1 usuário)
-- Equipe: R$119/mês (até 3 usuários)
-- Empresa: R$249/mês (até 8 usuários)
+- Solo: R$89,90/mês (1 usuário)
+- Equipe: R$239,90/mês (até 3 usuários)
+- Empresa: R$629,90/mês (até 8 usuários)
 - Anual economiza 2 meses
 ```
 
@@ -144,7 +144,7 @@ Abaixo do texto: 3 bullets com ícones verdes:
 - ✅ Contatos salvos automaticamente
 - ✅ Lembretes de retorno
 - ✅ Respostas fora do horário
-Rodapé: "A partir de R$49/mês" + logo Hi Cleo
+Rodapé: "A partir de R$89,90/mês" + logo Hi Cleo
 Estilo: clean, profissional, verde como cor de destaque
 ```
 
@@ -179,9 +179,9 @@ Crie uma imagem para Instagram, formato quadrado 1080x1080px.
 
 Fundo: branco
 3 cards lado a lado (estilo pricing table):
-- Card 1: "Solo" — R$49/mês — 1 usuário (borda verde)
-- Card 2: "Equipe" — R$119/mês — 3 usuários (destaque, fundo verde, texto branco)
-- Card 3: "Empresa" — R$249/mês — 8 usuários (borda verde)
+- Card 1: "Solo" — R$89,90/mês — 1 usuário (borda verde)
+- Card 2: "Equipe" — R$239,90/mês — 3 usuários (destaque, fundo verde, texto branco)
+- Card 3: "Empresa" — R$629,90/mês — 8 usuários (borda verde)
 Título no topo: "Escolha seu plano"
 Badge no card do meio: "Mais popular"
 Rodapé: "Contatos ilimitados em todos os planos" + logo Hi Cleo

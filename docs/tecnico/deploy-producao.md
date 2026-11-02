@@ -1007,4 +1007,4 @@ Use este checklist sequencialmente ao fazer o deploy:
 | SSL (Cloudflare) | Grátis |
 | **Total** | **~R$40-45/mês** |
 
-Com 1 cliente pagante (R$49/mês), o sistema se paga em qualquer cenário. No cenário Oracle, a margem cobre o custo já no primeiro cliente.
+Com 1 cliente pagante (R$89,90/mês), o sistema se paga em qualquer cenário. No cenário Oracle, a margem cobre o custo já no primeiro cliente.

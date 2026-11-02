@@ -555,7 +555,7 @@ adicionar camadas extras (CPF, email normalizado) na Fase 5.
 - O principal anti-abuso é o **telefone** — trocar de chip custa dinheiro e tempo
 - O **device fingerprint** pega quem troca chip mas usa o mesmo aparelho
 - O **rate limit por IP** pega quem tenta criar vários trials de uma vez
-- O custo real de burlar todas as camadas (chip novo + VPN + aparelho novo) > R$49 (preço do plano)
+- O custo real de burlar todas as camadas (chip novo + VPN + aparelho novo) > R$89,90 (preço do plano)
 
 ---
 

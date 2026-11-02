@@ -58,13 +58,13 @@ As taxas são por venda, com recebimento na hora:
 
 > ℹ️ **Open Finance (0%)** é a opção mais barata, mas ainda é pouco adotada pelos consumidores. Pix (0,99%) é o melhor custo-benefício considerando adoção + taxa.
 
-**Exemplo prático (Plano Solo R$49/mês):**
-- PIX: recebe R$48,51 (absorve R$0,49)
-- Open Finance: recebe R$49,00 (sem taxa)
-- Cartão 1x: recebe R$46,56 (absorve R$2,44)
-- Cartão 3x (parcelado vendedor): recebe R$47,54 (absorve R$1,46)
-- Cartão 3x (parcelado comprador): cliente paga mais, você recebe ~R$46,56
-- Boleto: recebe R$45,51 (absorve R$3,49)
+**Exemplo prático (Plano Solo R$89,90/mês):**
+- PIX: recebe R$89,01 (absorve R$0,89)
+- Open Finance: recebe R$89,90 (sem taxa)
+- Cartão 1x: recebe R$85,42 (absorve R$4,48)
+- Cartão 3x (parcelado vendedor): recebe R$87,22 (absorve R$2,68)
+- Cartão 3x (parcelado comprador): cliente paga mais, você recebe ~R$85,42
+- Boleto: recebe R$86,41 (absorve R$3,49)
 
 **Impacto na margem:** com 90%+ de margem operacional, absorver qualquer taxa é trivial. Pix é o meio mais usado e a taxa de 0,99% é bem baixa.
 
@@ -135,13 +135,13 @@ As taxas são por venda, com recebimento na hora:
 | Supabase | R$0 (free) |
 | **Total infra** | **~R$36/mês** |
 
-**Receita com Plano Solo R$49/mês:**
+**Receita com Plano Solo R$89,90/mês:**
 
 | Clientes | Receita bruta | Taxa MP (~2,19%) | Receita líquida | Lucro |
 |----------|--------------|------------------|-----------------|-------|
-| 1 | R$49 | R$1,07 | R$47,93 | R$11,93 |
-| 3 | R$147 | R$3,22 | R$143,78 | R$107,78 |
-| 5 | R$245 | R$5,37 | R$239,63 | R$203,63 |
+| 1 | R$89,90 | R$1,97 | R$87,93 | R$51,93 |
+| 3 | R$269,70 | R$5,91 | R$263,79 | R$227,79 |
+| 5 | R$449,50 | R$9,84 | R$439,66 | R$403,66 |
 
 ### Cenário 2: Primeiros Clientes (5-19 usuários)
 
@@ -155,13 +155,13 @@ As taxas são por venda, com recebimento na hora:
 | Supabase | R$0 (free) |
 | **Total infra** | **~R$36/mês** |
 
-**Receita com Plano Solo R$49/mês:**
+**Receita com Plano Solo R$89,90/mês:**
 
 | Clientes | Receita bruta | Taxa MP (~2,19%) | Receita líquida | Lucro |
 |----------|--------------|------------------|-----------------|-------|
-| 10 | R$490 | R$10,73 | R$479,27 | R$443,27 |
-| 15 | R$735 | R$16,10 | R$718,90 | R$682,90 |
-| 19 | R$931 | R$20,39 | R$910,61 | R$874,61 |
+| 10 | R$899,00 | R$19,69 | R$879,31 | R$843,31 |
+| 15 | R$1.348,50 | R$29,53 | R$1.318,97 | R$1.282,97 |
+| 19 | R$1.708,10 | R$37,41 | R$1.670,69 | R$1.634,69 |
 
 ### Cenário 3: Escala Inicial (20-49 usuários) → Upgrade para NVMe 4
 
@@ -238,23 +238,23 @@ Diferenciação baseada em uso real (cada número consome 1 instância na VPS), 
 
 | Plano | Preço | Para quem | Inclui |
 |-------|-------|-----------|--------|
-| **Solo** | R$49/mês | Profissional autônomo (corretor, professor, consultor) | 1 número WhatsApp conectado, tudo incluso |
-| **Equipe** | R$119/mês | Pequena empresa com atendentes | Até 3 números conectados, tudo incluso |
-| **Empresa** | R$249/mês | Negócio com time de vendas | Até 8 números conectados, tudo incluso |
+| **Solo** | R$89,90/mês | Profissional autônomo (corretor, professor, consultor) | 1 número WhatsApp conectado, tudo incluso |
+| **Equipe** | R$239,90/mês | Pequena empresa com atendentes | Até 3 números conectados, tudo incluso |
+| **Empresa** | R$629,90/mês | Negócio com time de vendas | Até 8 números conectados, tudo incluso |
 
 ### Planos Anuais (pague 10, leve 12 — 2 meses grátis)
 
 | Plano | Mensal | Anual (total) | Anual (por mês) | Economia |
 |-------|--------|---------------|-----------------|----------|
-| **Solo** | R$49 | R$490/ano | R$40,83/mês | R$98 (2 meses) |
-| **Equipe** | R$119 | R$1.190/ano | R$99,17/mês | R$238 (2 meses) |
-| **Empresa** | R$249 | R$2.490/ano | R$207,50/mês | R$498 (2 meses) |
+| **Solo** | R$89,90 | R$899/ano | R$74,92/mês | R$179,80 (2 meses) |
+| **Equipe** | R$239,90 | R$2.399/ano | R$199,92/mês | R$479,80 (2 meses) |
+| **Empresa** | R$629,90 | R$6.299/ano | R$524,92/mês | R$1.259,80 (2 meses) |
 
 ### Número adicional avulso (referência interna — não exibir no site)
 
-+R$39/mês por número extra (qualquer plano, mensal ou anual).
++R$89,90/mês por número extra (qualquer plano, mensal ou anual) — mesmo valor de um Solo, para não canibalizar os planos.
 
-Exemplo: Cliente precisa de 5 números → Equipe (3) + 2 avulsos = R$119 + R$78 = R$197/mês.
+Exemplo: Cliente precisa de 5 números → Equipe (3) + 2 avulsos = R$239,90 + R$179,80 = R$419,70/mês.
 
 > ⚠️ Esse valor é referência interna para negociação. No site, exibir apenas os 3 planos (Solo, Equipe, Empresa) + botão "Precisa de mais? Fale conosco" direcionando para WhatsApp de vendas.
 
@@ -278,13 +278,13 @@ Sob consulta — plano Enterprise customizado. Cliente entra em contato para neg
 
 | Mix de clientes | Receita bruta | Taxa MP | Receita líquida | Custo infra | Lucro |
 |-----------------|--------------|---------|-----------------|-------------|-------|
-| 10 Solo + 2 Equipe | R$728/mês | R$15,94 | R$712,06 | ~R$36/mês | R$676,06 |
-| 20 Solo + 5 Equipe + 1 Empresa | R$1.824/mês | R$39,95 | R$1.784,05 | ~R$46/mês | R$1.738,05 |
-| 30 Solo + 10 Equipe + 3 Empresa | R$3.407/mês | R$74,61 | R$3.332,39 | ~R$260/mês | R$3.072,39 |
+| 10 Solo + 2 Equipe | R$1.378,80/mês | R$30,20 | R$1.348,60 | ~R$36/mês | R$1.312,60 |
+| 20 Solo + 5 Equipe + 1 Empresa | R$3.627,40/mês | R$79,44 | R$3.547,96 | ~R$46/mês | R$3.501,96 |
+| 30 Solo + 10 Equipe + 3 Empresa | R$6.985,70/mês | R$152,99 | R$6.832,71 | ~R$260/mês | R$6.572,71 |
 
 **Se 50% dos clientes optarem pelo anual (cenário 2):**
-- Receita adiantada no 1º mês: ~R$9.520 (caixa imediato para expansão)
-- Receita mensal recorrente dos mensais: ~R$892/mês (já descontando MP)
+- Receita adiantada no 1º mês: ~R$18.137 (caixa imediato para expansão)
+- Receita mensal recorrente dos mensais: ~R$1.774/mês (já descontando MP)
 
 ---
 
@@ -295,9 +295,9 @@ Sob consulta — plano Enterprise customizado. Cliente entra em contato para neg
 | Investimento inicial (setup) | ~R$70 (chip + recarga + domínio 1º ano) |
 | Custo mensal mínimo | ~R$36/mês |
 | Taxa média Mercado Pago | ~2,19% (mix 70% Pix + 30% Cartão) |
-| Break-even | 1 cliente Solo (R$49 - R$1,07 taxa = R$47,93 > R$36 infra) ✅ |
-| Margem com 10 clientes Solo | ~91% |
-| Margem com 30 clientes (mix) | ~92% |
+| Break-even | 1 cliente Solo (R$89,90 - R$1,97 taxa = R$87,93 > R$36 infra) ✅ |
+| Margem com 10 clientes Solo | ~96% |
+| Margem com 30 clientes (mix) | ~96% |
 | Limite free (sem pagar IA) | ~30-50 números conectados (gargalo: 15 RPM Gemini) |
 | Receita potencial (20 Solo + 5 Equipe + 1 Empresa) | R$1.784/mês líquido |
 | Custo com esse mix | ~R$46/mês |
@@ -307,37 +307,37 @@ Sob consulta — plano Enterprise customizado. Cliente entra em contato para neg
 
 ## Análise de Viabilidade por Plano
 
-### Plano Solo (R$49/mês) — 1 número
+### Plano Solo (R$89,90/mês) — 1 número
 
 | Métrica | Valor |
 |---------|-------|
-| Receita bruta | R$49,00 |
-| Taxa MP (Pix 0,99%) | -R$0,49 |
-| Taxa MP (Cartão 4,98%) | -R$2,44 |
-| Receita líquida (melhor caso - Pix) | R$48,51 |
-| Receita líquida (pior caso - Cartão) | R$46,56 |
+| Receita bruta | R$89,90 |
+| Taxa MP (Pix 0,99%) | -R$0,89 |
+| Taxa MP (Cartão 4,98%) | -R$4,48 |
+| Receita líquida (melhor caso - Pix) | R$89,01 |
+| Receita líquida (pior caso - Cartão) | R$85,42 |
 | Custo marginal por usuário (infra) | ~R$0* |
 
 *O custo de infra é fixo (VPS). Cada novo usuário Solo não adiciona custo significativo até atingir limite da VPS.
 
 **Veredicto: ✅ Viável.** Mesmo com 1 único cliente, já cobre toda a infra. A taxa do MP é irrelevante.
 
-### Plano Equipe (R$119/mês) — 3 números
+### Plano Equipe (R$239,90/mês) — 3 números
 
 | Métrica | Valor |
 |---------|-------|
-| Receita líquida (Pix) | R$117,82 |
-| Receita líquida (Cartão) | R$113,07 |
+| Receita líquida (Pix) | R$237,53 |
+| Receita líquida (Cartão) | R$227,95 |
 | Custo marginal | ~R$0 (mesma VPS) |
 
 **Veredicto: ✅ Muito viável.** Margem excelente.
 
-### Plano Empresa (R$249/mês) — 8 números
+### Plano Empresa (R$629,90/mês) — 8 números
 
 | Métrica | Valor |
 |---------|-------|
-| Receita líquida (Pix) | R$246,54 |
-| Receita líquida (Cartão) | R$236,60 |
+| Receita líquida (Pix) | R$623,66 |
+| Receita líquida (Cartão) | R$598,53 |
 | Custo marginal | ~R$0 (mesma VPS, mas 8 instâncias consomem mais RAM) |
 
 **Veredicto: ✅ Altamente viável.** Margem altíssima.
@@ -346,9 +346,9 @@ Sob consulta — plano Enterprise customizado. Cliente entra em contato para neg
 
 | Cenário | Taxa MP total/mês | % da receita perdida | Impacto real |
 |---------|-------------------|---------------------|--------------|
-| 10 clientes Solo (todos Pix) | R$4,90 | 1% | Irrelevante |
-| 10 clientes Solo (todos Cartão) | R$24,40 | 5% | Baixo |
-| 20 Solo + 5 Equipe + 1 Empresa | R$17-40 | 1-2,2% | Irrelevante |
+| 10 clientes Solo (todos Pix) | R$8,90 | 1% | Irrelevante |
+| 10 clientes Solo (todos Cartão) | R$44,77 | 5% | Baixo |
+| 20 Solo + 5 Equipe + 1 Empresa | R$79,44 | 2,2% | Irrelevante |
 
 **A taxa do Mercado Pago não ameaça a viabilidade do negócio em nenhum cenário.** O maior custo continua sendo a infraestrutura (VPS + Gemini pago quando escalar), e mesmo assim as margens ficam acima de 90% em todos os cenários.
 
@@ -356,12 +356,12 @@ Sob consulta — plano Enterprise customizado. Cliente entra em contato para neg
 
 | Concorrente | Preço mínimo | Seu preço |
 |-------------|-------------|-----------|
-| Kommo | ~R$78/mês/usuário | R$49/mês |
-| PipeRun | ~R$89/mês | R$49/mês |
-| WATI | ~R$200/mês | R$49/mês |
-| SacOnline | ~R$97/mês | R$49/mês |
+| Kommo | ~R$78/mês/usuário | R$89,90/mês (IA inclusa) |
+| PipeRun | ~R$89/mês | R$89,90/mês (IA inclusa) |
+| WATI | ~R$200/mês | R$89,90/mês (IA inclusa) |
+| SacOnline | ~R$97/mês | R$89,90/mês (IA inclusa) |
 
-**Diferencial:** Mais barato, mais simples (sem dashboard), 100% no celular.
+**Diferencial:** Preço competitivo (abaixo de WATI e SacOnline), **IA inclusa** — Kommo/PipeRun cobram por usuário e não trazem secretária de IA —, mais simples (sem dashboard) e 100% no celular.
 
 ---
 

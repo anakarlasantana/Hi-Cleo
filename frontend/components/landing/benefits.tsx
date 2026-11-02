@@ -33,7 +33,7 @@ const benefits = [
   {
     icon: Coins,
     title: "Preço justo",
-    description: "A partir de R$49/mês. Sem surpresas, sem taxa escondida.",
+    description: "A partir de R$89,90/mês. Sem surpresas, sem taxa escondida.",
   },
 ]
 

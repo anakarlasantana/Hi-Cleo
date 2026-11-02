@@ -4,12 +4,12 @@
 -- É idempotente por UPSERT: editar preço/feature aqui atualiza o banco no próximo
 -- `docker compose up -d`, sem precisar criar uma migration nova.
 --
--- IMPORTANTE: preços em CENTAVOS (4900 = R$ 49,00). `payment/price-calculator`
+-- IMPORTANTE: preços em CENTAVOS (8990 = R$ 89,90). `payment/price-calculator`
 -- divide por 100 ao gerar o valor do Mercado Pago.
 
 INSERT INTO plan_limits (plan_name, display_name, description, max_users, price_monthly, price_yearly_total, features, highlighted)
 VALUES (
-  'solo', 'Solo', '1 usuário', 1, 4900, 49000,
+  'solo', 'Solo', '1 usuário', 1, 8990, 89900,
   ARRAY['Contatos ilimitados', 'Entende áudio e texto', 'Acompanhamento automático', 'Respostas inteligentes'],
   true
 )
@@ -24,7 +24,7 @@ ON CONFLICT (plan_name) DO UPDATE SET
 
 INSERT INTO plan_limits (plan_name, display_name, description, max_users, price_monthly, price_yearly_total, features, highlighted)
 VALUES (
-  'equipe', 'Equipe', 'Até 3 usuários', 3, 11900, 119000,
+  'equipe', 'Equipe', 'Até 3 usuários', 3, 23990, 239900,
   ARRAY['Tudo do Solo', 'Até 3 usuários conectados', 'Contatos ilimitados', 'Suporte prioritário'],
   false
 )
@@ -39,7 +39,7 @@ ON CONFLICT (plan_name) DO UPDATE SET
 
 INSERT INTO plan_limits (plan_name, display_name, description, max_users, price_monthly, price_yearly_total, features, highlighted)
 VALUES (
-  'empresa', 'Empresa', 'Até 8 usuários', 8, 24900, 249000,
+  'empresa', 'Empresa', 'Até 8 usuários', 8, 62990, 629900,
   ARRAY['Tudo do Equipe', 'Até 8 usuários conectados', 'Contatos ilimitados', 'Suporte dedicado'],
   false
 )

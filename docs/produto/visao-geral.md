@@ -61,9 +61,9 @@ Enquanto isso, a Cleo atende os clientes do dono automaticamente — com a perso
 
 | Plano | Conexões | Preço |
 |-------|----------|-------|
-| Solo | 1 WhatsApp | R$49/mês |
-| Equipe | Até 3 | R$119/mês |
-| Empresa | Até 8 | R$249/mês |
+| Solo | 1 WhatsApp | R$89,90/mês |
+| Equipe | Até 3 | R$239,90/mês |
+| Empresa | Até 8 | R$629,90/mês |
 
 ---
 

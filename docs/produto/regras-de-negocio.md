@@ -64,12 +64,12 @@ Landing Page → Checkout → Ativação → Onboarding (WhatsApp) → Conexão 
 
 | Plano | Usuários | Mensal | Anual (12x) | Total Anual |
 |-------|----------|--------|-------------|-------------|
-| Solo | 1 | R$49 | R$40,83 | R$490 |
-| Equipe | Até 3 | R$119 | R$99,17 | R$1.190 |
-| Empresa | Até 8 | R$249 | R$207,50 | R$2.490 |
+| Solo | 1 | R$89,90 | R$74,92 | R$899 |
+| Equipe | Até 3 | R$239,90 | R$199,92 | R$2.399 |
+| Empresa | Até 8 | R$629,90 | R$524,92 | R$6.299 |
 
 **Regras:**
-- Anual = mensal × 10 (economia de 2 meses)
+- Anual = mensal × 10 (economia de 2 meses = 16,7%)
 - Contatos ilimitados em todos os planos
 - Terminologia: "usuário" (não "número")
 - Limite de usuários = números de WhatsApp conectados simultaneamente

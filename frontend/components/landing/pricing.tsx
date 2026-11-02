@@ -23,8 +23,8 @@ const PLAN_CATALOG = [
     key: "solo",
     name: "Solo",
     description: "1 usuário",
-    fallbackMonthly: 49,
-    fallbackYearlyTotal: 490,
+    fallbackMonthly: 89.9,
+    fallbackYearlyTotal: 899,
     features: [
       "Contatos ilimitados",
       "Entende áudio e texto",
@@ -37,8 +37,8 @@ const PLAN_CATALOG = [
     key: "equipe",
     name: "Equipe",
     description: "Até 3 usuários",
-    fallbackMonthly: 119,
-    fallbackYearlyTotal: 1190,
+    fallbackMonthly: 239.9,
+    fallbackYearlyTotal: 2399,
     features: [
       "Tudo do Solo",
       "Até 3 usuários conectados",
@@ -51,8 +51,8 @@ const PLAN_CATALOG = [
     key: "empresa",
     name: "Empresa",
     description: "Até 8 usuários",
-    fallbackMonthly: 249,
-    fallbackYearlyTotal: 2490,
+    fallbackMonthly: 629.9,
+    fallbackYearlyTotal: 6299,
     features: [
       "Tudo do Equipe",
       "Até 8 usuários conectados",
