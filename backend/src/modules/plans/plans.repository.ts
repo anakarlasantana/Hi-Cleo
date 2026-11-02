@@ -3,6 +3,28 @@ import { db } from '../../shared/config/database.js';
 import { planLimits, whatsappSessions, users } from '../../shared/schema.js';
 import type { PlanLimit, PlanRepository } from './plans.port.js';
 
+/**
+ * Ordem canônica da vitrine: **Solo (1) → Equipe (2) → Empresa (3)**.
+ *
+ * Por que existe: sem `ORDER BY` o Postgres devolve a ordem física do heap, que
+ * muda a cada UPSERT de preço — a API chegou a listar `empresa` antes de `solo`.
+ * Exportada para o teste de regressão (`plans-order.test.ts`) e para que qualquer
+ * consulta futura reutilize a mesma regra.
+ */
+export const PLAN_ORDER_BY = [planLimits.sortOrder, planLimits.planName] as const;
+
+/**
+ * Consulta de TODOS os planos com a ordem canônica aplicada.
+ *
+ * Recebe `database` por parâmetro para o teste de regressão inspecionar o
+ * `ORDER BY` sem precisar de banco (o builder do Drizzle não expõe `toSQL()`
+ * nesta versão). Sem o `ORDER BY`, o Postgres devolve a ordem física do heap —
+ * foi assim que a API passou a listar `empresa, solo, equipe`.
+ */
+export function buildAllPlansQuery(database: typeof db = db) {
+  return database.select().from(planLimits).orderBy(...PLAN_ORDER_BY);
+}
+
 export class DrizzlePlanRepository implements PlanRepository {
   async getPlanLimit(planName: string): Promise<PlanLimit | null> {
     const [data] = await db
@@ -16,12 +38,7 @@ export class DrizzlePlanRepository implements PlanRepository {
   }
 
   async getAllPlanLimits(): Promise<PlanLimit[]> {
-    // Ordem EXPLÍCITA: sem ORDER BY o Postgres devolve a ordem física do heap,
-    // que muda a cada UPSERT de preço (a API chegou a listar empresa antes do solo).
-    const data = await db
-      .select()
-      .from(planLimits)
-      .orderBy(planLimits.sortOrder, planLimits.planName);
+    const data = await buildAllPlansQuery();
     return data.map(this.toPlanLimit);
   }
 
