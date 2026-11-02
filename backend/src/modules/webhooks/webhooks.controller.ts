@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { container } from '../../container.js';
 import { env } from '../../shared/config/env.js';
 import { sanitizeMessageText, validatePhoneNumber, maskPhone } from '../../shared/middleware/sanitize.js';
+import { STICKER_MARKER } from '../../shared/utils/client-signals.js';
 import type { WebhookPayload, MediaType } from '../../shared/types/index.js';
 import type { MessageJobData } from '../queue/queue.types.js';
 
@@ -77,6 +78,20 @@ function extractMessageContent(message: WebhookPayload['data']['message']) {
     };
   }
 
+  // Figurinha — antes caía no `return { text: '', media: null }` e o webhook
+  // descartava a mensagem: o cliente ficava em SILÊNCIO, nada era salvo e, se
+  // fosse a primeira mensagem, o lead nem existia. Agora é tratada como texto
+  // de baixa informação (o processor responde sem chamar a IA).
+  if (message.stickerMessage) {
+    return { text: STICKER_MARKER, media: null };
+  }
+
+  // Reação (👍 numa mensagem anterior): ignorar EXPLICITAMENTE. Não é pergunta,
+  // e responder a uma reação polui a conversa.
+  if (message.reactionMessage) {
+    return { text: '', media: null };
+  }
+
   return { text: '', media: null };
 }
 
@@ -124,7 +139,16 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
     const isSecretaryInstance = payload.instance === env.MONITOR_INSTANCE;
 
     if (isFromMe) return;
-    if (!text && !media) return; // Mensagem vazia ou tipo não suportado
+    if (!text && !media) {
+      // Log de tipo não suportado: sem isso o descarte era invisível e não havia
+      // como descobrir em produção quais mensagens de cliente estavam sendo
+      // perdidas (figurinha era uma delas antes da correção).
+      log.warn(
+        { phone: maskPhone(phone), types: Object.keys(data.message || {}) },
+        'mensagem de tipo não suportado ignorada',
+      );
+      return;
+    }
 
     log.info({
       phone: maskPhone(phone),

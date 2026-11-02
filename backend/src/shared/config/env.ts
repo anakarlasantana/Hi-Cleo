@@ -42,6 +42,17 @@ const envSchema = z.object({
    * 'block' = não envia texto livre fora da janela (produção estrita).
    */
   PROACTIVE_WINDOW_GUARD: z.enum(['warn', 'block']).default('warn'),
+  /**
+   * Monitor de conexão (cron de 5 min que marca sessão como desconectada quando a
+   * instância não existe mais na Evolution).
+   *
+   * Em produção fica ligado. Em dev/E2E precisa ficar DESLIGADO: as sessões de
+   * teste usam `instance_name = 'test-e2e'`, que não existe na Evolution por
+   * design — a cada 5 minutos o monitor marcava essa sessão como desconectada e
+   * qualquer cenário E2E que cruzasse um tick perdia a sessão no meio
+   * (`findByInstance` → null → a Cleo ignorava as mensagens seguintes).
+   */
+  CONNECTION_MONITOR_ENABLED: z.enum(['true', 'false']).default('true'),
 
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   LOG_DIR: z.string().default('./logs'),

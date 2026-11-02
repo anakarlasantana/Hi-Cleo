@@ -13,6 +13,7 @@ import {
   createTestUser,
   createWhatsappSession,
   getMessages,
+  getLeadOptOut,
   getProspectionStatus,
   getSessionStatusByUserId,
   markAsProspected,
@@ -22,6 +23,7 @@ import {
   sendMaterial,
   sendMessage,
   sendMessageAsClient,
+  sendStickerAsClient,
   setTrialExpired,
   startTrial,
   waitForResponse,
@@ -42,6 +44,8 @@ export function getMaxTurns(scenario: Scenario): number {
     case 'trial_limit_reached':
     case 'client_unknown_question':
     case 'client_multi_request':
+    case 'client_sticker':
+    case 'client_opt_out':
       return 3;
     case 'invite_flow':
     case 'configure_rules':
@@ -163,12 +167,16 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
       await createWhatsappSession(userId, ownerInstance);
       (persona as any)._ownerInstance = ownerInstance;
       (persona as any)._ownerPhone = ownerPhone;
+      (persona as any)._businessFacts =
+        'Corte masculino: R$ 40. Atende aos sábados das 9h às 17h.';
       break;
     }
 
     case 'client_outside_hours':
     case 'client_unknown_question':
-    case 'client_multi_request': {
+    case 'client_multi_request':
+    case 'client_sticker':
+    case 'client_opt_out': {
       const ownerPhone = `55489990${persona.phone.slice(-5)}`;
       await cleanupPhone(ownerPhone);
       // Fora do horário de forma DETERMINÍSTICA: janela 03:00-04:00.
@@ -186,6 +194,29 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
       await createWhatsappSession(userId, ownerInstance);
       (persona as any)._ownerInstance = ownerInstance;
       (persona as any)._ownerPhone = ownerPhone;
+
+      // Fonte de verdade para o judge distinguir "informou o configurado" de
+      // "inventou". Não vale para client_outside_hours: lá o horário é
+      // artificialmente 03:00-04:00 e citá-lo confundiria a avaliação.
+      if (persona.scenario !== 'client_outside_hours') {
+        (persona as any)._businessFacts =
+          'Corte masculino: R$ 40. Atende de segunda a sábado, das 9h às 19h.';
+      }
+
+      // Figurinha: a 1ª mensagem do cliente é um sticker (não texto).
+      if (persona.scenario === 'client_sticker') {
+        (persona as any)._firstIsSticker = true;
+      }
+
+      // Opt-out: mensagens roteirizadas. O objetivo é determinístico (pedido de
+      // parar → marca no banco → cliente volta → reativação), então não pode
+      // depender do que a persona LLM decidir escrever.
+      if (persona.scenario === 'client_opt_out') {
+        (persona as any)._scripted = [
+          'para de me mandar mensagem, por favor',
+          'oi, mudei de ideia. vocês atendem sábado?',
+        ];
+      }
       break;
     }
 
@@ -248,6 +279,8 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
     'trial_limit_reached',
     'client_unknown_question',
     'client_multi_request',
+    'client_sticker',
+    'client_opt_out',
   ].includes(persona.scenario);
   const ownerInstance = (persona as any)._ownerInstance as string | undefined;
 
@@ -267,9 +300,20 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
     const collaboratorPhone = (persona as any)._collaboratorPhone as string;
     firstMsg = `desconecta ${collaboratorPhone}`;
   }
+
+  // Mensagens roteirizadas (opt-out): o cenário precisa de texto determinístico.
+  const scripted = (persona as any)._scripted as string[] | undefined;
+  if (scripted?.[0]) firstMsg = scripted[0];
+
   const beforeSend = new Date();
-  await send(persona.phone, firstMsg);
-  turns.push({ role: 'user', content: firstMsg, timestamp: beforeSend });
+  if ((persona as any)._firstIsSticker && ownerInstance) {
+    // Figurinha: o cliente manda um sticker, não texto.
+    await sendStickerAsClient(ownerInstance, persona.phone, persona.name);
+    turns.push({ role: 'user', content: '[figurinha]', timestamp: beforeSend });
+  } else {
+    await send(persona.phone, firstMsg);
+    turns.push({ role: 'user', content: firstMsg, timestamp: beforeSend });
+  }
 
   await sleep(config.messageDelay);
   const firstResponse = await waitForResponse(persona.phone, beforeSend);
@@ -277,9 +321,16 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
     turns.push({ role: 'assistant', content: firstResponse, timestamp: new Date() });
   }
 
+  // Opt-out: o estado do banco tem de ser lido AQUI. Depois da 2ª mensagem o
+  // cliente já foi reativado e `opt_out_at` volta a ser nulo.
+  if (persona.scenario === 'client_opt_out') {
+    const estado = await getLeadOptOut(persona.phone);
+    (persona as any)._optOutAfterFirst = estado;
+  }
+
   // Loop de conversa
   for (let turn = 0; turn < maxTurns - 1; turn++) {
-    const nextMsg = await generateNextMessage(personaAi, persona, turns);
+    const nextMsg = scripted?.[turn + 1] ?? await generateNextMessage(personaAi, persona, turns);
     if (!nextMsg) break;
 
     const beforeNext = new Date();
@@ -361,6 +412,49 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
       verdict.pass = false;
     } else {
       console.log('   ✅ [CHECK] Cliente recebeu resposta para pergunta fora do escopo');
+    }
+  }
+
+  // Figurinha: cliente NÃO pode ficar no silêncio e a mensagem precisa ficar no
+  // histórico (antes da correção o webhook descartava e o lead nem existia).
+  if (persona.scenario === 'client_sticker') {
+    const primeiraResposta = turns.find((t) => t.role === 'assistant')?.content ?? '';
+    const historico = await getMessages(persona.phone, 10);
+    const figurinhaRegistrada = historico.some((m) => m.content?.includes('[figurinha]'));
+
+    if (!primeiraResposta.trim()) {
+      verdict.pass = false;
+      verdict.problemas.push('Cliente ficou no silêncio ao mandar figurinha');
+    } else if (!figurinhaRegistrada) {
+      verdict.pass = false;
+      verdict.problemas.push('Figurinha não foi registrada no histórico do lead');
+    } else {
+      console.log('   ✅ [CHECK] Figurinha respondida e registrada');
+      turns.push({ role: 'assistant', content: '[CHECK] Figurinha respondida e registrada', timestamp: new Date() });
+    }
+  }
+
+  // Opt-out: banco registrou o pedido e o retorno do cliente reativou o contato.
+  if (persona.scenario === 'client_opt_out') {
+    const estadoInicial = (persona as any)._optOutAfterFirst as
+      | { optOutAt: string | null; reason: string | null }
+      | null;
+    const estadoFinal = await getLeadOptOut(persona.phone);
+
+    const marcou = !!estadoInicial?.optOutAt;
+    const reativou = estadoFinal ? estadoFinal.optOutAt === null : false;
+
+    if (!marcou) {
+      verdict.pass = false;
+      verdict.problemas.push('Pedido de opt-out não foi registrado no lead');
+    }
+    if (!reativou) {
+      verdict.pass = false;
+      verdict.problemas.push('Cliente não foi reativado ao voltar a escrever');
+    }
+    if (marcou && reativou) {
+      console.log('   ✅ [CHECK] Opt-out registrado e reativação confirmada');
+      turns.push({ role: 'assistant', content: '[CHECK] Opt-out registrado e reativação confirmada', timestamp: new Date() });
     }
   }
 

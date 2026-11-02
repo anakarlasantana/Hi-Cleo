@@ -144,6 +144,34 @@ Landing Page → Checkout → Ativação → Onboarding (WhatsApp) → Conexão 
 - Página `/termos` sempre acessível com conteúdo completo
 - Versão atual dos termos: controlada por constante no backend
 
+### 5.1 Opt-out do cliente final (LGPD art. 18, IX — direito de oposição)
+
+O cliente do negócio (lead) é **titular dos dados**. Quando ele pede para não receber
+mais mensagens, a Cleo precisa registrar e parar.
+
+| Regra | Comportamento |
+|-------|---------------|
+| Detecção | `wantsOptOut()` — 7 padrões de **alta precisão** (“para de me mandar”, “não quero mais receber”, “me tira da lista”, “descadastra”, “cancela meu cadastro”…). **Nenhum** reage a “para”/“não” isolados: “quanto *para* fazer a escova?” passa como mensagem normal |
+| Registro | `leads.opt_out_at` + `leads.opt_out_reason` (migration `0006`) |
+| Resposta | **Uma** linha: “Combinado! Não vou mais te enviar mensagens. Se precisar, é só chamar aqui 🙏” |
+| Dono | Avisado com nome, telefone e a mensagem que originou o pedido |
+| Reativação | Se o cliente **volta a escrever**, `clearOptOut` roda e o atendimento normal continua (ele procurou o negócio de novo) |
+| Envio proativo | Qualquer rotina futura que envie mensagem ao lead **deve checar `opt_out_at`** antes |
+| Escopo | Vale para o cliente final (lead). O opt-out da prospecção pós-trial continua em `trial_attempts.prospection_status = 'not_interested'` |
+
+> **Por que importa:** cliente que pede para parar e continua recebendo tende a
+> **bloquear o número** — o que derruba a entregabilidade de todos os clientes daquele
+> dono (`docs/tecnico/whatsapp-anti-ban.md`).
+
+### 5.2 Mensagens de baixa informação (figurinha e emoji)
+
+| Entrada | Tratamento |
+|---------|-----------|
+| Figurinha (`stickerMessage`) | Registrada como `[figurinha]` no histórico e respondida sem IA: “Recebi sua figurinha 😄 Me conta em texto como posso te ajudar?” |
+| Emoji/pontuação soltos (`👍`, `...`) | Respondidos sem IA: “Não consegui entender 🤔 Me conta em texto como posso te ajudar?” (evita o modelo inventar contexto) |
+| Reação a mensagem (`reactionMessage`) | Ignorada explicitamente — não é pergunta |
+| Tipo não mapeado (localização, contato, enquete) | Descartado **com log** (`warn` com as chaves do payload) para virar débito visível |
+
 ---
 
 ## 6. Regras do Motor de Regras

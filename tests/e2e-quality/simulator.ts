@@ -166,6 +166,65 @@ export async function sendMessageAsClient(instance: string, phone: string, text:
 }
 
 /**
+ * Envia uma FIGURINHA do cliente (stickerMessage) via webhook.
+ *
+ * Antes da correção, `stickerMessage` não era mapeado em `extractMessageContent`
+ * e o webhook descartava a mensagem (`if (!text && !media) return`): o cliente
+ * ficava em silêncio, nada era salvo e, se fosse a primeira mensagem, o lead nem
+ * existia — o dono nunca sabia daquela pessoa.
+ */
+export async function sendStickerAsClient(
+  instance: string,
+  phone: string,
+  pushName = 'Cliente WhatsApp',
+): Promise<void> {
+  const msgId = `e2e-sticker-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  await axios.post(
+    `${config.baseUrl}/webhooks/evolution`,
+    {
+      instance,
+      event: 'messages.upsert',
+      data: {
+        key: {
+          remoteJid: `${phone}@s.whatsapp.net`,
+          fromMe: false,
+          id: msgId,
+        },
+        message: {
+          stickerMessage: {
+            url: 'https://mmg.whatsapp.net/e2e-sticker.webp',
+            mimetype: 'image/webp',
+            mediaKey: 'e2e-media-key',
+          },
+        },
+        messageTimestamp: Math.floor(Date.now() / 1000),
+        pushName,
+      },
+    },
+    { headers: { 'Content-Type': 'application/json' }, timeout: 10_000 },
+  );
+}
+
+/** Estado de opt-out do cliente (null quando o lead não existe). */
+export async function getLeadOptOut(
+  phone: string,
+): Promise<{ optOutAt: string | null; reason: string | null } | null> {
+  const db = getPool();
+  const result = await db.query(
+    `SELECT opt_out_at, opt_out_reason FROM leads
+     WHERE phone = $1 ORDER BY created_at DESC LIMIT 1`,
+    [phone],
+  );
+
+  if (!result.rows[0]) return null;
+  return {
+    optOutAt: result.rows[0].opt_out_at,
+    reason: result.rows[0].opt_out_reason,
+  };
+}
+
+/**
  * Simula webhook de pagamento aprovado do MercadoPago.
  * POST para /webhooks/mercadopago com payload de pagamento aprovado.
  */

@@ -91,6 +91,8 @@ Isso é possível graças ao padrão **persist-then-dispatch** implementado no `
 | `trial_limit_reached` | Limite de respostas do trial — cliente recebe aviso gracioso |
 | `client_unknown_question` | Pergunta fora do escopo — não inventa, promete retorno |
 | `client_multi_request` | Dois pedidos na mesma mensagem — responde os dois |
+| `client_sticker` | Cliente manda figurinha na 1ª mensagem — Cleo responde (não deixa no silêncio) |
+| `client_opt_out` | Cliente pede para não receber mensagens — opt-out registrado e reativado ao voltar |
 
 ### Técnicos (avaliados deterministicamente)
 

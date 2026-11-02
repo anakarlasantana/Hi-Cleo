@@ -3,10 +3,40 @@ import {
   buildHandoffNotice,
   buildHandoffReply,
   buildNewLeadNotice,
+  buildOptOutNotice,
   wantsHuman,
   withinServiceWindow,
   SERVICE_WINDOW_MS,
 } from './owner-notices.js';
+
+/**
+ * Aviso de opt-out — antes, o único opt-out era o da prospecção pós-trial: o dono
+ * nunca ficava sabendo que um cliente pediu para não receber mensagens.
+ */
+describe('buildOptOutNotice', () => {
+  it('inclui nome, telefone e prévia do pedido', () => {
+    const texto = buildOptOutNotice({
+      clientName: 'Joana Prado',
+      phone: '5548999887766',
+      message: 'para de me mandar mensagem, por favor',
+    });
+
+    expect(texto).toContain('pediu para não receber mensagens');
+    expect(texto).toContain('*Joana*');
+    expect(texto).toContain('5548999887766');
+    expect(texto).toContain('para de me mandar mensagem');
+  });
+
+  it('funciona sem nome (usa o telefone)', () => {
+    const texto = buildOptOutNotice({ phone: '5548999887766' });
+    expect(texto).toContain('*5548999887766*');
+  });
+
+  it('avisa que a Cleo parou de responder automaticamente', () => {
+    const texto = buildOptOutNotice({ phone: '5548999887766' });
+    expect(texto).toContain('Parei de responder automaticamente');
+  });
+});
 
 /**
  * Avisos ao dono — “o dono precisa sentir valor a cada interação” e

@@ -72,6 +72,25 @@ Encontrados rodando o **E2E de qualidade** novamente: `owner_command` caiu para 
 
 **Pendência encontrada (não corrigida aqui):** o dono pediu "ver a agenda" e a Cleo respondeu "Para quem devo agendar o retorno?" — não existe intent nem consulta para **listar** follow-ups pendentes (`followUpRepo` só tem `schedule`/`cancelForLead`/`getDue`/`markSent`). Correção sugerida: `listPendingByUser` no repositório + intent `list_followups` ("minha agenda", "o que tenho marcado") + case de resposta com data/hora e nome do contato.
 
+### 🟢 Lacunas do cliente final: figurinha e opt-out (2026-11-02)
+
+| # | Item | Correção |
+|---|------|----------|
+| D14 | **Cliente no silêncio absoluto** — `stickerMessage` não era mapeado em `extractMessageContent`, caía em `return { text: '', media: null }` e o webhook descartava com `if (!text && !media) return;`. Quem mandava figurinha (muito comum na 1ª mensagem) não recebia resposta, **não tinha a mensagem salva** e, se fosse o primeiro contato, **o lead nem era criado** — o dono nunca sabia daquela pessoa. Emoji solto, por outro lado, passava como texto e virava chamada de IA, com o modelo inventando contexto a partir de um "👍". Reações (`reactionMessage`) também não estavam mapeadas | `shared/utils/client-signals.ts` (puro, 13 testes): `isStickerMessage`/`isEmojiOnlyMessage` (`\p{L}\p{N}` para não classificar "não" por causa do acento)/`isLowInformationMessage`. Webhook mapeia `stickerMessage` → `[figurinha]` (salva e processa) e ignora `reactionMessage` **explicitamente**; tipo desconhecido agora é **logado** (`warn` com as chaves do payload) em vez de sumir. Processor responde figurinha (“Recebi sua figurinha 😄 Me conta em texto…”) e emoji solto (“Não consegui entender 🤔…”) **sem chamar a IA**. Cenário E2E `client_sticker` (híbrido): **1.00** |
+| D15 | **Opt-out só existia para prospecção** — o único opt-out era o `trial_attempts.prospection_status = 'not_interested'`. Um CLIENTE dizendo “para de me mandar mensagem” não tinha registro nenhum: a Cleo continuava atendendo e nada impedia envio futuro. Além do risco de LGPD (art. 18, IX — direito de oposição), cliente que pede para parar e continua recebendo tende a **bloquear o número**, derrubando a entregabilidade de todos os clientes daquele dono | Migration `0006`: `leads.opt_out_at` + `opt_out_reason` (+ índice parcial). `wantsOptOut()` com **7 padrões de alta precisão** — nenhum reage a "para"/"não" isolados, então “quanto *para* fazer a escova?” e “não sei se *para* sábado” passam como mensagem normal. Fluxo: marca o lead → responde **uma** linha → avisa o dono (`buildOptOutNotice`). **Reativação automática**: se o cliente volta a escrever, `clearOptOut` roda e o atendimento normal continua. Cenário E2E `client_opt_out` (híbrido): **0.97** |
+| D16 | **Monitor de conexão derrubava o E2E** — o cron de 5 min marcava a sessão `test-e2e` como `disconnected` (a instância não existe na Evolution por design). Cenário que cruzasse um tick perdia a sessão no meio (`findByInstance` → null) e a Cleo ignorava as mensagens seguintes — falha intermitente atribuída ao produto | Flag `CONNECTION_MONITOR_ENABLED` (default `true` = produção; `false` no `.env` de dev/E2E) + log visível no startup |
+
+**Testes:** 251 → **267** (`client-signals` +13, `owner-notices` +3 com `buildOptOutNotice`).
+
+**Evidência ponta a ponta** (backend real, sessão `test-e2e`):
+```
+historico apos figurinha → user: [figurinha] | assistant: "Recebi sua figurinha 😄 Me conta em texto como posso te ajudar?"
+apos pedido de opt-out   → { optOutAt: "2026-11-02T18:47:43Z", reason: "para de me mandar mensagem, por favor" }
+                           ultima resposta: "Combinado! Não vou mais te enviar mensagens. Se precisar, é só chamar aqui 🙏"
+apos cliente voltar      → { optOutAt: null, reason: null }        ← reativação
+apos emoji solto         → "Não consegui entender 🤔 Me conta em texto como posso te ajudar?"
+```
+
 ### 🟢 Rápidos (integração front↔back)
 - ~~#1 Código de ativação dinâmico~~ ✅
 - ~~#2 Checkbox LGPD na página de conexão~~ ✅
@@ -203,6 +222,31 @@ docker compose -f docker-compose.prod.yml ps
 ---
 
 ## 🟡 PENDENTES — MELHORIAS PÓS-LANÇAMENTO
+
+### 53. Lacunas do lado do CLIENTE (P1 — validar antes de abrir o beta)
+
+A validação de qualidade (17 cenários conversacionais) mostrou que **9 dos cenários
+testavam o DONO e só 2 o CLIENTE final** — justamente o lado que gera satisfação e
+receita. Os dois buracos mais graves já foram corrigidos (`client_sticker` e
+`client_opt_out`, ver D14); o que segue são as lacunas restantes, priorizadas.
+
+| # | Lacuna | Hoje | Impacto | Esforço |
+|---|--------|------|---------|---------|
+| 53.1 | **Resumo diário ao dono** (“atendi 12, 3 novos, 2 aguardando”) | não existe; o dono só vê avisos pontuais | é a “prova contínua de que a Cleo trabalha” prometida em `personalidade-cleo.md`; sem isso o valor percebido depende de o dono abrir o WhatsApp | 4 h |
+| 53.2 | **Alerta de SLA (cliente esperando agora)** | `follow-up.cron` só avisa com **48 h** de atraso | lead quente esfria muito antes do aviso; o alerta chega quando já perdeu a venda | 3 h |
+| 53.3 | **CSAT pós-atendimento** | não existe | sem sinal objetivo de satisfação não há como medir o beta (nem provar ROI ao dono) | 5 h |
+| 53.4 | **Exclusão de dados do LEAD** (LGPD art. 18, VI) | `cancellation.repository` apaga tudo do **user**; não há como apagar **um cliente** | titular pode pedir exclusão dos dados dele; hoje a única saída é apagar a conta inteira do dono | 4 h |
+| 53.5 | **Tipos de mensagem não mapeados** | figurinha resolvida; `locationMessage`, `contactMessage` e `pollCreation` ainda caem no descarte (agora **com log**) | “onde vocês ficam?” com localização anexada não é respondido; salão/barbearia perde a pergunta | 3 h |
+| 53.6 | **Idempotência de webhook duplicado** | não há dedupe por `messageKey` | a Evolution retenta (10× no próprio log) e a Cleo pode responder **duas vezes** a mesma mensagem | 3 h |
+| 53.7 | **Templates HSM para mensagens proativas** | guard `PROACTIVE_WINDOW_GUARD` (warn/block) impede o envio fora da janela de 24 h, mas **não envia template** | trial acabando, prospecção e follow-up ficam **mudos** para quem não falou nas últimas 24 h; é o caminho oficial da Meta | 8 h |
+| 53.8 | **“Assumir conversa” no painel** | handoff avisa o dono, mas a Cleo continua respondendo ao cliente | se o dono assume, os dois respondem e o cliente recebe mensagens conflitantes | 4 h |
+| 53.9 | **Nurture de cliente frio** | não existe (só follow-up avisa o dono) | receita perdida em base já existente; **depende de 53.7** (template) e de respeitar `leads.opt_out_at` | 6 h |
+| 53.10 | **Cobertura E2E desbalanceada** | 11 dos 17 cenários olham o dono; áudio não tem cenário; asserções determinísticas existem em 6 fluxos | defeito no caminho do cliente só aparece em produção | 6 h |
+
+**Ordem sugerida:** 53.1 → 53.3 → 53.2 → 53.6 → 53.5 → 53.4 → 53.7 → 53.8 → 53.9 → 53.10.
+
+> Nota: 53.7 é o único item com **risco de plataforma** (API oficial da Meta rejeita
+> texto livre fora da janela de 24 h). Os demais são valor/experiência.
 
 ### 34. Otimização de Tokens (beta → produção)
 

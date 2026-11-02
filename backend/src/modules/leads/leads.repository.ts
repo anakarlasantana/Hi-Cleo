@@ -19,6 +19,8 @@ export class DrizzleLeadRepository implements LeadRepository {
       phone: row.phone,
       status: (row.status ?? 'new') as LeadStatus,
       last_interaction: row.lastInteraction?.toISOString(),
+      opt_out_at: row.optOutAt?.toISOString() ?? null,
+      opt_out_reason: row.optOutReason ?? null,
       created_at: row.createdAt?.toISOString() ?? '',
     };
   }
@@ -107,6 +109,20 @@ export class DrizzleLeadRepository implements LeadRepository {
       .where(eq(leads.id, leadId));
 
     if (result.rowCount === 0) throw new Error('Erro ao atualizar interação');
+  }
+
+  async markOptOut(leadId: string, reason?: string | null): Promise<void> {
+    await db
+      .update(leads)
+      .set({ optOutAt: new Date(), optOutReason: reason ?? null })
+      .where(eq(leads.id, leadId));
+  }
+
+  async clearOptOut(leadId: string): Promise<void> {
+    await db
+      .update(leads)
+      .set({ optOutAt: null, optOutReason: null })
+      .where(eq(leads.id, leadId));
   }
 
   async searchByName(userId: string, name: string): Promise<Lead[]> {

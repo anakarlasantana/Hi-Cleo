@@ -18,8 +18,17 @@ import {
   buildHandoffNotice,
   buildHandoffReply,
   buildNewLeadNotice,
+  buildOptOutNotice,
   wantsHuman,
 } from '../../shared/utils/owner-notices.js';
+import {
+  buildLowInformationReply,
+  buildOptOutReply,
+  buildStickerReply,
+  isLowInformationMessage,
+  isStickerMessage,
+  wantsOptOut,
+} from '../../shared/utils/client-signals.js';
 
 export type MessageProcessor = MessageProcessorPort;
 
@@ -600,6 +609,31 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
     }
   }
 
+  // === OPT-OUT do cliente (LGPD art. 18, IX — direito de oposição) ==========
+  // Antes disto o único opt-out era o da prospecção pós-trial: um cliente dizendo
+  // "para de me mandar mensagem" não tinha registro nenhum e a Cleo continuava
+  // respondendo. Cliente que pede para parar e continua recebendo tende a
+  // BLOQUEAR o número — o que derruba a entregabilidade de todos os clientes
+  // daquele dono.
+  if (wantsOptOut(messageText)) {
+    await leadService.markOptOut(lead.id, messageText);
+
+    const reply = buildOptOutReply();
+    await messageRepo.save(lead.id, reply, 'outbound');
+    await safeSend(messaging, { instance, to: phone, text: reply }, container.logger);
+
+    await notifyOwner(container, user, buildOptOutNotice({ clientName: pushName, phone, message: messageText }));
+    container.logger.info({ lead: lead.id.slice(0, 8) }, 'cliente pediu opt-out');
+    return;
+  }
+
+  // Reativação: o cliente voltou a escrever depois de pedir opt-out. Ele procurou
+  // o negócio de novo, então volta a consentir (e o fluxo normal continua).
+  if (lead.opt_out_at) {
+    await leadService.clearOptOut(lead.id);
+    container.logger.info({ lead: lead.id.slice(0, 8) }, 'cliente reativado após opt-out');
+  }
+
   // Pedido explícito de falar com uma pessoa: a Cleo não tenta resolver sozinha.
   // Prioridade sobre o aviso de “cliente novo” para o dono não receber 2 mensagens
   // do mesmo evento (o aviso de handoff já traz nome, telefone e prévia).
@@ -683,6 +717,17 @@ async function handleUserWhatsAppMessage(container: any, instance: string, phone
       await safeSend(messaging, { instance, to: phone, text: customRule }, container.logger);
       return;
     }
+  }
+
+  // Figurinha / emoji solto: não existe intenção para interpretar. Responde algo
+  // leve SEM chamar a IA — economiza token e evita o modelo inventar contexto a
+  // partir de um "👍". Antes da correção esses casos ficavam no silêncio (o
+  // webhook descartava a mensagem).
+  if (isLowInformationMessage(messageText)) {
+    const reply = isStickerMessage(messageText) ? buildStickerReply() : buildLowInformationReply();
+    await messageRepo.save(lead.id, reply, 'outbound');
+    await safeSend(messaging, { instance, to: phone, text: reply }, container.logger);
+    return;
   }
 
   // Classificador local — saudações simples usam template direto (sem IA)

@@ -103,14 +103,21 @@ startCancellationCron();
 startSubscriptionCron();
 startOnboardingTimeoutCron();
 startTrialProspectionCron();
-startConnectionMonitor({
-  messaging: container.messaging,
-  logger: container.logger,
-  instanceName: env.MONITOR_INSTANCE,
-  adminPhone: env.MONITOR_ADMIN_PHONE,
-  sessionRepo: container.sessionRepo,
-  userRepo: container.userRepo,
-});
+// Monitor de conexão: em dev/E2E fica desligado. As sessões de teste usam a
+// instância `test-e2e`, que não existe na Evolution por design — o cron de 5 min
+// marcava essa sessão como desconectada e derrubava o cenário E2E em andamento.
+if (env.CONNECTION_MONITOR_ENABLED === 'true') {
+  startConnectionMonitor({
+    messaging: container.messaging,
+    logger: container.logger,
+    instanceName: env.MONITOR_INSTANCE,
+    adminPhone: env.MONITOR_ADMIN_PHONE,
+    sessionRepo: container.sessionRepo,
+    userRepo: container.userRepo,
+  });
+} else {
+  console.log('[Cron] Connection monitor DESLIGADO (CONNECTION_MONITOR_ENABLED=false)');
+}
 
 // Inicializar fila e worker
 (async () => {

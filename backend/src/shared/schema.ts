@@ -86,6 +86,9 @@ export const leads = pgTable('leads', {
   phone: text('phone').notNull(),
   status: text('status').default('new'),
   lastInteraction: timestamp('last_interaction', { withTimezone: true }),
+  // Opt-out do cliente final (LGPD art. 18, IX). Nulo = cliente normal.
+  optOutAt: timestamp('opt_out_at', { withTimezone: true }),
+  optOutReason: text('opt_out_reason'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 }, (table) => [
   index('idx_leads_user_id').on(table.userId),

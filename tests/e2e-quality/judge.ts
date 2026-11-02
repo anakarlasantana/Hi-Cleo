@@ -116,6 +116,16 @@ EXPECTATIVAS POR CENÁRIO (conversacionais):
   acolher, dizer que vai confirmar com o responsável. Inventar preço/serviço = falha grave.
 - client_multi_request: O cliente faz DOIS pedidos na mesma mensagem (ex.: preço E horário de sábado). A Cleo 
   precisa responder os DOIS na mesma resposta. Responder só um = completude baixa.
+- client_sticker: O cliente manda uma FIGURINHA como PRIMEIRA mensagem (o conteúdo chega como "[figurinha]"). 
+  A Cleo precisa responder algo curto e acolhedor convidando a pessoa a escrever em texto — o erro grave aqui é 
+  NÃO RESPONDER (cliente no silêncio). Ela NÃO deve fingir que entendeu um pedido a partir da figurinha. 
+  ATENÇÃO: se depois da figurinha o cliente faz uma pergunta REAL (ex.: "quanto tá o corte?") e a Cleo responde 
+  com o preço/horário que o dono configurou, isso está CORRETO — não é inventar. Só penalize factualidade se ela 
+  disser algo que não está nos dados configurados do dono.
+- client_opt_out: O cliente pede para não receber mais mensagens ("para de me mandar mensagem"). A Cleo precisa 
+  confirmar em UMA linha que não vai mais enviar e deixar a porta aberta ("se precisar, é só chamar"). Depois 
+  disso, quando o cliente volta a escrever, a Cleo volta a atender normalmente (reativação). Erro grave: 
+  insistir em vender/atender depois do pedido, ou prometer algo que não pode cumprir.
 - edge_case: O usuário manda mensagens vagas, gírias, mudanças de assunto. A Cleo deve ENGAGAR naturalmente com o conteúdo (sem repetir o mesmo texto), manter tom leve e, quando fizer sentido, oferecer algo CONCRETO que ela pode fazer (ex: "quer ver quem tá sem resposta?"). Repetir a mesma piada/oferta em respostas seguidas é um problema; não exigir oferta em TODAS as respostas também é importante. Se ela engajou e se mostrou útil na conversa, foi bem-sucedida — não exija "avanço de fluxo de onboarding" aqui.
 
 Retorne APENAS JSON válido (sem markdown):
@@ -264,6 +274,15 @@ export async function evaluateConversation(
       .replace('{scenario}', persona.scenario)
       .replace('{persona_description}', persona.description)
       .replace('{transcript}', transcript);
+  }
+
+  // Fonte de verdade do negócio: sem isto o judge não distingue "informou o preço
+  // configurado" de "inventou o preço". Foi exatamente o falso positivo que
+  // reprovou `client_sticker` com factualidade 0.00 mesmo a Cleo dizendo o
+  // R$ 40 que estava no onboarding do dono.
+  const businessFacts = (persona as any)._businessFacts as string | undefined;
+  if (businessFacts) {
+    prompt += `\n\nDADOS CONFIGURADOS PELO DONO (fonte de verdade — informar exatamente isto NÃO é inventar):\n${businessFacts}`;
   }
 
   let response = await ai.generate(

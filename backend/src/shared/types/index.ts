@@ -86,6 +86,9 @@ export interface Lead {
   phone: string;
   status: LeadStatus;
   last_interaction?: string;
+  /** Opt-out do cliente final (LGPD art. 18, IX). Nulo = cliente normal. */
+  opt_out_at?: string | null;
+  opt_out_reason?: string | null;
   created_at: string;
 }
 
@@ -165,6 +168,8 @@ export interface WebhookPayload {
       videoMessage?: { url: string; mimetype: string; caption?: string; seconds: number; mediaKey?: string };
       documentMessage?: { url: string; mimetype: string; title?: string; fileName?: string; mediaKey?: string };
       stickerMessage?: { url: string; mimetype: string; mediaKey?: string };
+      /** Reação a uma mensagem (👍). Não pede resposta — deve ser ignorada. */
+      reactionMessage?: { key: { id: string }; text: string };
       contactMessage?: { displayName: string; vcard: string };
       locationMessage?: { degreesLatitude: number; degreesLongitude: number };
     };

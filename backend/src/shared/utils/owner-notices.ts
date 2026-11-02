@@ -99,9 +99,27 @@ export function buildHandoffNotice(input: { clientName?: string; phone: string; 
     .join('\n');
 }
 
+/** Aviso ao dono de que o cliente pediu para não receber mais mensagens. */
+export function buildOptOutNotice(input: { clientName?: string; phone: string; message?: string }): string {
+  const name = firstName(input.clientName);
+  const who = name ? `*${name}*` : `*${input.phone}*`;
+  const preview = shorten(input.message || '');
+
+  return [
+    '🚫 *Cliente pediu para não receber mensagens*',
+    '',
+    `👤 ${who}`,
+    `📱 ${input.phone}`,
+    preview ? `💬 "${preview}"` : '',
+    '',
+    'Parei de responder automaticamente para ele. Se precisar falar, faça manualmente.',
+  ]
+    .filter((line) => line !== '')
+    .join('\n');
+}
+
 /** Janela de atendimento do WhatsApp: 24h desde a última mensagem do usuário. */
 export const SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
-
 /**
  * A mensagem proativa ainda está dentro da janela de 24h?
  *

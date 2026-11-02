@@ -30,6 +30,16 @@ export class LeadService {
     return this.leadRepo.updateLastInteraction(leadId);
   }
 
+  /** Marca opt-out (LGPD art. 18, IX). */
+  async markOptOut(leadId: string, reason?: string | null): Promise<void> {
+    return this.leadRepo.markOptOut(leadId, reason);
+  }
+
+  /** Remove a marca de opt-out (cliente voltou a escrever). */
+  async clearOptOut(leadId: string): Promise<void> {
+    return this.leadRepo.clearOptOut(leadId);
+  }
+
   async searchByName(userId: string, name: string): Promise<Lead[]> {
     return this.leadRepo.searchByName(userId, name);
   }

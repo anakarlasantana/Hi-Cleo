@@ -47,7 +47,9 @@ export type Scenario =
   | 'client_outside_hours'
   | 'trial_limit_reached'
   | 'client_unknown_question'
-  | 'client_multi_request';
+  | 'client_multi_request'
+  | 'client_sticker'
+  | 'client_opt_out';
 
 /** Tipo de avaliação para cada cenário */
 export type EvaluationType = 'llm_judge' | 'deterministic' | 'hybrid';
@@ -179,6 +181,18 @@ export const scenarios: ScenarioMeta[] = [
     description: 'Cliente faz dois pedidos na mesma mensagem — Cleo responde os dois',
     requiresSpecialSetup: true,
     evaluationType: 'llm_judge',
+  },
+  {
+    name: 'client_sticker',
+    description: 'Cliente manda figurinha como 1ª mensagem — Cleo responde (não deixa no silêncio)',
+    requiresSpecialSetup: true,
+    evaluationType: 'hybrid',
+  },
+  {
+    name: 'client_opt_out',
+    description: 'Cliente pede para não receber mais mensagens — opt-out registrado e reativação ao voltar',
+    requiresSpecialSetup: true,
+    evaluationType: 'hybrid',
   },
   {
     name: 'disconnect_collaborator',

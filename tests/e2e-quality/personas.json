@@ -73,5 +73,15 @@
     "name": "Rodrigo Barros",
     "scenario": "client_multi_request",
     "description": "Cliente objetivo: pergunta o preço do corte E se atende no sábado na mesma mensagem."
+  },
+  {
+    "name": "Tiago Nunes",
+    "scenario": "client_sticker",
+    "description": "Cliente jovem que manda uma figurinha como primeira mensagem e, em seguida, pergunta o preço do corte."
+  },
+  {
+    "name": "Larissa Prado",
+    "scenario": "client_opt_out",
+    "description": "Cliente que pede para não receber mais mensagens e depois volta a escrever mudando de ideia."
   }
 ]
