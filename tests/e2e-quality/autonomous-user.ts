@@ -149,7 +149,7 @@ function getScenarioInstructions(scenario: Scenario): string {
     case 'client_message':
       return 'Você é cliente. Continue perguntando sobre o serviço/produto ou agradeça e encerre.';
     case 'owner_command':
-      return 'Você é o dono. Peça mais detalhes, faça outro comando, ou encerre quando obtiver o que precisava.';
+      return 'Você é o dono. Se a Cleo já respondeu o que você pediu, NÃO repita a pergunta: comente o resultado (ex: "boa, valeu") ou peça algo novo, e encerre com [FIM].';
     case 'edge_case':
       return 'Continue sendo imprevisível — mude de assunto, mande msgs curtas, teste limites.';
     case 'trial_flow':
@@ -233,8 +233,151 @@ function getFallbackFirstMessage(scenario: Scenario): string {
 }
 
 /**
+ * Cenários em que a 1ª mensagem é um PEDIDO do dono. Neles, perguntar "você
+ * quer…?" à Cleo é alucinação do modelo pequeno (vira um comando que o dono
+ * nunca deu) — o E2E já mandou "/talvez você quer ver o status…".
+ */
+const FIRST_MESSAGE_MUST_BE_REQUEST: Scenario[] = [
+  'owner_command', 'configure_rules', 'invite_flow', 'material_flow',
+  'disconnect_collaborator', 'prospection_response',
+];
+
+/** Normaliza texto para comparar falas (sem acento, pontuação ou emoji). */
+function normalizeForComparison(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Limpa o que modelo pequeno vaza na fala do usuário simulado: thinking tags,
+ * prefixo de papel, aspas em volta e comentário meta depois da mensagem
+ * ("Ah, já fiz a análise…"). Comando "/algo" não é removido aqui — ele é
+ * rejeitado em `rejectReason` para o modelo ser corrigido, e não mascarado.
+ */
+export function cleanPersonaMessage(raw: string): string {
+  const withoutTags = raw
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    .replace(/^(Usuário|Usuária|Você|User|Cleo):\s*/i, '')
+    .trim();
+
+  const lines = withoutTags.split('\n').map((line) => line.trim()).filter(Boolean);
+  // Mensagem de WhatsApp é curta: se a 1ª linha já é uma fala completa (4+
+  // palavras), o resto é raciocínio do modelo e não faria parte da mensagem.
+  const singleMessage = lines.length > 1 && lines[0].split(/\s+/).length >= 4
+    ? lines[0]
+    : withoutTags;
+
+  return singleMessage
+    .replace(/^["'“”](.*)["'“”]$/s, '$1')
+    .trim();
+}
+
+/** Trecho de fala da Cleo considerado na detecção de eco. */
+const ECHO_WINDOW = 40;
+
+/** A persona repetiu/ecou a fala da Cleo em vez de falar como usuário. */
+function isEchoOfCleo(message: string, lastCleoMessage?: string): boolean {
+  if (!lastCleoMessage) return false;
+  const msg = normalizeForComparison(message);
+  const cleo = normalizeForComparison(lastCleoMessage);
+  if (!msg || !cleo) return false;
+  return msg.includes(cleo.slice(0, ECHO_WINDOW)) || cleo.includes(msg);
+}
+
+/** A persona pergunta à Cleo o que ELA quer/precisa (inversão de papéis). */
+const ASKS_THE_BOT = /\bvoc[eê]s?\s+(quer|querem|pode|podem|consegue|prefere|gostaria|vai|sabe)\b/i;
+
+/** A persona falou como a Cleo (assistente), não como usuário. */
+const ASSISTANT_VOICE = /\b(estou aqui para|posso (te )?ajudar|vou te ajudar|conte comigo|como posso ajudar|em que posso ajudar|quer que eu)\b/i;
+
+/** Vazamento de raciocínio/meta-fala do modelo (não é mensagem de WhatsApp). */
+const META_REASONING = /\b(an[aá]lise|analisando|vou responder|minha resposta|resposta da gente|como assistente|sou um (modelo|assistente)|usu[aá]rio simulado|j[aá] fiz|j[aá] vi|fazendo uma|aguarde)\b/i;
+
+/** Similaridade (Jaccard) entre tokens significativos de duas falas. */
+function similarity(a: string, b: string): { score: number; shared: number } {
+  const tokens = (text: string) => new Set(normalizeForComparison(text).split(' ').filter((t) => t.length > 3));
+  const ta = tokens(a);
+  const tb = tokens(b);
+  if (ta.size === 0 || tb.size === 0) return { score: 0, shared: 0 };
+
+  let shared = 0;
+  for (const token of ta) if (tb.has(token)) shared++;
+
+  return { score: shared / (ta.size + tb.size - shared), shared };
+}
+
+interface PersonaMessageContext {
+  /** Todas as falas anteriores do usuário simulado. */
+  previousUserMessages?: string[];
+  lastCleoMessage?: string;
+  /** Só para a 1ª mensagem de cenários que exigem um pedido do dono. */
+  forbidAskingBot?: boolean;
+}
+
+/**
+ * Motivo pelo qual a mensagem do usuário simulado não serve (ou null se serve).
+ * O motivo também alimenta o prompt de retry — repetir o mesmo prompt devolvia
+ * o mesmo eco 3× com modelos pequenos e derrubava a conversa em 2 turnos.
+ */
+export function rejectReason(message: string, ctx: PersonaMessageContext = {}): string | null {
+  if (!message) return 'retornou mensagem vazia';
+  if (message.length > 240) return 'gerou uma mensagem longa demais para WhatsApp';
+
+  const normalized = normalizeForComparison(message);
+  const previous = ctx.previousUserMessages ?? [];
+
+  // Comando "/algo" é coisa de bot: quem escreve no WhatsApp usa linguagem
+  // natural (o modelo pequeno inventava "/troca_de_agenda" e "/talvez você quer…").
+  if (message.startsWith('/')) {
+    return 'mandou um comando "/algo" — usuário de WhatsApp escreve em linguagem natural';
+  }
+
+  // Repetir QUALQUER fala anterior já invalida: a conversa vira loop (o modelo
+  // alternava duas variações da mesma pergunta e a Cleo respondia igual 5×).
+  if (previous.some((prev) => normalizeForComparison(prev) === normalized)) {
+    return 'repetiu uma mensagem que o usuário já mandou';
+  }
+
+  const lastUserMessage = previous.at(-1);
+  if (lastUserMessage) {
+    const { score, shared } = similarity(message, lastUserMessage);
+    if (score >= 0.65 && shared >= 4) {
+      return 'repetiu a mesma pergunta com outras palavras';
+    }
+  }
+
+  if (isEchoOfCleo(message, ctx.lastCleoMessage)) {
+    return 'ecoou a fala da Cleo';
+  }
+  if (META_REASONING.test(message)) {
+    return 'vazou raciocínio/comentário meta em vez de uma mensagem de WhatsApp';
+  }
+  if (ASSISTANT_VOICE.test(message)) {
+    return 'falou como a Cleo (assistente) em vez de falar como usuário';
+  }
+  if (ctx.forbidAskingBot && ASKS_THE_BOT.test(message)) {
+    return 'perguntou o que a Cleo quer — quem pede é o usuário';
+  }
+
+  return null;
+}
+
+const RETRY_FEEDBACK = (rejected: string, reason: string): string =>
+  `\n\nSUA RESPOSTA ANTERIOR FOI REJEITADA: "${rejected.slice(0, 120)}"\n` +
+  `MOTIVO: ${reason}.\n` +
+  'Gere uma mensagem DIFERENTE, escrita pelo USUÁRIO (nunca pela Cleo), ' +
+  'sem "/" no início e sem perguntar o que a Cleo quer. ' +
+  'Se você já conseguiu o que queria, responda apenas [FIM].';
+
+/**
  * Gera a PRIMEIRA mensagem do usuário, com retentativa caso o LLM retorne vazio
- * (qwen3:1.7b local frequentemente devolve só thinking-tag → string vazia).
+ * (qwen3:1.7b local frequentemente devolve só thinking-tag → string vazia) ou
+ * uma fala inválida (eco da Cleo, comando "/algo", pergunta ao bot).
  * Se todas as tentativas falharem, usa uma mensagem de fallback do cenário —
  * um teste nunca deve morrer antes de começar por causa do simulador.
  */
@@ -250,19 +393,27 @@ export async function generateFirstMessage(
 
   const instructions = getFirstMessageInstructions(persona.scenario);
 
-  const prompt = FIRST_MESSAGE_PROMPT
+  const basePrompt = FIRST_MESSAGE_PROMPT
     .replace('{persona_description}', persona.description)
     .replace('{scenario}', persona.scenario)
     .replace('{first_message_instructions}', instructions);
 
+  const forbidAskingBot = FIRST_MESSAGE_MUST_BE_REQUEST.includes(persona.scenario);
+
+  let feedback = '';
+
   for (let attempt = 0; attempt < 3; attempt++) {
-    const response = await ai.generate('Gere apenas texto puro, sem aspas.', prompt);
-    const cleaned = response
-      .replace(/<think>[\s\S]*?<\/think>/g, '')
-      .replace(/^(Usuário|Você|User):\s*/i, '')
-      .trim();
-    if (cleaned) return cleaned;
-    console.warn(`   ⚠️  Persona LLM retornou mensagem vazia (tentativa ${attempt + 1}/3)`);
+    const response = await ai.generate(
+      'Gere apenas texto puro, sem aspas.',
+      feedback ? `${basePrompt}${feedback}` : basePrompt,
+    );
+    const cleaned = cleanPersonaMessage(response);
+    const reason = rejectReason(cleaned, { forbidAskingBot });
+
+    if (!reason) return cleaned;
+
+    console.warn(`   ⚠️  Persona LLM ${reason} (tentativa ${attempt + 1}/3) — regenerando`);
+    feedback = RETRY_FEEDBACK(response.trim(), reason);
   }
 
   const fallback = getFallbackFirstMessage(persona.scenario);
@@ -288,43 +439,34 @@ export async function generateNextMessage(
     .replace('{scenario_instructions}', scenarioInstructions)
     .replace('{history}', history);
 
-  const lastUserMessage = [...turns].reverse().find(t => t.role === 'user')?.content.trim();
+  const previousUserMessages = turns
+    .filter(t => t.role === 'user')
+    .map(t => t.content.trim());
   // Última mensagem da Cleo — detecta "eco" (modelo pequeno repetindo a fala da
   // Cleo como se fosse do usuário, ex: responder a pergunta com a própria pergunta)
   const lastCleoMessage = [...turns].reverse().find(t => t.role !== 'user')?.content.trim();
 
-  const isEcho = (msg: string): boolean => {
-    if (!lastCleoMessage) return false;
-    const msgNorm = msg.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, '').trim();
-    const cleoNorm = lastCleoMessage.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, '').trim();
-    if (!msgNorm || !cleoNorm) return false;
-    // Eco = contém trecho longo (>25 chars) da fala da Cleo
-    return msgNorm.includes(cleoNorm.slice(0, 40)) || cleoNorm.includes(msgNorm);
-  };
-
   // qwen3 local às vezes devolve só thinking-tag → string vazia; retenta antes
-  // de encerrar a conversa prematuramente.
+  // de encerrar a conversa prematuramente. O retry leva o MOTIVO da rejeição:
+  // reenviar o mesmo prompt devolvia o mesmo eco 3× e matava a conversa.
+  let feedback = '';
+
   for (let attempt = 0; attempt < 3; attempt++) {
-    const response = await ai.generate('Gere apenas texto puro, sem aspas nem prefixos.', prompt);
+    const response = await ai.generate(
+      'Gere apenas texto puro, sem aspas nem prefixos.',
+      feedback ? `${prompt}${feedback}` : prompt,
+    );
 
     // Se a LLM decidiu que a conversa acabou
     if (response.includes('[FIM]')) return null;
 
-    // Limpa thinking tags, prefixos indesejados e comandos "/" (alucinação comum
-    // de modelos pequenos — usuários reais de WhatsApp não mandam "/comandos")
-    const cleaned = response
-      .replace(/<think>[\s\S]*?<\/think>/g, '')
-      .replace(/^(Usuário|Você|User):\s*/i, '')
-      .replace(/^\/+/, '')
-      .trim();
+    const cleaned = cleanPersonaMessage(response);
+    const reason = rejectReason(cleaned, { previousUserMessages, lastCleoMessage });
 
-    if (cleaned && cleaned !== lastUserMessage && !isEcho(cleaned)) return cleaned;
-    if (cleaned === lastUserMessage || isEcho(cleaned)) {
-      const why = cleaned === lastUserMessage ? 'repetiu a mensagem anterior' : 'ecoou a fala da Cleo';
-      console.warn(`   ⚠️  Persona LLM ${why} (tentativa ${attempt + 1}/3) — regenerando`);
-      continue;
-    }
-    console.warn(`   ⚠️  Persona LLM retornou resposta vazia (tentativa ${attempt + 1}/3)`);
+    if (!reason) return cleaned;
+
+    console.warn(`   ⚠️  Persona LLM ${reason} (tentativa ${attempt + 1}/3) — regenerando`);
+    feedback = RETRY_FEEDBACK(response.trim(), reason);
   }
 
   // 3 tentativas esgotadas (vazia ou repetida) — encerra a conversa em vez de

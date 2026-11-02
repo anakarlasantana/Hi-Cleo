@@ -14,6 +14,7 @@ import {
   createWhatsappSession,
   getSessionStatusByUserId,
   markAsProspected,
+  seedClientLeads,
   sendMaterial,
   sendMessage,
   sendMessageAsClient,
@@ -78,7 +79,7 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
 
     case 'invite_flow': {
       await createTestUser(persona.phone, persona.name, {
-        plan: 'basic',
+        plan: 'solo',
         subscriptionStatus: 'active',
         onboardingComplete: true,
       });
@@ -96,7 +97,7 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
 
     case 'material_flow': {
       await createTestUser(persona.phone, persona.name, {
-        plan: 'basic',
+        plan: 'solo',
         subscriptionStatus: 'active',
         onboardingComplete: true,
       });
@@ -107,7 +108,7 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
 
     case 'local_classifier': {
       await createTestUser(persona.phone, persona.name, {
-        plan: 'basic',
+        plan: 'solo',
         subscriptionStatus: 'active',
         onboardingComplete: true,
       });
@@ -116,7 +117,7 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
 
     case 'configure_rules': {
       await createTestUser(persona.phone, persona.name, {
-        plan: 'basic',
+        plan: 'solo',
         subscriptionStatus: 'active',
         onboardingComplete: true,
       });
@@ -127,7 +128,7 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
       const ownerPhone = `55489990${persona.phone.slice(-5)}`;
       await cleanupPhone(ownerPhone);
       const userId = await createTestUser(ownerPhone, 'Dono Teste', {
-        plan: 'basic',
+        plan: 'solo',
         subscriptionStatus: 'active',
         onboardingComplete: true,
         // Preço e horário de sábado configurados — a persona de cliente pergunta
@@ -158,11 +159,16 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
 
     case 'owner_command':
     case 'edge_case': {
-      await createTestUser(persona.phone, persona.name, {
-        plan: 'basic',
+      const ownerUserId = await createTestUser(persona.phone, persona.name, {
+        plan: 'solo',
         subscriptionStatus: 'active',
         onboardingComplete: true,
       });
+      // O dono precisa de clientes de verdade para o cenário testar as listas
+      // (senão a única "lead" é o próprio dono e a resposta não diz nada).
+      if (persona.scenario === 'owner_command') {
+        await seedClientLeads(ownerUserId);
+      }
       break;
     }
   }

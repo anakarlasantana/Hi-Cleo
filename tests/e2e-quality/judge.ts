@@ -81,6 +81,15 @@ CONTEXTO DA CONVERSA:
 TRANSCRIÇÃO:
 {transcript}
 
+FIDELIDADE À TRANSCRIÇÃO (obrigatório):
+- A transcrição é a ÚNICA fonte de verdade. Não invente falas, trechos nem fatos.
+- Se for citar algo, copie LITERALMENTE da transcrição. Se não conseguir copiar, descreva sem aspas.
+- A "Descrição" acima é o contexto de quem é a persona — NÃO é uma lista de pedidos.
+  Avalie só o que a persona REALMENTE pediu na transcrição; não penalize a Cleo por
+  assuntos que o usuário nunca mencionou.
+- Se a transcrição terminar com uma fala da Cleo, o usuário simulado encerrou a conversa:
+  avalie o que foi pedido, sem cobrar continuidade.
+
 AVALIE em 5 dimensões (0.0 a 1.0):
 
 1. **relevancia** (0-1): As respostas da Cleo fazem sentido no contexto? Respondem ao que foi perguntado?
@@ -99,7 +108,7 @@ CRITÉRIOS DE FALHA GRAVE (score 0 na dimensão):
 EXPECTATIVAS POR CENÁRIO (conversacionais):
 - client_message: A Cleo atende um CLIENTE do negócio. Se o negócio tem preços/horários configurados (como "Corte R$ 35" ou "atende sábado 9h-17h"), ela PODE e DEVE informar esses valores — isso não é inventar, é usar o contexto do negócio. Se a informação não existir, acolher, anotar e prometer retorno do dono é o comportamento CORRETO (não penalize factualidade, nem completude abaixo de 0.7 se ela tratou todos os tópicos da mensagem).
 - owner_command: A Cleo lista apenas os leads REAIS do banco. Se existe só 1 lead, listar só esse está certo. A Cleo não consegue saber se "material chegou" no WhatsApp do cliente — dizer que não pode confirmar o recebimento é honesto e correto. Avalie se ela executou os comandos de listagem/follow-up pedidos.
-- edge_case: O usuário manda mensagens vagas, gírias, mudanças de assunto. A Cleo deve ENGAGAR naturalmente com o conteúdo (sem repetir o mesmo texto), manter tom leve e oferecer ajuda com clientes/agenda. Se ela fez isso em todas as respostas, a conversa foi bem-sucedida — não exija "avanço de fluxo de onboarding" aqui.
+- edge_case: O usuário manda mensagens vagas, gírias, mudanças de assunto. A Cleo deve ENGAGAR naturalmente com o conteúdo (sem repetir o mesmo texto), manter tom leve e, quando fizer sentido, oferecer algo CONCRETO que ela pode fazer (ex: "quer ver quem tá sem resposta?"). Repetir a mesma piada/oferta em respostas seguidas é um problema; não exigir oferta em TODAS as respostas também é importante. Se ela engajou e se mostrou útil na conversa, foi bem-sucedida — não exija "avanço de fluxo de onboarding" aqui.
 
 Retorne APENAS JSON válido (sem markdown):
 {
@@ -135,6 +144,15 @@ CENÁRIO ESPECÍFICO E O QUE DEVE ACONTECER:
 
 TRANSCRIÇÃO:
 {transcript}
+
+FIDELIDADE À TRANSCRIÇÃO (obrigatório):
+- A transcrição é a ÚNICA fonte de verdade. Não invente falas, trechos nem fatos.
+- Se for citar algo, copie LITERALMENTE da transcrição. Se não conseguir copiar, descreva sem aspas.
+- A "Descrição" acima é o contexto de quem é a persona — NÃO é uma lista de pedidos.
+  Avalie só o que a persona REALMENTE pediu na transcrição; não penalize a Cleo por
+  assuntos que o usuário nunca mencionou.
+- Se a transcrição terminar com uma fala da Cleo, o usuário simulado encerrou a conversa:
+  avalie o que foi pedido, sem cobrar continuidade.
 
 AVALIE em 6 dimensões (0.0 a 1.0):
 
@@ -219,7 +237,7 @@ export async function evaluateConversation(
   passThreshold: number,
 ): Promise<Verdict> {
   const transcript = turns
-    .map(t => `[${t.role === 'user' ? 'Usuário' : 'Cleo'}]: ${t.content}`)
+    .map((t, index) => `[${index + 1}] ${t.role === 'user' ? 'Usuário' : 'Cleo'}: ${t.content}`)
     .join('\n');
 
   const useFunctional = isFunctionalScenario(persona.scenario);
@@ -290,8 +308,51 @@ export async function evaluateConversation(
     media: Math.round(media * 100) / 100,
     pass: media >= passThreshold,
     razao: parsed.razao,
-    problemas: parsed.problemas || [],
+    problemas: sanitizeJudgeProblems(parsed.problemas, transcript),
   };
+}
+
+/** Normaliza texto para comparar citação do judge com a transcrição. */
+function normalizeForQuoteCheck(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Descarta problemas que citam trechos que NÃO existem na transcrição.
+ *
+ * O judge é uma LLM e alucinava citações: no E2E de 2026-11-01 reprovou o
+ * cenário `owner_command` apontando "antes de mergulhar nos números" e "tomar
+ * café" — falas que a Cleo nunca enviou (a resposta era uma lista determinística).
+ * Citação inventada derruba o score do produto por um defeito do avaliador.
+ *
+ * Só remove quando o trecho entre aspas (≥4 chars) não aparece na transcrição.
+ * Problemas descritos sem aspas continuam valendo — paráfrase é legítima.
+ */
+export function sanitizeJudgeProblems(problemas: string[] | undefined, transcript: string): string[] {
+  if (!Array.isArray(problemas) || problemas.length === 0) return [];
+
+  const normalizedTranscript = normalizeForQuoteCheck(transcript);
+
+  return problemas.filter((problem) => {
+    if (typeof problem !== 'string') return false;
+
+    const quotes = [...problem.matchAll(/["'“”‘’]([^"'“”‘’]{4,})["'“”‘’]/g)].map((match) => match[1]);
+    const invented = quotes.filter((quote) => {
+      const normalizedQuote = normalizeForQuoteCheck(quote);
+      return normalizedQuote.length > 0 && !normalizedTranscript.includes(normalizedQuote);
+    });
+
+    if (invented.length === 0) return true;
+
+    console.warn(`   ⚠️  Judge citou trecho inexistente — problema descartado: "${invented[0].slice(0, 60)}"`);
+    return false;
+  });
 }
 
 /**

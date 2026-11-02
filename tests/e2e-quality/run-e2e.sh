@@ -45,6 +45,16 @@ if ! docker compose ps --format "{{.Name}}" 2>/dev/null | grep -q "hicleo-backen
   sleep 10
 fi
 
+# O E2E NÃO precisa da Evolution API (injeta webhooks direto no backend).
+# Se ela estiver mal configurada (ex: banco com credenciais antigas), o antigo
+# `docker compose ... run e2e-quality` abortava com "dependency failed to start".
+# Aqui garantimos explicitamente que backend, banco e Redis estão de pé e não
+# deixamos a Evolution bloquear o teste.
+if ! curl -sf http://localhost:3001/health > /dev/null 2>&1; then
+  echo "⚠️  Backend não responde. Subindo backend, banco e Redis..."
+  docker compose up -d --build backend app-db redis || true
+fi
+
 # Verifica se o backend está saudável
 echo "🔍 Verificando saúde do backend..."
 timeout 60 bash -c 'until curl -sf http://localhost:3001/health > /dev/null 2>&1; do sleep 2; done' || {

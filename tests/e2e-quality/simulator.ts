@@ -312,6 +312,43 @@ export async function createTestUser(
 }
 
 /**
+ * Semeia clientes REAIS para cenários que listam clientes (`owner_command`).
+ *
+ * Sem isso, o único lead do dono é o lead de auditoria dele mesmo (criado ao
+ * receber a mensagem) e o cenário não prova nada: a Cleo anunciava a própria
+ * dona como "cliente novo de hoje". Os dados cobrem as três consultas:
+ * - Ana: criada hoje, interagiu agora → `list_leads` / `leads_today`
+ * - Bruno: criado há 3 dias, última interação há 3 dias → `no_reply` (48h)
+ */
+export async function seedClientLeads(userId: string): Promise<void> {
+  const db = getPool();
+
+  const ana = await db.query(
+    `INSERT INTO leads (id, user_id, name, phone, status, last_interaction, created_at)
+     VALUES (gen_random_uuid(), $1, 'Ana Souza', '5548988880001', 'new', NOW(), NOW())
+     RETURNING id`,
+    [userId],
+  );
+  await db.query(
+    `INSERT INTO messages (id, lead_id, text, direction, timestamp)
+     VALUES (gen_random_uuid(), $1, 'oi, quanto custa o corte?', 'inbound', NOW() - INTERVAL '10 minutes')`,
+    [ana.rows[0].id],
+  );
+
+  const bruno = await db.query(
+    `INSERT INTO leads (id, user_id, name, phone, status, last_interaction, created_at)
+     VALUES (gen_random_uuid(), $1, 'Bruno Lima', '5548988880002', 'new', NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days')
+     RETURNING id`,
+    [userId],
+  );
+  await db.query(
+    `INSERT INTO messages (id, lead_id, text, direction, timestamp)
+     VALUES (gen_random_uuid(), $1, 'me manda os horários?', 'outbound', NOW() - INTERVAL '3 days')`,
+    [bruno.rows[0].id],
+  );
+}
+
+/**
  * Cria uma sessão WhatsApp de teste para simular a instância do dono.
  * Necessário para que handleUserWhatsAppMessage encontre o user via session.
  */
@@ -499,6 +536,15 @@ export async function cleanupAll(phones: string[]): Promise<void> {
   for (const phone of phones) {
     await cleanupPhone(phone);
   }
+
+  // O delete por user_id não alcança sessões cujo usuário já foi removido (ou
+  // cujo run foi interrompido antes do cleanup). Elas ficam 'active' para sempre
+  // e o connection-monitor do backend passa a logar 404 da Evolution a cada 5 min.
+  const db = getPool();
+  await db.query(
+    `DELETE FROM whatsapp_sessions
+     WHERE instance_name LIKE 'test-e2e%' OR instance_name LIKE 'e2e-%'`,
+  );
 }
 
 // ─── Assinatura, cancelamento e colaboradores ────────────────────────────────

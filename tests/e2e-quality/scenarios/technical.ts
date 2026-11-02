@@ -58,7 +58,7 @@ export async function runPaymentWebhook(persona: Persona): Promise<ConversationR
 
   const db = getPool();
   await db.query(
-    `UPDATE users SET plan = 'basic', subscription_status = 'active',
+    `UPDATE users SET plan = 'solo', subscription_status = 'active',
      subscription_started_at = NOW(), subscription_expires_at = NOW() + INTERVAL '30 days'
      WHERE id = $1`,
     [userId],
@@ -70,7 +70,7 @@ export async function runPaymentWebhook(persona: Persona): Promise<ConversationR
   const checks = [
     { label: 'Subscription existe no banco', passed: subscription !== null },
     { label: 'Status da subscription é active', passed: subscription?.status === 'active' },
-    { label: 'Plan ID correto (basic)', passed: subscription?.planId === 'basic' },
+    { label: 'Plan ID correto (solo)', passed: subscription?.planId === 'solo' },
     { label: 'Data de expiração definida', passed: subscription?.currentPeriodEnd !== null },
   ];
 
@@ -87,7 +87,7 @@ export async function runDegradedFallback(persona: Persona): Promise<Conversatio
   const ownerPhone = `55489998${persona.phone.slice(-5)}`;
   await cleanupPhone(ownerPhone);
   const userId = await createTestUser(ownerPhone, 'Dono Fallback Test', {
-    plan: 'basic',
+    plan: 'solo',
     subscriptionStatus: 'active',
     onboardingComplete: true,
   });
@@ -124,7 +124,7 @@ export async function runSubscriptionExpired(persona: Persona): Promise<Conversa
   await cleanupPhone(persona.phone);
 
   const userId = await createTestUser(persona.phone, persona.name, {
-    plan: 'basic',
+    plan: 'solo',
     subscriptionStatus: 'active',
     onboardingComplete: true,
   });
@@ -172,7 +172,7 @@ export async function runSubscriptionRenewal(persona: Persona): Promise<Conversa
   await cleanupPhone(persona.phone);
 
   await createTestUser(persona.phone, persona.name, {
-    plan: 'basic',
+    plan: 'solo',
     subscriptionStatus: 'active',
     onboardingComplete: true,
   });
@@ -214,7 +214,7 @@ export async function runCancellationFlow(persona: Persona): Promise<Conversatio
   await cleanupPhone(persona.phone);
 
   const userId = await createTestUser(persona.phone, persona.name, {
-    plan: 'basic',
+    plan: 'solo',
     subscriptionStatus: 'active',
     onboardingComplete: true,
   });

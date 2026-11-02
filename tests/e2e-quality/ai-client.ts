@@ -29,33 +29,54 @@ function createOllamaClient(options: {
 
   return {
     async generate(system, user) {
-      const response = await axios.post(
-        `${baseUrl}/api/chat`,
-        {
-          model,
-          // Desativa o modo "thinking" (qwen3 é thinking model por padrão):
-          // com num_predict baixo (80), o budget inteiro era consumido pelo
-          // raciocínio interno antes de qualquer token de saída → content vazio.
-          think: false,
-          messages: [
-            { role: 'system', content: system },
-            { role: 'user', content: user },
-          ],
-          stream: false,
-          options: {
-            temperature: options.temperature,
-            num_predict: options.maxTokens,
-          },
-        },
-        { timeout },
-      );
+      // Ollama local em CPU pode devolver 429/500 esporádico quando o modelo
+      // ainda está carregando ou há mais de uma requisição em paralelo.
+      // Sem retry, um único 429 zerava o cenário inteiro (visto em 2026-10-28).
+      const MAX_ATTEMPTS = 4;
+      let lastError: unknown;
 
-      const content: string = response.data?.message?.content ?? '';
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+          const response = await axios.post(
+            `${baseUrl}/api/chat`,
+            {
+              model,
+              // Desativa o modo "thinking" (qwen3 é thinking model por padrão):
+              // com num_predict baixo (80), o budget inteiro era consumido pelo
+              // raciocínio interno antes de qualquer token de saída → content vazio.
+              think: false,
+              messages: [
+                { role: 'system', content: system },
+                { role: 'user', content: user },
+              ],
+              stream: false,
+              options: {
+                temperature: options.temperature,
+                num_predict: options.maxTokens,
+              },
+            },
+            { timeout },
+          );
 
-      // Remove thinking tags caso o modelo retorne mesmo com think:false
-      return content
-        .replace(/<think>[\s\S]*?<\/think>/g, '')
-        .trim();
+          const content: string = response.data?.message?.content ?? '';
+
+          // Remove thinking tags caso o modelo retorne mesmo com think:false
+          return content
+            .replace(/<think>[\s\S]*?<\/think>/g, '')
+            .trim();
+        } catch (error: any) {
+          lastError = error;
+          const status = error?.response?.status;
+          const isTransient = status === undefined || status === 429 || status >= 500;
+          if (!isTransient || attempt === MAX_ATTEMPTS) break;
+
+          const waitMs = 2000 * attempt;
+          console.warn(`   ⚠️  Ollama indisponível (${status ?? 'erro'}) — retry em ${waitMs / 1000}s (${attempt}/${MAX_ATTEMPTS - 1})...`);
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+        }
+      }
+
+      throw lastError;
     },
   };
 }
@@ -168,8 +189,10 @@ function createGeminiClient(options: {
           const status = (err as { response?: { status?: number } }).response?.status;
           // Retenta apenas em erros transitórios (5xx) ou rate limit (429)
           if (status !== undefined && status < 500 && status !== 429) break;
-          const waitMs = 2000 * 2 ** attempt;
-          console.warn(`   ⚠️  Gemini indisponível (HTTP ${status ?? 'erro'}) — retry em ${waitMs / 1000}s (${attempt + 1}/4)...`);
+          // 429 no Gemini é cota por minuto: backoff curto (2/4/8s) estourava a
+          // janela e o judge devolvia 0.00 — parecia defeito do produto (E2E 2026-11-02).
+          const waitMs = status === 429 ? 20_000 * (attempt + 1) : 2000 * 2 ** attempt;
+          console.warn(`   ⚠️  Gemini indisponível (HTTP ${status ?? 'erro'}) — retry em ${Math.round(waitMs / 1000)}s (${attempt + 1}/4)...`);
           await new Promise(r => setTimeout(r, waitMs));
         }
       }

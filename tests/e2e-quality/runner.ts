@@ -46,6 +46,10 @@ function buildErrorResult(persona: Persona, error: Error): ConversationResult {
     ? { relevancia: 0, tom_de_voz: 0, factualidade: 0, completude: 0, naturalidade: 0, corretude_funcional: 0 }
     : { relevancia: 0, tom_de_voz: 0, factualidade: 0, completude: 0, naturalidade: 0 };
 
+  // Falha do avaliador/provedor (ex: 429 de cota) não é defeito do produto — o
+  // relatório precisa dizer isso, senão um 0.00 parece regressão de qualidade.
+  const isInfra = /(429|quota|rate limit|ECONNREFUSED|ETIMEDOUT|ENOTFOUND)/i.test(error.message);
+
   return {
     persona,
     turns: [],
@@ -53,8 +57,10 @@ function buildErrorResult(persona: Persona, error: Error): ConversationResult {
       scores: defaultScores,
       media: 0,
       pass: false,
-      razao: `Erro na execução: ${error.message}`,
-      problemas: [error.message],
+      razao: isInfra
+        ? `Avaliação interrompida por falha de infraestrutura (${error.message}) — não é defeito do produto; reexecute o cenário.`
+        : `Erro na execução: ${error.message}`,
+      problemas: [isInfra ? `Infraestrutura: ${error.message}` : error.message],
     },
   };
 }
