@@ -142,7 +142,7 @@ export async function closeDb(): Promise<void> {
  * Envia webhook como se fosse um cliente de um dono (instância diferente da secretary).
  * Usado para simular mensagens de clientes finais que chegam na instância do dono.
  */
-export async function sendMessageAsClient(instance: string, phone: string, text: string): Promise<void> {
+export async function sendMessageAsClient(instance: string, phone: string, text: string, pushName = 'Cliente WhatsApp'): Promise<void> {
   const msgId = `e2e-client-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   await axios.post(
@@ -158,7 +158,7 @@ export async function sendMessageAsClient(instance: string, phone: string, text:
         },
         message: { conversation: text },
         messageTimestamp: Math.floor(Date.now() / 1000),
-        pushName: 'Maria Souza',
+        pushName,
       },
     },
     { headers: { 'Content-Type': 'application/json' }, timeout: 10_000 },
@@ -259,6 +259,10 @@ export async function createTestUser(
     subscriptionStatus?: string;
     onboardingComplete?: boolean;
     servicesInfo?: string;
+    /** Horário do negócio (para testar fora do horário de forma determinística). */
+    businessHours?: { start: string; end: string };
+    /** Estado do trial no user (para testar o limite de respostas). */
+    trialResponses?: { used: number; limit: number };
   },
 ): Promise<string> {
   const db = getPool();
@@ -300,14 +304,21 @@ export async function createTestUser(
   }
 
   // Criar business profile de teste (necessário para Cleo gerar respostas contextuais)
+  if (options?.trialResponses) {
+    await db.query(
+      `UPDATE users SET trial_responses_used = $2, trial_responses_limit = $3 WHERE id = $1`,
+      [userId, options.trialResponses.used, options.trialResponses.limit],
+    );
+  }
+
   if (options?.onboardingComplete) {
     await db.query(
       `INSERT INTO businesses (id, user_id, name, type, tone_of_voice, target_audience,
        business_hours_start, business_hours_end, services, created_at)
        VALUES (gen_random_uuid(), $1, $2, 'Serviços gerais', 'friendly_professional', 'Público geral',
-       '08:00', '18:00', $3, NOW())
+       $4, $5, $3, NOW())
        ON CONFLICT (user_id) DO NOTHING`,
-      [userId, name, options?.servicesInfo || null],
+      [userId, name, options?.servicesInfo || null, options?.businessHours?.start ?? '08:00', options?.businessHours?.end ?? '18:00'],
     );
   }
 

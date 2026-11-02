@@ -53,5 +53,25 @@
     "name": "Ricardo Teixeira",
     "scenario": "disconnect_collaborator",
     "description": "Dono de distribuidora com plano Equipe. Precisa remover o acesso de um colaborador que saiu da empresa e pede à Cleo diretamente pelo chat."
+  },
+  {
+    "name": "Beatriz Almeida",
+    "scenario": "client_outside_hours",
+    "description": "Cliente que manda mensagem tarde da noite querendo saber preço e horário; espera ser avisada de quando o negócio retorna."
+  },
+  {
+    "name": "Carlos Menezes",
+    "scenario": "trial_limit_reached",
+    "description": "Cliente de um negócio cujo dono está em trial e já atingiu o limite de respostas automáticas; pergunta preço do serviço."
+  },
+  {
+    "name": "Patrícia Gomes",
+    "scenario": "client_unknown_question",
+    "description": "Cliente pergunta algo que o negócio não informou (ex: faz unha em gel?), espera uma resposta honesta."
+  },
+  {
+    "name": "Rodrigo Barros",
+    "scenario": "client_multi_request",
+    "description": "Cliente objetivo: pergunta o preço do corte E se atende no sábado na mesma mensagem."
   }
 ]

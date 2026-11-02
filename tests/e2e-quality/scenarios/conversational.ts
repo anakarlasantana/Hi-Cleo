@@ -38,6 +38,10 @@ export function getMaxTurns(scenario: Scenario): number {
     case 'local_classifier':
       return 2;
     case 'disconnect_collaborator':
+    case 'client_outside_hours':
+    case 'trial_limit_reached':
+    case 'client_unknown_question':
+    case 'client_multi_request':
       return 3;
     case 'invite_flow':
     case 'configure_rules':
@@ -162,6 +166,47 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
       break;
     }
 
+    case 'client_outside_hours':
+    case 'client_unknown_question':
+    case 'client_multi_request': {
+      const ownerPhone = `55489990${persona.phone.slice(-5)}`;
+      await cleanupPhone(ownerPhone);
+      // Fora do horário de forma DETERMINÍSTICA: janela 03:00-04:00.
+      const businessHours = persona.scenario === 'client_outside_hours'
+        ? { start: '03:00', end: '04:00' }
+        : undefined;
+      const userId = await createTestUser(ownerPhone, 'Dono Teste', {
+        plan: 'solo',
+        subscriptionStatus: 'active',
+        onboardingComplete: true,
+        servicesInfo: 'Corte masculino: R$ 40. Atende de segunda a sábado, das 9h às 19h.',
+        ...(businessHours ? { businessHours } : {}),
+      });
+      const ownerInstance = 'test-e2e';
+      await createWhatsappSession(userId, ownerInstance);
+      (persona as any)._ownerInstance = ownerInstance;
+      (persona as any)._ownerPhone = ownerPhone;
+      break;
+    }
+
+    case 'trial_limit_reached': {
+      const ownerPhone = `55489990${persona.phone.slice(-5)}`;
+      await cleanupPhone(ownerPhone);
+      // Dono em trial que já usou todas as respostas automáticas.
+      const userId = await createTestUser(ownerPhone, 'Dono Teste', {
+        plan: 'solo',
+        subscriptionStatus: 'trial',
+        onboardingComplete: true,
+        servicesInfo: 'Corte masculino: R$ 40.',
+        trialResponses: { used: 30, limit: 30 },
+      });
+      const ownerInstance = 'test-e2e';
+      await createWhatsappSession(userId, ownerInstance);
+      (persona as any)._ownerInstance = ownerInstance;
+      (persona as any)._ownerPhone = ownerPhone;
+      break;
+    }
+
     case 'disconnect_collaborator': {
       const ownerUserId = await createTestUser(persona.phone, persona.name, {
         plan: 'equipe',
@@ -196,12 +241,19 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
 
   const maxTurns = getMaxTurns(persona.scenario);
 
-  const isClientScenario = persona.scenario === 'client_message' || persona.scenario === 'local_classifier';
+  const isClientScenario = [
+    'client_message',
+    'local_classifier',
+    'client_outside_hours',
+    'trial_limit_reached',
+    'client_unknown_question',
+    'client_multi_request',
+  ].includes(persona.scenario);
   const ownerInstance = (persona as any)._ownerInstance as string | undefined;
 
   async function send(phone: string, text: string): Promise<void> {
     if (isClientScenario && ownerInstance) {
-      await sendMessageAsClient(ownerInstance, phone, text);
+      await sendMessageAsClient(ownerInstance, phone, text, persona.name);
     } else {
       await sendMessage(phone, text);
     }
@@ -262,6 +314,53 @@ async function runConversation(personaAi: AiClient, judgeAi: AiClient, persona: 
         console.log('   ✅ [CHECK] Dono avisado do cliente novo');
         turns.push({ role: 'assistant', content: '[CHECK] Dono avisado do cliente novo', timestamp: new Date() });
       }
+    }
+  }
+
+  const respostas = turns.filter((t) => t.role === 'assistant').map((t) => t.content);
+
+  // Fora do horário: a resposta precisa indicar quando o negócio volta.
+  if (persona.scenario === 'client_outside_hours') {
+    const avisou = respostas.some((r) => /fora do hor[áa]rio|hor[áa]rio|amanh[ãa]|retorn/i.test(r));
+    if (!avisou) {
+      verdict.problemas.push('Cliente não foi avisado sobre o horário de retorno');
+      verdict.pass = false;
+    } else {
+      console.log('   ✅ [CHECK] Cliente avisado do horário/retorno');
+    }
+  }
+
+  // Trial no limite: a Cleo troca a IA por um aviso gracioso (não pode inventar).
+  if (persona.scenario === 'trial_limit_reached') {
+    const aviso = respostas.some((r) => /respons[áa]vel vai te responder/i.test(r));
+    if (!aviso) {
+      verdict.problemas.push('Cliente não recebeu o aviso gracioso de limite do trial');
+      verdict.pass = false;
+    } else {
+      console.log('   ✅ [CHECK] Aviso de limite do trial enviado ao cliente');
+    }
+  }
+
+  // Dois pedidos na mesma mensagem: preço E horário de sábado na resposta.
+  if (persona.scenario === 'client_multi_request') {
+    const texto = respostas.join(' ');
+    const temPreco = /R\$\s?\d/.test(texto);
+    const temSabado = /s[áa]bado/i.test(texto);
+    if (!temPreco || !temSabado) {
+      verdict.problemas.push(`Resposta incompleta para dois pedidos (preço: ${temPreco} | sábado: ${temSabado})`);
+      verdict.pass = false;
+    } else {
+      console.log('   ✅ [CHECK] Respondeu preço e horário de sábado');
+    }
+  }
+
+  // Pergunta fora do escopo: precisa responder algo (não deixar no vácuo).
+  if (persona.scenario === 'client_unknown_question') {
+    if (respostas.length === 0 || respostas.every((r) => !r.trim())) {
+      verdict.problemas.push('Cliente ficou sem resposta para pergunta fora do escopo');
+      verdict.pass = false;
+    } else {
+      console.log('   ✅ [CHECK] Cliente recebeu resposta para pergunta fora do escopo');
     }
   }
 

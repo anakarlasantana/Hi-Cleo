@@ -108,6 +108,14 @@ CRITÉRIOS DE FALHA GRAVE (score 0 na dimensão):
 EXPECTATIVAS POR CENÁRIO (conversacionais):
 - client_message: A Cleo atende um CLIENTE do negócio. Se o negócio tem preços/horários configurados (como "Corte R$ 35" ou "atende sábado 9h-17h"), ela PODE e DEVE informar esses valores — isso não é inventar, é usar o contexto do negócio. Se a informação não existir, acolher, anotar e prometer retorno do dono é o comportamento CORRETO (não penalize factualidade, nem completude abaixo de 0.7 se ela tratou todos os tópicos da mensagem).
 - owner_command: A Cleo lista apenas os leads REAIS do banco. Se existe só 1 lead, listar só esse está certo. A Cleo não consegue saber se "material chegou" no WhatsApp do cliente — dizer que não pode confirmar o recebimento é honesto e correto. Avalie se ela executou os comandos de listagem/follow-up pedidos.
+- client_outside_hours: O cliente escreveu FORA do horário de atendimento. A Cleo deve deixar claro que o 
+  negócio está fora do horário e quando retorna (ex.: “amanhã a partir das 9h”). Resposta curta e acolhedora = sucesso.
+- trial_limit_reached: O dono está em trial e esgotou o limite de respostas automáticas. A Cleo deve avisar o 
+  cliente, SEM prometer preço/horário e SEM inventar. Um aviso gracioso (“o responsável vai te responder”) = sucesso. ATENÇÃO: nesse cenário a MESMA resposta se repete a cada mensagem porque o limite está esgotado — repetição aqui é o comportamento correto, não penalize.
+- client_unknown_question: O cliente pergunta algo que o negócio NÃO informou. A Cleo NÃO deve inventar: deve 
+  acolher, dizer que vai confirmar com o responsável. Inventar preço/serviço = falha grave.
+- client_multi_request: O cliente faz DOIS pedidos na mesma mensagem (ex.: preço E horário de sábado). A Cleo 
+  precisa responder os DOIS na mesma resposta. Responder só um = completude baixa.
 - edge_case: O usuário manda mensagens vagas, gírias, mudanças de assunto. A Cleo deve ENGAGAR naturalmente com o conteúdo (sem repetir o mesmo texto), manter tom leve e, quando fizer sentido, oferecer algo CONCRETO que ela pode fazer (ex: "quer ver quem tá sem resposta?"). Repetir a mesma piada/oferta em respostas seguidas é um problema; não exigir oferta em TODAS as respostas também é importante. Se ela engajou e se mostrou útil na conversa, foi bem-sucedida — não exija "avanço de fluxo de onboarding" aqui.
 
 Retorne APENAS JSON válido (sem markdown):

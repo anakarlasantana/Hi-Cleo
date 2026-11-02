@@ -43,7 +43,11 @@ export type Scenario =
   | 'subscription_expired'
   | 'subscription_renewal'
   | 'cancellation_flow'
-  | 'disconnect_collaborator';
+  | 'disconnect_collaborator'
+  | 'client_outside_hours'
+  | 'trial_limit_reached'
+  | 'client_unknown_question'
+  | 'client_multi_request';
 
 /** Tipo de avaliação para cada cenário */
 export type EvaluationType = 'llm_judge' | 'deterministic' | 'hybrid';
@@ -151,6 +155,30 @@ export const scenarios: ScenarioMeta[] = [
     description: 'Cancelamento — acesso mantido até fim do período, reembolso CDC, dados preservados',
     requiresSpecialSetup: true,
     evaluationType: 'deterministic',
+  },
+  {
+    name: 'client_outside_hours',
+    description: 'Cliente escreve fora do horário — Cleo avisa quando o negócio volta',
+    requiresSpecialSetup: true,
+    evaluationType: 'llm_judge',
+  },
+  {
+    name: 'trial_limit_reached',
+    description: 'Trial do dono atingiu o limite de respostas — cliente recebe aviso gracioso',
+    requiresSpecialSetup: true,
+    evaluationType: 'llm_judge',
+  },
+  {
+    name: 'client_unknown_question',
+    description: 'Cliente pergunta algo fora do escopo — Cleo não inventa e promete retorno',
+    requiresSpecialSetup: true,
+    evaluationType: 'llm_judge',
+  },
+  {
+    name: 'client_multi_request',
+    description: 'Cliente faz dois pedidos na mesma mensagem — Cleo responde os dois',
+    requiresSpecialSetup: true,
+    evaluationType: 'llm_judge',
   },
   {
     name: 'disconnect_collaborator',

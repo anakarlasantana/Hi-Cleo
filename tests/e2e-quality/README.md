@@ -87,6 +87,10 @@ Isso é possível graças ao padrão **persist-then-dispatch** implementado no `
 | `local_classifier` | Saudações simples resolvidas sem IA |
 | `configure_rules` | Dono mudando configurações via chat |
 | `prospection_response` | Ex-trial respondendo mensagem de prospecção |
+| `client_outside_hours` | Cliente escreve fora do horário — Cleo avisa quando volta |
+| `trial_limit_reached` | Limite de respostas do trial — cliente recebe aviso gracioso |
+| `client_unknown_question` | Pergunta fora do escopo — não inventa, promete retorno |
+| `client_multi_request` | Dois pedidos na mesma mensagem — responde os dois |
 
 ### Técnicos (avaliados deterministicamente)
 

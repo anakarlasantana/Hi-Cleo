@@ -80,6 +80,35 @@ export class DrizzleActivationRepository implements ActivationRepository {
 }
 
 export class DrizzleUserRepository implements UserRepository {
+  /**
+   * Converte a linha do Drizzle (camelCase) para o tipo `User` (snake_case).
+   *
+   * Sem isso, `user.subscription_status` e `user.trial_responses_used` vinham
+   * undefined: o guard do TRIAL (limite de 30 respostas / 7 dias) nunca rodava e
+   * as métricas `leads_captured`/`whatsapp_connected` ficavam zeradas.
+   */
+  private toUser(row: typeof users.$inferSelect): User {
+    return {
+      id: row.id,
+      name: row.name,
+      plan: row.plan ?? 'solo',
+      phone: row.phone,
+      email: row.email,
+      subscription_status: row.subscriptionStatus ?? undefined,
+      subscription_started_at: row.subscriptionStartedAt?.toISOString(),
+      subscription_expires_at: row.subscriptionExpiresAt?.toISOString(),
+      billing_period: row.billingPeriod ?? undefined,
+      payment_provider_id: row.paymentProviderId ?? undefined,
+      max_connections_override: row.maxConnectionsOverride ?? null,
+      owner_user_id: row.ownerUserId ?? null,
+      trial_started_at: row.trialStartedAt?.toISOString() ?? null,
+      trial_responses_used: row.trialResponsesUsed ?? 0,
+      trial_responses_limit: row.trialResponsesLimit ?? undefined,
+      trial_attempt_id: row.trialAttemptId ?? null,
+      created_at: row.createdAt?.toISOString() ?? '',
+    };
+  }
+
   async findByPhone(phone: string): Promise<User | null> {
     const [data] = await db
       .select()
@@ -87,7 +116,7 @@ export class DrizzleUserRepository implements UserRepository {
       .where(eq(users.phone, phone))
       .limit(1);
 
-    return (data as unknown as User) || null;
+    return data ? this.toUser(data) : null;
   }
 
   async findById(userId: string): Promise<User | null> {
@@ -97,7 +126,7 @@ export class DrizzleUserRepository implements UserRepository {
       .where(eq(users.id, userId))
       .limit(1);
 
-    return (data as unknown as User) || null;
+    return data ? this.toUser(data) : null;
   }
 
   async findByEmail(email: string): Promise<User | null> {
@@ -107,7 +136,7 @@ export class DrizzleUserRepository implements UserRepository {
       .where(eq(users.email, email))
       .limit(1);
 
-    return (data as unknown as User) || null;
+    return data ? this.toUser(data) : null;
   }
 
   async create(userData: Partial<User>): Promise<User> {
@@ -117,7 +146,7 @@ export class DrizzleUserRepository implements UserRepository {
       .returning();
 
     if (!data) throw new Error('Erro ao criar usuário');
-    return data as unknown as User;
+    return this.toUser(data);
   }
 
   async complementUser(userId: string, complementData: { phone: string; name: string }): Promise<User> {
@@ -128,12 +157,12 @@ export class DrizzleUserRepository implements UserRepository {
       .returning();
 
     if (!data) throw new Error('Erro ao complementar usuário');
-    return data as unknown as User;
+    return this.toUser(data);
   }
 
   async listAll(): Promise<User[]> {
     const data = await db.select().from(users);
-    return data as unknown as User[];
+    return data.map((row) => this.toUser(row));
   }
 
   async createBusiness(
