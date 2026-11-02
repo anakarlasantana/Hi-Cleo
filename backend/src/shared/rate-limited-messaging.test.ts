@@ -13,6 +13,8 @@ function createMockMessaging(): MessagingPort & { calls: Array<{ method: string;
     async sendMedia(options: SendMediaOptions) { calls.push({ method: 'sendMedia', args: options, time: Date.now() }); },
     async forwardMessage(options: ForwardMessageOptions) { calls.push({ method: 'forwardMessage', args: options, time: Date.now() }); },
     async createInstance(options: CreateInstanceOptions): Promise<CreateInstanceResult> { return { qrCode: 'mock-qr' }; },
+    async ensureInstance(options: CreateInstanceOptions) { calls.push({ method: 'ensureInstance', args: options, time: Date.now() }); },
+    async setWebhook(instance: string, options: { url: string; events?: string[] }) { calls.push({ method: 'setWebhook', args: { instance, ...options }, time: Date.now() }); },
     async getStatus(instance: string): Promise<ConnectionStatus> { return 'open'; },
     async getQrCode(instance: string) { return 'mock-qr'; },
     async restart(instance: string) {},

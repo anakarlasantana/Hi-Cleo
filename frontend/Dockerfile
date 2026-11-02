@@ -41,7 +41,11 @@ USER appuser
 
 EXPOSE 3000
 
+# Bind em 0.0.0.0: o server.js do standalone usa $HOSTNAME (ID do container no
+# Docker) como endereço, então `localhost` no healthcheck não alcançava o app.
+ENV HOSTNAME=0.0.0.0
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000 || exit 1
 
 CMD ["node", "server.js"]

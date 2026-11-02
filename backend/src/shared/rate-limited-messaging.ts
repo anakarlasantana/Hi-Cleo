@@ -18,6 +18,7 @@ import type {
   CreateInstanceOptions,
   CreateInstanceResult,
   ConnectionStatus,
+  WebhookOptions,
 } from '../modules/evolution/evolution.port.js';
 import type { Logger } from './logger/logger.js';
 
@@ -150,6 +151,14 @@ export class RateLimitedMessaging implements MessagingPort {
 
   async createInstance(options: CreateInstanceOptions): Promise<CreateInstanceResult> {
     return this.inner.createInstance(options);
+  }
+
+  async ensureInstance(options: CreateInstanceOptions): Promise<void> {
+    return this.inner.ensureInstance(options);
+  }
+
+  async setWebhook(instance: string, options: WebhookOptions): Promise<void> {
+    return this.inner.setWebhook(instance, options);
   }
 
   async getStatus(instance: string): Promise<ConnectionStatus> {

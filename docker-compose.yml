@@ -51,11 +51,17 @@ services:
     container_name: hicleo-frontend
     ports:
       - "3000:3000"
+    # O server.js do Next.js standalone faz bind em $HOSTNAME, que o Docker
+    # define como o ID do container. Sem isto o app só escuta no IP interno e o
+    # healthcheck em localhost (IPv6) falha → container "unhealthy" eternamente
+    # (mesmo com o site respondendo na porta publicada). Espelha o prod.
+    environment:
+      - HOSTNAME=0.0.0.0
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000"]
       interval: 30s
       timeout: 5s
       start_period: 15s
@@ -93,7 +99,10 @@ services:
       - app_db_data:/var/lib/postgresql/data
       - ./backend/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hicleo"]
+      # `-d` explícito: sem ele o pg_isready assume banco = nome do usuário e,
+      # quando os dois divergem, loga `FATAL: database "<user>" does not exist`
+      # a cada 10s (e ainda assim sai com 0, deixando o container "healthy").
+      test: ["CMD-SHELL", "pg_isready -U hicleo -d hicleo"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -156,7 +165,9 @@ services:
     volumes:
       - evolution_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${EVOLUTION_DB_USER:-evolution}"]
+      # Com EVOLUTION_DB_USER != EVOLUTION_DB_NAME o pg_isready sem `-d` tentava
+      # o banco errado e logava FATAL a cada 10s (ver app-db acima).
+      test: ["CMD-SHELL", "pg_isready -U ${EVOLUTION_DB_USER:-evolution} -d ${EVOLUTION_DB_NAME:-evolution}"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -172,6 +183,8 @@ services:
     build:
       context: .
       dockerfile: tests/e2e-quality/Dockerfile
+    # network_mode: host para acessar serviços locais (Ollama, DB, Backend)
+    # via localhost, como rodando direto na máquina host.
     network_mode: host
     env_file:
       - .env
@@ -180,8 +193,16 @@ services:
       - BASE_URL=http://localhost:3001
       - E2E_OLLAMA_BASE_URL=http://localhost:11434
     depends_on:
+      # `required: false` + service_started: o E2E injeta webhooks direto no
+      # backend e não usa a Evolution API. Amarrar em `service_healthy` fazia o
+      # teste abortar quando a Evolution estava mal configurada (ex: banco com
+      # credenciais antigas) — vide investigação de 2026-10-28.
       backend:
         condition: service_healthy
+        required: true
+      evolution-api:
+        condition: service_started
+        required: false
     profiles:
       - e2e
 
