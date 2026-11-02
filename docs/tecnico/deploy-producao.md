@@ -775,6 +775,28 @@ docker compose -f docker-compose.prod.yml logs backend
 # - Permissão de volume → "permission denied"
 ```
 
+#### Migrations e seeds (serviço `migrate`)
+
+Migrations **não** usam mais `/docker-entrypoint-initdb.d` (o Postgres só executa
+com volume vazio). Um serviço **one-shot** aplica tudo a cada `docker compose up`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs migrate
+#   Migrations: 4 encontrada(s), 0 pendente(s)
+#     🌱 plan_limits.sql
+#   Migrations concluídas: 0 aplicada(s), 0 pendente(s).
+docker compose -f docker-compose.yml -f docker-compose.prod.yml ps -a | grep migrate
+#   hicleo-migrate   Exited (0)
+```
+
+- Tabela `schema_migrations` guarda o que já foi aplicado (forward-only) + `pg_advisory_lock`.
+- O backend só sobe se o `migrate` sair com **0** (`service_completed_successfully`).
+- **Seeds** (`backend/seeds/*.sql`) rodam em **toda** subida (UPSERT): editar preço/feature
+  e dar `up -d` atualiza o banco — não precisa criar migration nova.
+- Rodar manualmente (host): `cd backend && DATABASE_URL=... npx tsx src/scripts/migrate.ts`
+  (`--dry-run` lista o que está pendente).
+
 ### Health check falha
 
 ```bash

@@ -46,6 +46,33 @@ services:
 
   # --- Aplicação ---
 
+  # --- Migrations (one-shot) ---
+  # Roda a CADA `docker compose up` e sai; o backend só sobe se ela passar.
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hicleo-migrate
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@app-db:5432/${DB_NAME}
+      - MIGRATIONS_DIR=/app/migrations
+      - SEEDS_DIR=/app/seeds
+    command: ["node", "dist/scripts/migrate.js"]
+    depends_on:
+      app-db:
+        condition: service_healthy
+    networks:
+      - hicleo-network
+    restart: "no"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
   backend:
     build:
       context: ./backend
@@ -64,6 +91,8 @@ services:
       - EVOLUTION_API_URL=http://evolution-api:8080
       - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@app-db:5432/${DB_NAME}
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       app-db:
         condition: service_healthy
       redis:
@@ -164,7 +193,7 @@ services:
       - POSTGRES_DB=${DB_NAME}
     volumes:
       - app_db_data:/var/lib/postgresql/data
-      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
+      # Migrations aplicadas pelo serviço `migrate` (uma única via, versionada)
       - db_backups:/backups
     healthcheck:
       # `-d` explícito pelo mesmo motivo do compose de dev: sem ele o pg_isready

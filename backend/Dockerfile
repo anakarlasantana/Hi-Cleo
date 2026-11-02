@@ -23,6 +23,11 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
 
+# Migrations + seeds precisam existir na imagem: o serviço `migrate` roda
+# `node dist/scripts/migrate.js` a cada subida (MIGRATIONS_DIR=/app/migrations).
+COPY migrations ./migrations
+COPY seeds ./seeds
+
 RUN mkdir -p /app/logs && chown -R appuser:appgroup /app/logs
 
 USER appuser

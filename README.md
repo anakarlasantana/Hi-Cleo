@@ -11,8 +11,16 @@ CRM inteligente via WhatsApp com IA para pequenos empresários brasileiros. Resp
 cp .env.example .env
 
 # 2. Suba tudo (backend, frontend, Redis, Evolution API, Postgres)
-docker compose up --build
+#    O serviço `migrate` roda automático antes do backend (migrations + seeds).
+docker compose up -d
+
+# Acompanhar: docker compose logs -f backend
+# Migrations: docker compose logs migrate
 ```
+
+> **Banco:** toda subida aplica as migrations pendentes (`schema_migrations`) e
+> **reaplica os seeds** (`backend/seeds/*.sql`, UPSERT). Mudou preço/feature de plano?
+> Edite o seed e rode `docker compose up -d` — não precisa criar migration nova.
 
 Acesse:
 - Frontend: http://localhost:3000

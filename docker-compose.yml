@@ -7,6 +7,31 @@
 services:
   # --- Aplicação ---
 
+  # --- Migrations (one-shot) ---
+  # Roda a CADA `docker compose up` e sai (exit 0). O backend só sobe depois.
+  # Motivo: `docker-entrypoint-initdb.d` do Postgres só executa com volume vazio
+  # — a próxima migration nunca era aplicada ("Skipping initialization").
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hicleo-migrate
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://hicleo:hicleo123@app-db:5432/hicleo
+      - MIGRATIONS_DIR=/app/migrations
+      - SEEDS_DIR=/app/seeds
+    command: ["node", "dist/scripts/migrate.js"]
+    depends_on:
+      app-db:
+        condition: service_healthy
+    networks:
+      - hicleo-network
+    # NÃO reiniciar: aplicou (ou falhou) e sai; o backend depende do sucesso.
+    restart: "no"
+
   backend:
     build:
       context: ./backend
@@ -23,6 +48,8 @@ services:
       - EVOLUTION_API_URL=http://evolution-api:8080
       - DATABASE_URL=postgresql://hicleo:hicleo123@app-db:5432/hicleo
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       app-db:
         condition: service_healthy
       redis:
@@ -97,7 +124,8 @@ services:
       - POSTGRES_DB=hicleo
     volumes:
       - app_db_data:/var/lib/postgresql/data
-      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
+      # Migrations NÃO ficam mais em /docker-entrypoint-initdb.d (só roda com
+      # volume vazio). Quem aplica é o serviço `migrate` (one-shot) a cada up.
     healthcheck:
       # `-d` explícito: sem ele o pg_isready assume banco = nome do usuário e,
       # quando os dois divergem, loga `FATAL: database "<user>" does not exist`

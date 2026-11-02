@@ -104,7 +104,23 @@ Este documento é o **checklist executável**. O guia operacional completo conti
 **Aceite:** `docker compose up -d` (dev) → 7 containers healthy · prod-like responde em 9080/9443 ·
 `./tests/e2e-quality/run-e2e.sh --single owner_command` passa · `compose-check.sh` verde.
 
-### Fase 1 — Segurança e correções de produção (~1 h)
+### Fase 0.5 — Banco: migrations versionadas e seeds ✅ CONCLUÍDA (2026-11-02)
+
+Motivo: as migrations rodavam em `/docker-entrypoint-initdb.d`, que o Postgres **só executa com volume vazio**. O log `Skipping initialization` provava que a próxima migration nunca seria aplicada; e `backend/scripts/migrate.ts` quebrava com `import.meta.dirname` (undefined em CJS) e reaplicava todos os arquivos.
+
+- [x] Runner em `backend/src/scripts/migrate.ts` (compila para `dist/scripts/migrate.js`)
+- [x] `schema_migrations(version, applied_at)` — aplica só o pendente, em ordem, em transação
+- [x] `pg_advisory_lock` (um migrador só, mesmo com N réplicas) e `--dry-run`
+- [x] `dotenv/config` + erro claro quando falta `DATABASE_URL`
+- [x] `backend/seeds/plan_limits.sql` com **UPSERT** — roda **toda subida** e atualiza preços/features
+- [x] Serviço one-shot `migrate` no compose (dev e prod); `backend` depende de `service_completed_successfully`
+- [x] Removido o mount `./backend/migrations:/docker-entrypoint-initdb.d` e o `INSERT` do `0001`
+- [x] `drizzle.config.ts` com `out: './drizzle'` (não colide mais com as migrations SQL) + `migrations/meta/` removido
+- [x] Testes: `migrate.test.ts` (+7) e validação real: 4 aplicadas → 2ª execução 0 pendentes → seed restaurou preço alterado (9999 → 4900)
+
+**Como validar:** `docker compose up -d && docker compose logs migrate` → `0 pendente(s)` + `🌱 plan_limits.sql`; `docker compose ps -a` mostra `hicleo-migrate Exited (0)`.
+
+
 
 - [ ] `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_SITE_URL` explícitos no build de prod
 - [ ] `EVOLUTION_WEBHOOK_SECRET` em prod **+** `headers: [{key: x-webhook-secret, value: ...}]` na instância (via `setWebhook`)
@@ -129,7 +145,7 @@ Este documento é o **checklist executável**. O guia operacional completo conti
 
 ### Fase 3 — CI (~30 min)
 
-- [ ] `.github/workflows/ci.yml` — backend `npm ci && npm test` (212 testes) + `npm run build`; frontend `npm ci && npm run build`
+- [ ] `.github/workflows/ci.yml` — backend `npm ci && npm test` (219 testes) + `npm run build`; frontend `npm ci && npm run build`
 - [ ] (Opcional) `buildx --platform linux/arm64` → GHCR, para a VPS só fazer `pull`
 
 **Aceite:** PR fica vermelho se teste ou build quebrar.
@@ -163,7 +179,7 @@ Executar o [runbook](#5-runbook-oracle-cloud) depois de 0–3 concluídas.
 **Dev**
 - [ ] `docker compose up -d` sobe tudo; nenhum processo Node na máquina
 - [ ] E2E: `owner_command`, `edge_case` e `onboarding` ≥ 0,7
-- [ ] `npx vitest run` (212 testes) verde
+- [ ] `npx vitest run` (219 testes) verde
 
 **Produção**
 - [ ] `https://seudominio` 200 e `https://seudominio/health` 200
