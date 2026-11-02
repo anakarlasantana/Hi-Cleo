@@ -114,6 +114,9 @@ export async function cleanupPhone(phone: string): Promise<void> {
   await db.query(`DELETE FROM onboarding_states WHERE user_id IN ${userSubquery}`, [phone]);
   await db.query(`DELETE FROM terms_consent WHERE user_id IN ${userSubquery}`, [phone]);
   await db.query(`DELETE FROM cancellations WHERE user_id IN ${userSubquery}`, [phone]);
+  // Colaboradores referenciam o dono (FK users.owner_user_id): apagar primeiro
+  await db.query(`DELETE FROM whatsapp_sessions WHERE user_id IN (SELECT id FROM users WHERE owner_user_id IN ${userSubquery})`, [phone]);
+  await db.query(`DELETE FROM users WHERE owner_user_id IN ${userSubquery}`, [phone]);
   await db.query(`DELETE FROM whatsapp_sessions WHERE user_id IN ${userSubquery}`, [phone]);
   await db.query(`DELETE FROM subscription_events WHERE user_id IN ${userSubquery}`, [phone]);
   await db.query(`DELETE FROM invites WHERE owner_user_id IN ${userSubquery}`, [phone]);
@@ -155,7 +158,7 @@ export async function sendMessageAsClient(instance: string, phone: string, text:
         },
         message: { conversation: text },
         messageTimestamp: Math.floor(Date.now() / 1000),
-        pushName: 'E2E Client User',
+        pushName: 'Maria Souza',
       },
     },
     { headers: { 'Content-Type': 'application/json' }, timeout: 10_000 },

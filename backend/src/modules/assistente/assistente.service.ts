@@ -9,6 +9,14 @@ export const CONVERSATIONAL_HISTORY_LIMIT = 6;
 export interface ConversationalReplyOptions {
   /** Nome do negócio (deixa a oferta de ajuda concreta, não genérica). */
   businessName?: string;
+  /**
+   * Catálogo de planos (preços REAIS do banco).
+   *
+   * Sem isso a Cleo respondia “ainda não tenho os valores aqui” quando o dono ou
+   * um ex-trial perguntava o preço — mesmo com os valores em `plan_limits`
+   * (o E2E flagrou isso em `prospection_response`).
+   */
+  plans?: Array<{ name: string; priceMonthly: number }>;
 }
 
 /**
@@ -49,7 +57,7 @@ export class AssistenteService {
       { inboundLabel: ownerName },
     );
 
-    const systemPrompt = this.buildConversationalPrompt(ownerName, options.businessName, history);
+    const systemPrompt = this.buildConversationalPrompt(ownerName, options.businessName, history, options.plans);
     const userPrompt = `Mensagem do dono: "${message}"`;
 
     const first = await this.ai.generateContent([systemPrompt, userPrompt]);
@@ -89,6 +97,7 @@ export class AssistenteService {
     ownerName: string,
     businessName: string | undefined,
     history: string | undefined,
+    plans?: Array<{ name: string; priceMonthly: number }>,
   ): string {
     const who = businessName ? `${ownerName} (${businessName})` : ownerName;
 
@@ -104,9 +113,18 @@ export class AssistenteService {
       'Responda em português brasileiro.',
     ].join(' ');
 
-    return history
-      ? `${rules}\n\nCONVERSA ATÉ AGORA (mais antiga primeiro):\n${history}`
+    const priceList = (plans ?? [])
+      .filter((plan) => plan.priceMonthly > 0)
+      .map((plan) => `${plan.name}: R$ ${(plan.priceMonthly / 100).toFixed(2).replace('.', ',')}/mês`)
+      .join(' · ');
+
+    const withPrices = priceList
+      ? `${rules} PREÇOS ATUAIS (valores reais — pode informar se perguntarem): ${priceList}.`
       : rules;
+
+    return history
+      ? `${withPrices}\n\nCONVERSA ATÉ AGORA (mais antiga primeiro):\n${history}`
+      : withPrices;
   }
 }
 

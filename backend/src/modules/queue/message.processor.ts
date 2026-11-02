@@ -145,11 +145,20 @@ async function conversationalOwnerReply(
     // sem negócio configurado — segue sem o nome
   }
 
+  // Preços reais do banco: o dono/ex-trial pode perguntar “quanto custa?”
+  let plans: Array<{ name: string; priceMonthly: number }> = [];
+  try {
+    const catalog = await container.planRepo.getAllPlanLimits();
+    plans = catalog.map((plan: any) => ({ name: plan.display_name || plan.plan_name, priceMonthly: plan.price_monthly }));
+  } catch {
+    // sem catálogo — segue sem a lista de preços
+  }
+
   const aiReply = await container.assistenteService.generateConversationalReply(
     user.name || 'um profissional',
     text,
     history,
-    { businessName },
+    { businessName, plans },
   );
 
   return stripThinkingTags(aiReply).slice(0, maxLength).trim();
